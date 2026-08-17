@@ -1,0 +1,834 @@
+"""Convert PDF specifications into hierarchy-linked, provenance-rich chunks.
+
+Run ``python src/ingest.py`` to read ``Ingest/*.pdf`` and write
+``output/spec_hierarchy.json`` plus ``output/chunks.jsonl``.
+"""
+
+import collections
+import json
+import re
+from operator import itemgetter
+from pathlib import Path
+
+import fitz  # PyMuPDF
+
+import configure as cfg
+import roles
+from embed import content_hash
+
+SCHEMA_VERSION = 2
+
+# TODO: Extract captioned figures by block gaps; captionless waveform.pdf needs vision.
+
+
+def slugify(name):
+    """Turn a document filename into a short stable id.
+
+    Args:
+        name: file basename, e.g. "AXI spec.pdf".
+
+    Returns:
+        lowercase slug with non-alphanumerics collapsed to underscores.
+    """
+    return re.sub(r"[^a-z0-9]+", "_", Path(name).stem.lower()).strip("_")
+
+
+# Vendor-specific revision dialects are tried from most to least specific.
+_REVISION_PATTERNS = [
+    ("Version", re.compile(r"\bVersion\s+(\d{6,8})\b")),
+    ("Issue", re.compile(r"\bIssue\s+([A-Z]\d?|\d{2,4})\b")),
+    ("Revision", re.compile(r"\bRevision[:\s]+([A-Za-z0-9.\-]+)")),
+    ("Version", re.compile(r"\bVersion[:\s]+(\d+\.\d+)")),
+]
+
+
+def find_revision(doc):
+    """Pull a document revision/version string out of the front matter.
+
+    Args:
+        doc: an open fitz.Document.
+
+    Returns:
+        a revision string such as "Issue L" or "Version 20250508", or "unknown".
+    """
+    pages = range(min(cfg.REVISION_SCAN_PAGES, doc.page_count))
+    front = "\n".join(doc[i].get_text() for i in pages)
+    for label, pat in _REVISION_PATTERNS:
+        m = pat.search(front)
+        if m:
+            return f"{label} {m.group(1)}"
+    return "unknown"
+
+
+# Outlines use chapter, appendix, or bare dotted-number headings.
+_NUMBER_PATTERNS = [
+    re.compile(r"^Chapter\s+(\d+)\.?\s+(.*)$"),
+    re.compile(r"^Appendix\s+([A-Z])\s*[:.]?\s*(.*)$"),
+    re.compile(r"^([A-Z]?\d+(?:\.\d+)*)\.?\s+(.*)$"),
+]
+
+
+def parse_section_number(title):
+    """Split an outline title into its number and its human name.
+
+    Args:
+        title: raw outline title, e.g. "3.1. CSR Field Specifications".
+
+    Returns:
+        (section_number, section_name); section_number is None for unnumbered
+        front/back matter like "Preface" or "Bibliography".
+    """
+    title = title.strip()
+    for pat in _NUMBER_PATTERNS:
+        m = pat.match(title)
+        if m:
+            return m.group(1), m.group(2).strip()
+    # Unnumbered front and back matter are valid sections.
+    return None, title
+
+
+def _subtree_end_page(toc, index, level, page_count):
+    """Return the first page after an outline entry's complete subtree.
+
+    Args:
+        toc: PDF outline entries as ``(level, title, page)`` triples.
+        index: Position of the current entry in ``toc``.
+        level: Outline depth of the current entry.
+        page_count: Total document pages, used when the subtree reaches the end.
+
+    Returns:
+        The first one-based page after the subtree, or ``page_count`` at document end.
+    """
+    for following_level, _, page in toc[index + 1:]:
+        if following_level <= level:
+            return page
+    return page_count
+
+
+def build_sections(doc, doc_id, doc_name):
+    """Turn the PDF outline into inline-linked section and subsection records.
+
+    Args:
+        doc: an open fitz.Document.
+        doc_id: slug of the document, used to namespace node ids.
+        doc_name: basename of the file, carried into every node for provenance.
+
+    Returns:
+        Section records in document order, each linked inline to its parent,
+        children, and true siblings.
+    """
+    toc = doc.get_toc()
+    nodes = []
+    for i, (level, title, page) in enumerate(toc):
+        number, name = parse_section_number(title)
+        # Own prose ends at any next heading; the subtree ends at a peer or ancestor.
+        own_end = toc[i + 1][2] if i + 1 < len(toc) else doc.page_count
+        end_page = _subtree_end_page(toc, i, level, doc.page_count)
+        nodes.append({
+            "node_id": f"{doc_id}::sec::{i:04d}",
+            "document_id": doc_id,
+            "index": i,
+            "level": level,
+            "raw_title": title.strip(),
+            "section_number": number,
+            "section_name": name,
+            "doc_name": doc_name,
+            "start_page": max(page, 1),
+            "end_page": max(end_page, page),
+            "own_start_page": max(page, 1),
+            "own_end_page": max(own_end, page),
+        })
+
+    # Rebuild the hierarchy in one pass by remembering the latest node at each depth.
+    last_at_level = {}
+    last_sibling = {}
+    for node in nodes:
+        parent = last_at_level.get(node["level"] - 1)
+        node["type"] = "subsection" if parent else "section"
+        node["parent_id"] = parent["node_id"] if parent else None
+        node["parent_number"] = parent["section_number"] if parent else None
+        node["parent_name"] = parent["section_name"] if parent else None
+
+        sibling_key = (node["parent_id"], node["level"])
+        earlier = last_sibling.get(sibling_key)
+        node["prev_id"] = earlier["node_id"] if earlier else None
+        node["prev_section"] = (
+            (earlier["section_number"] or earlier["section_name"])
+            if earlier else None
+        )
+
+        node["next_id"] = node["next_section"] = None
+        if earlier:
+            earlier["next_id"] = node["node_id"]
+            earlier["next_section"] = node["section_number"] or node["section_name"]
+        # Breadcrumbs give both readers and embeddings the section hierarchy.
+        crumb = " ".join(x for x in (node["section_number"], node["section_name"]) if x)
+        node["path"] = (parent["path"] + [crumb]) if parent else [crumb]
+        node["children_ids"] = []
+        if parent:
+            parent["children_ids"].append(node["node_id"])
+        last_at_level[node["level"]] = node
+        last_sibling[sibling_key] = node
+
+        node["section_id"] = parent["section_id"] if parent else node["node_id"]
+        node["section_title"] = parent["section_title"] if parent else node["section_name"]
+        node["subsection_id"] = node["node_id"] if parent else None
+        node["subsection_title"] = node["section_name"] if parent else None
+
+        # A new peer or ancestor invalidates remembered descendants.
+        for deeper in [k for k in last_at_level if k > node["level"]]:
+            del last_at_level[deeper]
+    return nodes
+
+
+def repeated_lines(doc, sample=cfg.FURNITURE_SAMPLE_PAGES):
+    """Find running headers and footers so they can be stripped from the text.
+
+    Args:
+        doc: an open fitz.Document.
+        sample: how many pages to sample when looking for repeats.
+
+    Returns:
+        set of line strings that appear on most sampled pages.
+    """
+
+    step = max(doc.page_count // sample, 1)
+    pages = list(range(0, doc.page_count, step))[:sample]
+    counts = {}
+    for p in pages:
+        for line in set(doc[p].get_text().splitlines()):  # set(), so one page votes once
+            line = line.strip()
+            if line:
+                counts[line] = counts.get(line, 0) + 1
+    threshold = len(pages) * cfg.FURNITURE_THRESHOLD
+    return {line for line, c in counts.items() if c >= threshold}
+
+
+def _clean_pdf_text(raw, furniture):
+    """Apply the established PDF furniture and line-wrap cleanup to one text span.
+
+    Args:
+        raw: Text extracted from a PDF page or page span.
+        furniture: Repeated header and footer lines to remove.
+
+    Returns:
+        Cleaned single-line text with layout artefacts removed.
+    """
+    kept = []
+    for line in raw.splitlines():
+        value = line.strip()
+        if not value or value in furniture or re.fullmatch(r"\d{1,4}", value):
+            continue
+        if re.search(r"(?:\.\s*){5,}[ivxlcdm\d]+$", value, re.IGNORECASE):
+            continue
+        kept.append(value)
+    text = "\n".join(kept)
+    text = re.sub(r"(?:\.\s*){4,}", " ", text)
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+    text = re.sub(r"\n+", " ", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def section_page_texts(doc, sec, furniture, next_title=None):
+    """Extract a section as ``(page, text)`` spans without erasing provenance.
+
+    Args:
+        doc: Open PDF document containing the section.
+        sec: Section node whose own page range should be read.
+        furniture: Repeated header and footer lines to remove.
+        next_title: Following outline title used to stop shared-page extraction.
+
+    Returns:
+        Non-empty ``(one-based page, cleaned text)`` spans in page order.
+    """
+    spans = []
+    pages = range(sec["own_start_page"] - 1, min(sec["own_end_page"], doc.page_count))
+    for page_index in pages:
+        text = _clean_pdf_text(doc[page_index].get_text(), furniture)
+        if page_index == pages.start:
+            start = text.find(sec["raw_title"])
+            if start != -1:
+                text = text[start + len(sec["raw_title"]):].strip()
+            # Keep first-page text when the PDF does not reproduce its outline title.
+        stop = text.find(next_title) if next_title else -1
+        if stop != -1:
+            text = text[:stop].strip()
+        if text:
+            spans.append((page_index + 1, text))
+        if stop != -1:
+            break
+    return spans
+
+
+# Caption labels require a period or colon before the title.
+_CAPTION = re.compile(r"^(Table)\s+([A-Z]?\d+(?:[.-]\d+)*)\s*([.:])\s*(.*)$")
+
+_TABLE_REF = re.compile(r"\bTable\s+([A-Z]?\d+(?:[.-]\d+)*)")
+
+
+def is_caption(sep, rest):
+    """Tell a real caption apart from prose that merely opens with a reference.
+
+    Args:
+        sep: the separator captured after the label, "." or ":".
+        rest: whatever text followed that separator.
+
+    Returns:
+        True if the line leads a genuine caption.
+    """
+    # Captions have a separator and capitalized title; body references do not.
+    return bool(sep) and bool(rest) and rest[0].isupper()
+
+
+def build_caption_index(doc):
+    """Find every table caption in the document.
+
+    Args:
+        doc: an open fitz.Document.
+
+    Returns:
+        dict of label -> {page, caption, bbox}, one entry per table.
+    """
+    index = {}
+    for i in range(doc.page_count):
+        for block in doc[i].get_text("blocks"):
+            body = block[4].strip()
+            if not body:
+                continue
+            m = _CAPTION.match(body.splitlines()[0].strip())
+            if m and is_caption(m.group(3), m.group(4)) and m.group(2) not in index:
+                index[m.group(2)] = {
+                    "page": i + 1,
+                    "caption": " ".join(m.group(4).split()),
+                    "bbox": tuple(block[:4]),
+                }
+    return index
+
+
+def table_region(page, caption_bbox):
+    """Work out the rectangle holding a table's body.
+
+    Args:
+        page: the fitz.Page the caption sits on.
+        caption_bbox: bounding box of the caption block.
+
+    Returns:
+        a fitz.Rect covering the table, or None if nothing follows the caption.
+    """
+    # The first row's left edge is reliable across wide ARM and narrow RISC-V tables.
+    blocks = sorted(page.get_text("blocks"), key=itemgetter(1))
+    below = [b for b in blocks if b[1] > caption_bbox[3]]
+    if not below:
+        return None
+    edge = below[0][0]
+    bottom = page.rect.height
+    for b in below[1:]:
+        first = b[4].strip().splitlines()[0].strip() if b[4].strip() else ""
+        if b[0] < edge - cfg.TABLE_EDGE_SLACK or _CAPTION.match(first):
+            bottom = b[1]
+            break
+    top = caption_bbox[3]
+    return (
+        fitz.Rect(0, top, page.rect.width, bottom)
+        if bottom > top + cfg.MIN_TABLE_HEIGHT else None
+    )
+
+
+def rows_by_alignment(page, region):
+    """Recover table rows from column alignment alone, for tables with no ruling lines.
+
+    Args:
+        page: the fitz.Page holding the table.
+        region: fitz.Rect covering the table body.
+
+    Returns:
+        list of rows, each a list of cell strings; empty if no header could be found.
+    """
+    words = [w for w in page.get_text("words") if region.y0 <= w[1] < region.y1]
+    if not words:
+        return []
+
+    # Group by visual line first so wrapped cells retain reading order.
+    lines = collections.defaultdict(list)
+    for w in words:
+        lines[round(w[1], 1)].append(w)
+    ordered = [sorted(lines[y], key=itemgetter(0)) for y in sorted(lines)]
+
+    # Nearby header words belong to one multi-word column heading.
+    columns = []
+    for w in ordered[0]:
+        if not columns or w[0] - columns[-1] > cfg.COLUMN_GAP:
+            columns.append(w[0])
+    if len(columns) < 2:
+        return []  # a single column is not a table, it is a paragraph
+
+    # A word in the leftmost column starts the next row.
+    rows = []
+    for line in ordered:
+        starts_row = line[0][0] < columns[0] + cfg.COLUMN_SLACK
+        if starts_row or not rows:
+            rows.append([[] for _ in columns])
+        for w in line:
+            # Clamp hanging row labels into column zero rather than dropping them.
+            fits = [j for j, c in enumerate(columns) if w[0] >= c - cfg.COLUMN_SLACK]
+            i = max(fits) if fits else 0
+            rows[-1][i].append(w[4])
+    return [[" ".join(cell) for cell in row] for row in rows]
+
+
+def unstack_row(row):
+    """Split one extracted row back into the several rows it really holds.
+
+    Args:
+        row: list of cell strings, possibly holding embedded newlines.
+
+    Returns:
+        list of rows; a single-element list when there was nothing to split.
+    """
+    # Equal newline depths indicate several logical rows collapsed into each cell.
+    parts = [c.split("\n") for c in row]
+    counts = {len(p) for p in parts if len(p) > 1}
+    if len(counts) != 1:
+        return [[c.replace("\n", " ").strip() for c in row]]
+    depth = counts.pop()
+    return [[(p[i].strip() if len(p) > 1 else p[0].strip()) for p in parts] for i in range(depth)]
+
+
+def _table_size(table):
+    """Return a table's cell count for selecting the largest extraction.
+
+    Args:
+        table: PyMuPDF table candidate with row and column counts.
+
+    Returns:
+        The number of cells in the table candidate.
+    """
+    return table.row_count * table.col_count
+
+
+def extract_table(page, caption_bbox):
+    """Pull the cell contents of one table off the page.
+
+    Args:
+        page: the fitz.Page holding the table.
+        caption_bbox: bounding box of the table's caption block.
+
+    Returns:
+        (rows, method) where rows is a list of row lists and method names the
+        strategy that worked; rows is empty if neither strategy found anything.
+    """
+    region = table_region(page, caption_bbox)
+    if region is None:
+        return [], "none"
+
+    # Prefer ruled extraction because RISC-V's per-column blocks defeat alignment.
+    found = page.find_tables(clip=region, strategy="lines")
+    if found.tables:
+        biggest = max(found.tables, key=_table_size)
+        rows = [[(c or "").strip() for c in r] for r in biggest.extract()]
+        rows = [out for r in rows for out in unstack_row(r)]
+        if len(rows) > 1:
+            return rows, "lines"
+
+    # Fall back to alignment for unruled ARM tables.
+    rows = rows_by_alignment(page, region)
+    return (rows, "alignment") if len(rows) > 1 else ([], "none")
+
+
+def rows_to_markdown(rows):
+    """Render extracted rows as a markdown table.
+
+    Args:
+        rows: list of row lists, the first of which is treated as the header.
+
+    Returns:
+        a markdown table string.
+    """
+    width = max(len(r) for r in rows)
+    padded = [r + [""] * (width - len(r)) for r in rows]
+    out = ["| " + " | ".join(padded[0]) + " |", "|" + "---|" * width]
+    for r in padded[1:]:
+        out.append("| " + " | ".join(r) + " |")
+    return "\n".join(out)
+
+
+def build_tables(doc, doc_id, doc_name, nodes):
+    """Extract every captioned table and attach it to the section that contains it.
+
+    Args:
+        doc: an open fitz.Document.
+        doc_id: slug of the document, used to namespace node ids.
+        doc_name: basename of the file, carried into every table node.
+        nodes: The inline-linked hierarchy records from ``build_sections``.
+
+    Returns:
+        Table metadata keyed by label. Tables are not hierarchy nodes.
+    """
+    tables = {}
+    for label, cap in build_caption_index(doc).items():
+        page = doc[cap["page"] - 1]
+        rows, method = extract_table(page, cap["bbox"])
+        # Ordered outlines make the latest section start the table's owner.
+        owner = None
+        for node in nodes:
+            if node["own_start_page"] <= cap["page"]:
+                owner = node
+            else:
+                break
+        columns = list(rows[0]) if rows else []
+        data_rows = [list(row) for row in rows[1:]] if rows else []
+        tables[label] = {
+            "table_id": f"{doc_id}::table::{label}",
+            "document_id": doc_id,
+            "doc_name": doc_name,
+            "label": label,
+            "caption": cap["caption"],
+            "page": cap["page"],
+            "hierarchy_id": owner["node_id"] if owner else None,
+            "section_id": owner["section_id"] if owner else None,
+            "section_title": owner["section_title"] if owner else None,
+            "subsection_id": owner["subsection_id"] if owner else None,
+            "subsection_title": owner["subsection_title"] if owner else None,
+            "section_number": owner["section_number"] if owner else None,
+            "section_path": owner["path"] if owner else [],
+            "columns": columns,
+            "rows": data_rows,
+            "n_rows": len(data_rows),
+            "extraction": method,
+            "markdown": rows_to_markdown(rows) if rows else "",
+        }
+    return tables
+
+
+def find_table_refs(text, tables):
+    """Resolve every "see Table X" mention in a piece of text.
+
+    Args:
+        text: the chunk body to scan.
+        tables: The document's structured table metadata, keyed by label.
+
+    Returns:
+        list of reference dicts, resolved ones carrying the table's id and caption.
+    """
+    # Preserve unresolved references so external deferrals remain visible.
+    refs = []
+    for label in dict.fromkeys(_TABLE_REF.findall(text)):
+        table = tables.get(label)
+        if table:
+            refs.append({
+                "label": label,
+                "table_id": table["table_id"],
+                "caption": table["caption"],
+                "page": table["page"],
+                "resolved": True,
+            })
+        else:
+            refs.append({"label": label, "resolved": False})
+    return refs
+
+
+def enrich_spec_record(record):
+    """Append the common deterministic provenance contract to one chunk.
+
+    Args:
+        record: Mutable prose or table chunk record to enrich in place.
+
+    Returns:
+        The same record with hierarchy, table, page, and source metadata.
+    """
+    text = record.get("text", "")
+    chunk_type = record.get("chunk_type")
+    is_table = chunk_type == "table"
+    document_id = record.get("document_id") or record["chunk_id"].split("#", 1)[0]
+    cited_table_ids = [reference.get("table_id")
+                       for reference in record.get("tables_cited", [])
+                       if reference.get("resolved") and reference.get("table_id")]
+    own_table_id = record.get("table_id") if is_table else None
+    table_ids = list(dict.fromkeys([
+        *record.get("table_ids", []), *cited_table_ids,
+        *([own_table_id] if own_table_id else []),
+    ]))
+    section_title = record.get("section_title") or record.get("section_name")
+    chunk_scores = roles.chunk_role_scores(text, chunk_type)
+    chunk_role = roles.leading_role(chunk_scores)
+    record.update({
+        "record_id": f"spec::chunk::{record['chunk_id']}",
+        "source_id": (own_table_id if is_table else
+                      record.get("hierarchy_id") or record.get("subsection_id")
+                      or record.get("section_id")),
+        "chunk_role": chunk_role,
+        "chunk_role_scores": chunk_scores,
+        # No wording matched, so no role is claimed rather than one being invented.
+        "chunk_role_source": "rules" if any(chunk_scores.values()) else "unresolved",
+        "document_id": document_id,
+        "section_id": record.get("section_id"),
+        "section_title": section_title,
+        "subsection_id": record.get("subsection_id"),
+        "subsection_title": record.get("subsection_title"),
+        "page": record.get("page", record.get("start_page")),
+        "table_ids": table_ids,
+        "source_file": record.get("source_file") or record.get("doc_name"),
+        "content_hash": content_hash(record.get("context_header", ""), text),
+    })
+    return record
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def split_sentences(text):
+    """Split text into sentences with a rule-based splitter.
+
+    Args:
+        text: cleaned section text.
+
+    Returns:
+        list of sentence strings, whitespace-normalised, empties dropped.
+    """
+    # Keep this stage offline; overlap absorbs occasional regex miscuts of spec tokens.
+    parts = _SENTENCE_END.split(text)
+    sentences = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # Abbreviations and bare initials/digits are false sentence endings.
+        if sentences:
+            tail = sentences[-1].rstrip(".")
+            last_word = tail.split()[-1] if tail.split() else ""
+            if last_word in cfg.ABBREVIATIONS or re.fullmatch(r"[A-Z0-9]", last_word):
+                sentences[-1] = sentences[-1] + " " + part
+                continue
+        sentences.append(part)
+    return sentences
+
+
+def sliding_window_chunks(sentences, max_chars=cfg.MAX_CHUNK_CHARS, overlap=cfg.OVERLAP_SENTENCES):
+    """Pack sentences into chunks, sliding back a few sentences between chunks.
+
+    Args:
+        sentences: list of sentences from one section.
+        max_chars: soft character cap per chunk.
+        overlap: how many trailing sentences of chunk N also open chunk N+1.
+
+    Returns:
+        list of chunks, each a list of sentences.
+    """
+    chunks = []
+    i = 0
+    while i < len(sentences):
+        j = i
+        size = 0
+        while j < len(sentences):
+            value = sentences[j][0] if isinstance(sentences[j], tuple) else sentences[j]
+            # Always admit the first sentence so an oversized sentence cannot stall.
+            if j > i and size + len(value) > max_chars:
+                break
+            size += len(value) + 1
+            j += 1
+        chunks.append(sentences[i:j])
+        if j >= len(sentences):
+            break
+        # Reopen the next chunk with the configured trailing overlap.
+        i = max(j - overlap, i + 1)
+    return chunks
+
+
+def ingest_pdf(path):
+    """Turn one PDF into inline-linked sections, structured tables, and chunks.
+
+    Args:
+        path: path to the PDF.
+
+    Returns:
+        ``(sections, tables, records)`` for this document.
+    """
+    doc = fitz.open(path)
+    doc_name = path.name
+    doc_id = slugify(doc_name)
+    revision = find_revision(doc)
+    furniture = repeated_lines(doc)
+
+    # Build structure first so every chunk inherits deterministic hierarchy metadata.
+    nodes = build_sections(doc, doc_id, doc_name)
+    tables = build_tables(doc, doc_id, doc_name, nodes)
+
+    records = []
+    for i, sec in enumerate(nodes):
+        if sec["section_name"].strip().lower() in cfg.SKIP_TITLES:
+            continue
+        next_title = nodes[i + 1]["raw_title"] if i + 1 < len(nodes) else None
+        page_texts = section_page_texts(doc, sec, furniture, next_title)
+        text = " ".join(page_text for _, page_text in page_texts)
+        if len(text) < cfg.MIN_SECTION_CHARS:  # front matter, contents and empty stubs
+            continue
+        # Breadcrumbs disambiguate otherwise context-free paragraphs for embedding.
+        header = f"{doc_name} ({revision}) > " + " > ".join(sec["path"])
+        sentences = [(sentence, page) for page, page_text in page_texts
+                     for sentence in split_sentences(page_text)]
+        for k, chunk in enumerate(sliding_window_chunks(sentences)):
+            body = " ".join(sentence for sentence, _ in chunk)
+            chunk_pages = [page for _, page in chunk]
+            # Deterministic IDs support stable vector-store updates.
+            records.append(enrich_spec_record({
+                "chunk_id": f"{doc_id}#{sec['index']:04d}#{k:03d}",
+                "chunk_type": "prose",
+                "document_id": doc_id,
+                "doc_name": doc_name,
+                "source_file": doc_name,
+                "revision": revision,
+                "hierarchy_id": sec["node_id"],
+                "section_id": sec["section_id"],
+                "section_title": sec["section_title"],
+                "subsection_id": sec["subsection_id"],
+                "subsection_title": sec["subsection_title"],
+                "section_number": sec["section_number"],
+                "section_name": sec["section_name"],
+                "section_path": sec["path"],
+                "context_header": header,
+                "level": sec["level"],
+                "parent_id": sec["parent_id"],
+                "parent_number": sec["parent_number"],
+                "parent_name": sec["parent_name"],
+                "prev_section": sec["prev_section"],
+                "next_section": sec["next_section"],
+                # Cite chunk pages; retain the wider section span only for navigation.
+                "start_page": min(chunk_pages),
+                "end_page": max(chunk_pages),
+                "page": min(chunk_pages),
+                "section_start_page": sec["start_page"],
+                "section_end_page": sec["end_page"],
+                "own_start_page": sec["own_start_page"],  # this section's prose only
+                "own_end_page": sec["own_end_page"],
+                "chunk_index": k,
+                "n_sentences": len(chunk),
+                "n_chars": len(body),
+                "sentence_sources": [
+                    {"text": sentence, "page": page} for sentence, page in chunk],
+                "tables_cited": find_table_refs(body, tables),
+                "text": body,
+            }))
+
+    # Emit each table whole because a partial table is worse than none for retrieval.
+    for table in tables.values():
+        if not table["markdown"]:
+            continue
+        records.append(enrich_spec_record({
+            "chunk_id": f"{doc_id}#table#{table['label']}",
+            "chunk_type": "table",
+            "document_id": doc_id,
+            "doc_name": doc_name,
+            "source_file": doc_name,
+            "revision": revision,
+            "hierarchy_id": table["hierarchy_id"],
+            "section_id": table["section_id"],
+            "section_title": table["section_title"],
+            "subsection_id": table["subsection_id"],
+            "subsection_title": table["subsection_title"],
+            "section_number": table["section_number"],
+            "section_name": table["subsection_title"] or table["section_title"],
+            "section_path": table["section_path"],
+            "context_header": (
+                f"{doc_name} ({revision}) > Table {table['label']}: {table['caption']}"),
+            "table_label": table["label"],
+            "table_id": table["table_id"],
+            "table_ids": [table["table_id"]],
+            "caption": table["caption"],
+            "start_page": table["page"],
+            "end_page": table["page"],
+            "page": table["page"],
+            "columns": table["columns"],
+            "rows": table["rows"],
+            "n_rows": table["n_rows"],
+            "extraction": table["extraction"],
+            "n_chars": len(table["markdown"]),
+            "tables_cited": [],
+            "text": table["markdown"],
+        }))
+
+    # Document role needs the whole document, so it is stamped once every chunk exists.
+    document_scores = roles.document_role_scores(record["text"] for record in records)
+    document_role = roles.leading_role(document_scores)
+    for record in records:
+        record["document_role"] = document_role
+        record["document_role_scores"] = document_scores
+
+    doc.close()
+    return nodes, tables, records
+
+
+def hierarchy_document(path, revision, page_count, sections):
+    """Build one document record containing only its inline-linked section hierarchy.
+
+    Args:
+        path: Source PDF path.
+        revision: Deterministically extracted document revision.
+        page_count: Number of pages in the source PDF.
+        sections: Inline-linked outline records belonging to the document.
+
+    Returns:
+        A document record with its complete section list nested inline.
+    """
+    document_id = slugify(path.name)
+    roots = [section["node_id"] for section in sections if section["parent_id"] is None]
+    return {
+        "document_id": document_id,
+        "type": "document",
+        "title": path.stem,
+        "source_file": path.name,
+        "revision": revision,
+        "page_count": page_count,
+        "root_section_ids": roots,
+        "sections": sections,
+        "content_hash": content_hash(
+            document_id, revision,
+            json.dumps([(section["node_id"], section["raw_title"],
+                         section["start_page"], section["end_page"])
+                        for section in sections], ensure_ascii=False)),
+    }
+
+
+def main():
+    """Ingest every PDF and write chunks plus the hierarchy-only artifact.
+
+    Returns:
+        None.
+    """
+    paths = sorted(cfg.INGEST_DIR.glob("*.pdf"))
+    if not paths:
+        raise SystemExit(f"no PDFs found in {cfg.INGEST_DIR}")
+    cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    all_records = []
+    documents = []
+    for path in paths:
+        nodes, tables, records = ingest_pdf(path)
+        revision = records[0]["revision"] if records else "unknown"
+        all_records.extend(records)
+        with fitz.open(path) as document:
+            documents.append(hierarchy_document(path, revision, document.page_count, nodes))
+        prose = [r for r in records if r["chunk_type"] == "prose"]
+        avg = sum(r["n_chars"] for r in prose) // max(len(prose), 1)
+        n_tab = len(records) - len(prose)
+        print(f"{path.name:<28} sections={len(nodes):<5} tables={n_tab:<4} "
+              f"chunks={len(records):<6} avg_chars={avg}")
+
+    hierarchy_temporary = cfg.SPEC_HIERARCHY_PATH.with_suffix(".json.tmp")
+    with open(hierarchy_temporary, "w", encoding="utf-8") as f:
+        json.dump({"schema_version": SCHEMA_VERSION, "documents": documents},
+                  f, ensure_ascii=False, indent=1)
+    hierarchy_temporary.replace(cfg.SPEC_HIERARCHY_PATH)
+    chunks_temporary = cfg.CHUNKS_PATH.with_suffix(".jsonl.tmp")
+    with open(chunks_temporary, "w", encoding="utf-8") as f:
+        for r in all_records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    chunks_temporary.replace(cfg.CHUNKS_PATH)
+    rel = cfg.OUTPUT_DIR.relative_to(cfg.ROOT)
+    section_count = sum(len(document["sections"]) for document in documents)
+    print(f"====  wrote {len(documents)} documents and {section_count} sections to "
+          f"{rel / cfg.SPEC_HIERARCHY_PATH.name}")
+    print(f"====  wrote {len(all_records)} chunks to {rel / cfg.CHUNKS_PATH.name}")
+
+
+if __name__ == "__main__":
+    main()

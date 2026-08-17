@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<verilator_xml>
+  <files>
+    <file id="a" filename="&lt;built-in&gt;" language="1800-2017"/>
+    <file id="b" filename="verilated_std.sv" language="1800-2017"/>
+    <file id="y" filename="sample.sv" language="1800-2017"/>
+    <file id="z" filename="elsewhere.sv" language="1800-2017"/>
+  </files>
+  <cells>
+    <cell loc="y,1,1,1,6" name="top" submodname="mod_a__A8" hier="top">
+      <cell loc="y,1,1,1,6" name="inner" submodname="mod_a__A16" hier="top.inner"/>
+    </cell>
+  </cells>
+  <netlist>
+    <module loc="y,1,8,1,13" name="mod_a__A8" origName="mod_a" topModule="1">
+      <var loc="y,2,18,2,21" name="clk" dir="input" vartype="logic"/>
+      <var loc="y,3,18,3,21" name="rst" dir="input" vartype="logic"/>
+      <var loc="y,4,18,4,22" name="done" dir="output" vartype="logic"/>
+      <var loc="y,6,17,6,24" name="counter" vartype="logic"/>
+      <always loc="y,8,5,8,14">
+        <senitem loc="y,8,24,8,31"/>
+        <assigndly loc="y,10,17,10,19">
+          <varref loc="y,10,9,10,16" name="counter"/>
+        </assigndly>
+        <assigndly loc="y,11,17,11,19">
+          <varref loc="y,11,9,11,13" name="done"/>
+        </assigndly>
+        <comment loc="y,12,5,12,8"/>
+        <varref loc="z,999,1,999,5" name="from_another_file"/>
+      </always>
+    </module>
+    <module loc="y,1,8,1,13" name="mod_a__A16" origName="mod_a">
+      <var loc="y,2,18,2,21" name="clk" dir="input" vartype="logic"/>
+    </module>
+  </netlist>
+</verilator_xml>
