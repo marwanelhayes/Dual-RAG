@@ -19,9 +19,18 @@ from retrieve import Retriever as HybridRetriever
 
 STRUCTURAL_SURFACE_CHARS = 1200
 _MODULE_STRUCTURES = 24
+_MODULE_LINKS = 24
+# Rendered signal lists are bounded; the full lists stay in metadata, unembedded.
+_CONSTRUCT_SIGNALS = 16
+_MODULE_PORTS = 24
+_FACET_MIN_CHARS = 80
+# Past a dozen phrases the expanded names outweigh the module's own prose, measurably.
+_TERMS = 12
 _LOOKUP_TERMS = 128
 _COMMENT = re.compile(r"//+(.*)$")
 _RULE = re.compile(r"^[\s\-=_*#~+.─━—–]*$")
+# Box-drawing banners cost about one token per character, so they are collapsed away.
+_DECORATION = re.compile(r"[─━—–\-=_*#~+]{3,}")
 _IDENTIFIER = re.compile(
     r"0[xX][0-9A-Fa-f]+|[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+)*"
 )
@@ -34,7 +43,15 @@ _QUERY_STOP_WORDS = frozenset({
 
 
 def _unique(items, limit=None):
-    """Deduplicate non-empty values in input order, optionally bounded."""
+    """Deduplicate non-empty values in input order, optionally bounded.
+
+    Args:
+        items: Values to deduplicate.
+        limit: Maximum values to keep, or None for no bound.
+
+    Returns:
+        Unique non-empty values in first-seen order.
+    """
     out = []
     for item in items:
         if item not in (None, "") and item not in out:
@@ -45,7 +62,14 @@ def _unique(items, limit=None):
 
 
 def _source_id(path):
-    """Return a machine-independent source identifier for an RTL file."""
+    """Return a machine-independent source identifier for an RTL file.
+
+    Args:
+        path: Absolute or relative path to an RTL source file.
+
+    Returns:
+        An ``rtl::file::`` identifier relative to the configured RTL directory.
+    """
     source = Path(path)
     try:
         relative = source.resolve().relative_to(Path(cfg.RTL_DIR).resolve()).as_posix()
@@ -56,7 +80,22 @@ def _source_id(path):
 
 def _record(chunk_id, record_id, context_header, text, source_type, module, entry,
             lookup_terms, **metadata):
-    """Build one vector-compatible retrieval record with shared provenance."""
+    """Build one vector-compatible retrieval record with shared provenance.
+
+    Args:
+        chunk_id: Stable identifier addressing this record in the index.
+        record_id: Compiler-derived identifier for the underlying construct.
+        context_header: Breadcrumb prepended to the embedded text.
+        text: Embedded retrieval surface.
+        source_type: ``"module"`` or ``"construct"``.
+        module: Owning module name.
+        entry: Source entry supplying file and line provenance.
+        lookup_terms: Names this record can be found by exactly.
+        metadata: Extra record-type fields, and an optional ``line`` override.
+
+    Returns:
+        One retrieval record carrying provenance and its content hash.
+    """
     record = {
         "chunk_id": chunk_id,
         "record_id": record_id,
@@ -76,20 +115,34 @@ def _record(chunk_id, record_id, context_header, text, source_type, module, entr
 
 
 def comments(text):
-    """Extract useful line-comment prose from source text."""
+    """Extract useful line-comment prose from source text.
+
+    Args:
+        text: RTL source text to scan.
+
+    Returns:
+        Unique comment bodies in source order, excluding divider rules.
+    """
     found = []
     for line in text.splitlines():
         match = _COMMENT.search(line)
         if not match:
             continue
-        body = match.group(1).strip()
+        body = _DECORATION.sub(" ", match.group(1)).strip()
         if body and not _RULE.match(body) and body not in found:
             found.append(body)
     return found
 
 
 def children(tree):
-    """Map each source module to child modules from the pre-order instance tree."""
+    """Map each source module to child modules from the pre-order instance tree.
+
+    Args:
+        tree: Pre-order instance nodes carrying ``depth`` and ``module``.
+
+    Returns:
+        Parent module name to its unique child module names.
+    """
     parents, out = {}, {}
     for node in tree:
         depth, module = node["depth"], node["module"]
@@ -103,7 +156,14 @@ def children(tree):
 
 
 def _signal_metadata(entry):
-    """Return declarations retained for exact lookup, never as vector rows."""
+    """Return declarations retained for exact lookup, never as vector rows.
+
+    Args:
+        entry: One module record from ``rtl.json``.
+
+    Returns:
+        Port, signal, and parameter declarations with their populated fields.
+    """
     signals = []
     for field in ("ports", "signals", "parameters"):
         for declaration in entry.get(field, []):
@@ -125,17 +185,128 @@ def _signal_metadata(entry):
     return signals
 
 
-def chunks(rtl, children):
-    """Build one stable, provenance-bearing vector record per module."""
-    child_modules = children
+def _terms(names):
+    """Render identifiers as the plain words a question is likely to use.
+
+    Args:
+        names: Source identifier spellings.
+
+    Returns:
+        Space-joined expanded token strings, deduplicated and bounded.
+    """
+    return _unique((" ".join(identifier_tokens(name)) for name in names if name),
+                   _TERMS)
+
+
+def port_connections(rtl):
+    """Map every module port to the peer modules bound to the same parent-scope net.
+
+    Naming conventions cannot be trusted to say which stage a port serves, but the
+    elaborated netlist can: two instances sharing one actual signal are wired together.
+
+    Args:
+        rtl: Parsed ``rtl.json`` payload.
+
+    Returns:
+        Module name to ``{"drives": [...], "reads": [...]}`` formal/peer pairs.
+    """
+    scoped = {}
+    for entry in rtl.get("modules", {}).values():
+        for instance in entry.get("instances", []):
+            target = instance.get("target_module")
+            for binding in instance.get("bindings", []):
+                for actual in binding.get("actual_signals") or []:
+                    scoped.setdefault(
+                        (binding.get("parent_module"), str(actual)), []).append(
+                            (target, binding.get("formal_name"),
+                             str(binding.get("direction") or "").casefold()))
+    links = {}
+    for endpoints in scoped.values():
+        for target, formal, direction in endpoints:
+            peers = [peer for peer, _, _ in endpoints if peer and peer != target]
+            if not target or not formal or not peers:
+                continue
+            side = "drives" if direction == "output" else "reads"
+            links.setdefault(target, {}).setdefault(side, []).extend(
+                (formal, peer) for peer in peers)
+    return links
+
+
+def _comment_parts(prose, max_chars):
+    """Pack comment bodies into parts that each fit one window.
+
+    Args:
+        prose: Comment bodies in source order.
+        max_chars: Character budget available to one part.
+
+    Returns:
+        Joined comment strings, each within the budget where a single body allows it.
+    """
+    parts, current = [], ""
+    for body in prose:
+        candidate = f"{current}; {body}" if current else body
+        if current and len(candidate) > max_chars:
+            parts.append(current)
+            current = body
+        else:
+            current = candidate
+    if current:
+        parts.append(current)
+    return parts
+
+
+def _budgeted_facets(parts, max_chars=cfg.RTL_CHUNK_CHARS):
+    """Keep a module's facets within the budget, trimming the last one to fit.
+
+    One module stays one chunk: several chunks per module would compete with each
+    other for the same retrieval slots, so the surface is bounded instead of split.
+
+    Args:
+        parts: ``(label, text)`` facets in priority order.
+        max_chars: Character budget for the whole surface.
+
+    Returns:
+        Facet strings that together fit the budget, last one trimmed if needed.
+    """
+    kept, size = [], 0
+    for _, text in parts:
+        remaining = max_chars - size
+        if not kept:
+            kept.append(text)
+            size = len(text)
+            continue
+        if len(text) + 1 <= remaining:
+            kept.append(text)
+            size += len(text) + 1
+        elif remaining > _FACET_MIN_CHARS:
+            # A long trailing facet is trimmed rather than dropped whole.
+            kept.append(text[:remaining - 1].rstrip())
+            break
+        else:
+            break
+    return kept
+
+
+def chunks(rtl, child_modules):
+    """Build one stable, provenance-bearing vector record per module.
+
+    Args:
+        rtl: Parsed ``rtl.json`` payload.
+        child_modules: Parent module name to child module names, from ``children``.
+
+    Returns:
+        One module record per module, in module-name order.
+    """
     parents = {child: parent for parent, kids in child_modules.items() for child in kids}
+    links = port_connections(rtl)
     records = []
     for name, entry in sorted(rtl.get("modules", {}).items()):
         source_code = entry.get("source_code", "")
         prose = comments(source_code)
         if not source_code:
             try:
-                source_code = Path(entry["file"]).read_text(encoding="utf-8", errors="replace")
+                source_code = Path(entry.get("file") or "").read_text(
+                    encoding="utf-8", errors="replace")
                 prose = comments(source_code)
             except OSError:
                 prose = []
@@ -154,42 +325,76 @@ def chunks(rtl, children):
             f"lines {block.get('start_line')}-{block.get('end_line')}"
             for block in structures[:_MODULE_STRUCTURES]
         )
-        said = "; ".join(prose)[:cfg.RTL_CHUNK_COMMENT_CHARS]
-        text = "\n".join(part for part in (
-            f"module {name}",
-            (f"normalized module: {entry.get('normalized_name')}"
+        wiring = links.get(name, {})
+        drives = _unique((f"{formal} -> {peer}"
+                          for formal, peer in wiring.get("drives", [])), _MODULE_LINKS)
+        reads = _unique((f"{formal} <- {peer}"
+                         for formal, peer in wiring.get("reads", [])), _MODULE_LINKS)
+        terms = _terms([name, *port_names])
+        said = "; ".join(prose)
+        parts = [(label, text) for label, text in (
+            ("identity", f"module {name}"),
+            ("normalized", f"normalized module: {entry.get('normalized_name')}"
              if entry.get("normalized_name") and entry.get("normalized_name") != name else ""),
-            f"instantiated by: {parents[name]}" if name in parents else "",
-            f"ports: {', '.join(_unique(port_names))}" if port_names else "",
-            f"instantiates: {', '.join(kids)}" if kids else "",
-            f"structure: {structural_summary}" if structural_summary else "",
-            f"comments: {said}" if said else "",
-        ) if part)
-        signals = _signal_metadata(entry)
-        lookup_terms = [name, entry.get("original_name"), normalize_identifier(name)]
+            ("parent", f"instantiated by: {parents[name]}" if name in parents else ""),
+            ("ports", f"ports: {', '.join(_unique(port_names, _MODULE_PORTS))}"
+             if port_names else ""),
+            ("terms", f"terms: {', '.join(terms)}" if terms else ""),
+            ("drives", f"drives: {', '.join(drives)}" if drives else ""),
+            ("reads", f"reads: {', '.join(reads)}" if reads else ""),
+            ("instantiates", f"instantiates: {', '.join(kids)}" if kids else ""),
+            ("structure", f"structure: {structural_summary}" if structural_summary else ""),
+            ("comments", f"comments: {said}" if said else ""),
+        ) if text]
         records.append(_record(
             chunk_id=f"rtl:{name}",
             record_id=entry.get("module_id", f"rtl::mod::{name}"),
             context_header=f"RTL > {cfg.RTL_DIR.name}/{name}",
-            text=text,
+            text="\n".join(_budgeted_facets(parts)),
             source_type="module",
             module=name,
             entry=entry,
-            lookup_terms=lookup_terms,
+            lookup_terms=[name, entry.get("original_name"), normalize_identifier(name)],
             line=entry.get("start_line", entry.get("line", 1)),
             start_line=entry.get("start_line", entry.get("line", 1)),
             end_line=entry.get("end_line", entry.get("line", 1)),
             original_name=entry.get("original_name", name),
             normalized_name=entry.get("normalized_name", normalize_identifier(name)),
             normalized_tokens=entry.get("normalized_tokens", []),
-            signal_metadata=signals,
+            signal_metadata=_signal_metadata(entry),
             module_content_hash=entry.get("content_hash"),
         ))
     return records
 
 
+def _whole_lines(source, max_chars):
+    """Trim source to the budget without cutting a line in half.
+
+    Args:
+        source: Full source text of one construct.
+        max_chars: Character budget for the embedded surface.
+
+    Returns:
+        Leading whole lines of the source that fit the budget.
+    """
+    kept, size = [], 0
+    for line in source.split("\n"):
+        if kept and size + len(line) + 1 > max_chars:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    return "\n".join(kept)[:max_chars].rstrip()
+
+
 def _structural_records(rtl):
-    """Project only useful module structural blocks into vector records."""
+    """Project only useful module structural blocks into vector records.
+
+    Args:
+        rtl: Parsed ``rtl.json`` payload.
+
+    Returns:
+        One record per always block, function, task, and assignment group.
+    """
     records = []
     used_ids = set()
     fields = ("always_blocks", "functions_tasks", "assignment_groups")
@@ -203,7 +408,6 @@ def _structural_records(rtl):
             last = block.get("end_line", first)
             kind = str(block.get("construct_type") or block.get("kind") or "STRUCTURE")
             surface = str(block.get("source_code") or block.get("source_text") or "").strip()
-            surface = surface[:STRUCTURAL_SURFACE_CHARS]
             record_id = block.get("block_id") or f"rtl::blk::{module}::{kind}:{first}-{last}"
             legacy_kind = block.get("kind") or kind.lower()
             chunk_id = f"rtl:construct:{module}:{legacy_kind}:{first}-{last}"
@@ -213,19 +417,28 @@ def _structural_records(rtl):
             reads = block.get("signals_read", [])
             writes = block.get("signals_written", [])
             name = block.get("original_name") or kind.lower()
-            text = "\n".join(part for part in (
+            terms = _terms([module, *writes, *reads])
+            source_file = Path(block.get("file", entry["file"])).name
+            shown_reads = _unique(reads, _CONSTRUCT_SIGNALS)
+            shown_writes = _unique(writes, _CONSTRUCT_SIGNALS)
+            heading = [part for part in (
                 f"{kind.lower()} in module {module}",
-                f"reads: {', '.join(reads)}" if reads else "",
-                f"writes: {', '.join(writes)}" if writes else "",
-                f"source: {Path(block.get('file', entry['file'])).name}:{first}-{last}",
-                surface,
-            ) if part)
+                f"reads: {', '.join(shown_reads)}" if shown_reads else "",
+                f"writes: {', '.join(shown_writes)}" if shown_writes else "",
+                f"terms: {', '.join(terms)}" if terms else "",
+            ) if part]
+            citation = f"source: {source_file}:{first}-{last}"
+            # One construct stays one chunk; the surface is bounded, never split.
+            budget = max(cfg.RTL_CHUNK_CHARS - len("\n".join([*heading, citation])) - 1,
+                         cfg.RTL_CHUNK_MIN_SOURCE_CHARS)
+            surface = _whole_lines(surface, budget)
+            body = "\n".join([*heading, citation, *([surface] if surface else [])])
             records.append(_record(
                 chunk_id=chunk_id,
                 record_id=record_id,
                 context_header=(f"RTL > {cfg.RTL_DIR.name}/{module} > "
                                 f"{kind.lower()} lines {first}-{last}"),
-                text=text,
+                text=body,
                 source_type="construct",
                 module=module,
                 entry={"file": block.get("file", entry["file"]), "start_line": first},
@@ -248,13 +461,28 @@ def _structural_records(rtl):
 
 
 def retrieval_records(rtl, child_modules=None):
-    """Return module records first, followed only by useful structural records."""
+    """Return module records first, followed only by useful structural records.
+
+    Args:
+        rtl: Parsed ``rtl.json`` payload.
+        child_modules: Optional precomputed parent-to-children map.
+
+    Returns:
+        Module records followed by structural records, in stable order.
+    """
     child_modules = children(rtl.get("tree", [])) if child_modules is None else child_modules
     return [*chunks(rtl, child_modules), *_structural_records(rtl)]
 
 
 def load_records(path=cfg.RTL_CHUNKS_PATH):
-    """Load persisted retrieval records, or return an empty list when absent."""
+    """Load persisted retrieval records, or return an empty list when absent.
+
+    Args:
+        path: JSONL path written by this module.
+
+    Returns:
+        Retrieval records in file order, empty when the file cannot be read.
+    """
     try:
         with open(path, encoding="utf-8") as source:
             return [json.loads(line) for line in source if line.strip()]
@@ -263,7 +491,16 @@ def load_records(path=cfg.RTL_CHUNKS_PATH):
 
 
 def index_manifest_status(records, index_dir, manifest_path):
-    """Compare current module/structure embedding surfaces with the saved manifest."""
+    """Compare current module/structure embedding surfaces with the saved manifest.
+
+    Args:
+        records: Current retrieval records.
+        index_dir: Directory expected to hold the RTL FAISS index.
+        manifest_path: Path of the manifest written beside that index.
+
+    Returns:
+        Status mapping with ``fresh``, a human ``reason``, and the id deltas.
+    """
     records = list(records)
     seen, duplicate_ids = set(), set()
     for record in records:
@@ -318,14 +555,29 @@ def index_manifest_status(records, index_dir, manifest_path):
 
 
 def _query_terms(query):
-    """Extract sufficiently distinctive identifier-like query terms."""
+    """Extract sufficiently distinctive identifier-like query terms.
+
+    Args:
+        query: Raw retrieval question.
+
+    Returns:
+        Identifier-shaped terms, excluding short words and RTL stop words.
+    """
     return [term for term in _IDENTIFIER.findall(query)
             if (term.lower().startswith("0x") or len(term) >= 3)
             and term.casefold() not in _QUERY_STOP_WORDS]
 
 
 def _term_strength(query_terms, candidates):
-    """Score exact, case-folded, then normalized candidate-name matches."""
+    """Score exact, case-folded, then normalized candidate-name matches.
+
+    Args:
+        query_terms: Identifier-like terms taken from the query.
+        candidates: Candidate names this record can be addressed by.
+
+    Returns:
+        ``0``, ``1``, or ``2`` for decreasing match strength, else None.
+    """
     exact = set(query_terms)
     folded = {term.casefold() for term in query_terms}
     normalized = {normalize_identifier(term) for term in query_terms}
@@ -340,7 +592,15 @@ def _term_strength(query_terms, candidates):
 
 
 def _phrase_strength(query_tokens, normalized_name):
-    """Score a multi-token module name spelled out verbatim inside the query."""
+    """Score a multi-token module name spelled out verbatim inside the query.
+
+    Args:
+        query_tokens: Normalized tokens of the whole query.
+        normalized_name: Space-joined normalized module name.
+
+    Returns:
+        ``3`` when the name appears as a contiguous token run, else None.
+    """
     tokens = str(normalized_name or "").split()
     if len(tokens) < 2:
         return None
@@ -350,7 +610,16 @@ def _phrase_strength(query_tokens, normalized_name):
 
 
 def exact_lookup(query, records, k=None):
-    """Resolve module/function names and module-owned signals before dense search."""
+    """Resolve module/function names and module-owned signals before dense search.
+
+    Args:
+        query: Raw retrieval question.
+        records: Module-first RTL retrieval records.
+        k: Optional maximum number of documents to return.
+
+    Returns:
+        LangChain documents ordered by match strength, signal hits annotated.
+    """
     query_terms = _query_terms(query)
     query_tokens = identifier_tokens(query)
     # Exact hits are pinned first, so plain words colliding with a signal name cannot earn one.
@@ -361,6 +630,8 @@ def exact_lookup(query, records, k=None):
         strength = _term_strength(query_terms, record.get("lookup_terms", []))
         if strength is None:
             strength = _phrase_strength(query_tokens, record.get("normalized_name"))
+        # A record the query names by name outranks one that only shares a signal name.
+        named = strength is not None
         matched_signal = None
         if record.get("source_type") == "module":
             signal_matches = []
@@ -380,11 +651,11 @@ def exact_lookup(query, records, k=None):
         if strength is None:
             continue
         type_order = 0 if matched_signal else 1 if record.get("source_type") == "module" else 2
-        found.append((strength, type_order, record.get("record_id", ""), position,
-                      record, matched_signal))
-    found.sort(key=lambda item: item[:4])
+        found.append((strength, not named, type_order, record.get("record_id", ""),
+                      position, record, matched_signal))
+    found.sort(key=lambda item: item[:5])
     documents = []
-    for _, _, _, _, record, matched_signal in found:
+    for _, _, _, _, _, record, matched_signal in found:
         document = record_to_document(record)
         if matched_signal:
             document.metadata["exact_match_type"] = "signal"
@@ -417,7 +688,11 @@ class RTLRetriever:
         self.hybrid = hybrid
 
     def _hybrid(self):
-        """Load BM25, FAISS, and cross-encoder adapters only when exact lookup is short."""
+        """Load BM25, FAISS, and cross-encoder adapters only when exact lookup is short.
+
+        Returns:
+            The shared hybrid retriever, constructed on first use.
+        """
         if self.hybrid is None:
             self.hybrid = HybridRetriever.load(
                 records=self.records, index_dir=cfg.RTL_INDEX_DIR)
@@ -464,10 +739,17 @@ class RTLRetriever:
             ))
         if len(exact) >= wanted:
             if structures:
-                selected = signal_exact[:max(wanted - 1, 1)]
-                output = [*selected, *structures][:wanted]
+                structure_count = 0 if wanted == 1 else min(len(structures), wanted // 2)
+                selected = signal_exact[:wanted - structure_count]
+                selected_structures = structures[:structure_count]
+                output = [item for pair in zip(selected, selected_structures)
+                          for item in pair]
+                output.extend(selected[len(selected_structures):])
+                used = {document.metadata.get("chunk_id") for document in output}
+                output.extend(document for document in exact
+                              if document.metadata.get("chunk_id") not in used)
                 if output:
-                    return output
+                    return output[:wanted]
             return exact[:wanted]
         if structures:
             exact_ids = {document.metadata.get("chunk_id") for document in exact}
@@ -475,10 +757,12 @@ class RTLRetriever:
                                 if document.metadata.get("chunk_id") not in exact_ids)]
             if len(output) >= wanted:
                 return output[:wanted]
+        hybrid = None
         if self.store is not None:
             ranked = self.store.search(query, k=wanted + len(exact))
         else:
-            ranked = self._hybrid().search(query, top_k=wanted + len(exact))
+            hybrid = self._hybrid()
+            ranked = hybrid.search(query, top_k=wanted + len(exact))
         output = list(exact)
         seen = {document.metadata.get("chunk_id") for document in exact}
         for hit in ranked:
@@ -490,17 +774,47 @@ class RTLRetriever:
             seen.add(chunk_id)
             if len(output) >= wanted:
                 break
-        return output
+        modules = {document.metadata.get("module") for document in output
+                   if document.metadata.get("source_type") == "module"}
+        owned = [record_to_document(record) for record in self.records
+                 if record.get("source_type") == "construct"
+                 and record.get("module") in modules
+                 and record.get("chunk_id") not in seen]
+        if hybrid is not None and owned and getattr(hybrid, "reranker", None):
+            reranked = [document for document, _ in hybrid.reranker.rank(
+                query, [*output, *owned])]
+            exact_ids = {document.metadata.get("chunk_id") for document in exact}
+            pinned = [document for document in reranked
+                      if document.metadata.get("chunk_id") in exact_ids][
+                          :max(1, wanted // 2)]
+            pinned_ids = {document.metadata.get("chunk_id") for document in pinned}
+            output = [*pinned, *(document for document in reranked
+                                 if document.metadata.get("chunk_id") not in pinned_ids)]
+        return output[:wanted]
 
 
 def search(query, k=None, records=None, store=None):
-    """Return exact RTL metadata followed by a hybrid-reranked bounded fill."""
+    """Return exact RTL metadata followed by a hybrid-reranked bounded fill.
+
+    Args:
+        query: RTL retrieval question.
+        k: Maximum result count.
+        records: Optional records; defaults to the persisted RTL records.
+        store: Optional dense-store test adapter.
+
+    Returns:
+        LangChain documents in final rank order.
+    """
     available = load_records() if records is None else records
     return RTLRetriever(available, store=store).search(query, k=k)
 
 
 def main():
-    """Write retrieval records, rebuild the index if stale, and smoke-test it."""
+    """Write retrieval records, rebuild the index if stale, and smoke-test it.
+
+    Returns:
+        None.
+    """
     if not cfg.RTL_PATH.exists():
         raise SystemExit(f"no {cfg.RTL_PATH.name}; run src/rtl_ingest.py first")
     with open(cfg.RTL_PATH, encoding="utf-8") as source:

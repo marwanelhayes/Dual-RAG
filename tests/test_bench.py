@@ -153,3 +153,146 @@ def test_repository_gold_uses_current_non_vacuous_three_route_schema():
     assert any(record["expected_alignments"] for record in records)
     assert any(record["relevant_spec_ids"] for record in records)
     assert any(record["relevant_rtl_ids"] for record in records)
+
+
+def _retrieval_graph(answer_calls):
+    """Build a graph whose lanes return fixed documents and whose model records calls."""
+    from langchain_core.documents import Document
+
+    def spec_search(query, k):
+        del query, k
+        return [Document(page_content="AWVALID is asserted high.",
+                         metadata={"chunk_id": "axi#1"})]
+
+    def rtl_search(query, k):
+        del query, k
+        return [Document(page_content="always_comb StallD = LWStall;",
+                         metadata={"chunk_id": "rtl:hazard_unit"})]
+
+    def answer_model(context):
+        answer_calls.append(context)
+        return "should not be scored"
+
+    class _Reranker:
+        """Score both lanes deterministically instead of loading a cross-encoder."""
+
+        def score_pairs(self, pairs):
+            return [0.0 for _ in pairs]
+
+    return agent.build_graph(
+        spec_retriever=spec_search, rtl_retriever=rtl_search, answer_model=answer_model,
+        reranker=_Reranker(), lane_floors={"spec": -6.0, "rtl": -6.0},
+        spec_records=[], hierarchy={"sections": []}, spec_signals=[],
+        rtl={"modules": {}}, bridge={"signal_alignments": [], "unresolved_signals": [],
+                                     "module_alignments": []})
+
+
+def test_lane_result_uses_one_cutoff_and_scores_alternatives_and_families():
+    ranked = ["noise", "doc#0010#000", "doc#0010#001"]
+    relevant = ["doc#0010#000", "doc#0010#001", "other"]
+    result = bench.lane_result(
+        ranked, relevant, k=2,
+        groups=[["doc#0010#000", "doc#0010#001"], ["other"]], lane="spec")
+
+    assert result["hits"] == ["doc#0010#000"]
+    assert result["misses"] == ["doc#0010#001", "other"]
+    assert result["exact_id_recall_at_k"] == 1 / 3
+    assert result["family_recall_at_k"] == 2 / 3
+    assert result["fact_coverage_at_k"] == 0.5
+    assert result["hit_at_k"] and not result["full_hit_at_k"]
+    assert result["first_hit_rank"] == 2
+    assert bench.lane_result(["a"], [], k=5) is None
+
+
+def test_retrieved_ids_keep_lane_order_and_append_targeted_blocks():
+    state = {"spec_evidence": [{"id": "s1"}, {"id": "s1"}],
+             "rtl_evidence": [{"id": "r1"}], "rtl_blocks": [{"id": "r2"}, {"id": "r1"}]}
+
+    assert bench.retrieved_ids(state) == (["s1"], ["r1", "r2"])
+
+
+def test_retrieval_scoring_reads_lanes_only_and_discards_the_answer():
+    answer_calls = []
+    questions = [{"id": "RTL_ONE", "question": "Where is StallD driven in the RTL?",
+                  "naming": "exact", "expected_query_type": "RTL",
+                  "relevant_spec_ids": [],
+                  "relevant_rtl_ids": ["rtl:hazard_unit", "rtl:missing"]}]
+
+    rows = bench.run_retrieval(questions, _retrieval_graph(answer_calls))
+
+    assert "answer" not in rows[0] and "outcome" not in rows[0]
+    assert rows[0]["spec"] is None and rows[0]["rtl"]["searched"]
+    assert rows[0]["rtl"]["hits"] == ["rtl:hazard_unit"]
+    assert rows[0]["rtl"]["misses"] == ["rtl:missing"]
+
+
+def test_default_retrieval_graph_never_generates_an_answer(monkeypatch):
+    import agent
+
+    captured = {}
+    stub = _retrieval_graph([])
+
+    def build_graph(**kwargs):
+        captured.update(kwargs)
+        return stub
+
+    monkeypatch.setattr(agent, "build_graph", build_graph)
+    bench.run_retrieval([{"id": "X", "question": "Where is StallD driven in the RTL?",
+                          "expected_query_type": "RTL", "relevant_spec_ids": [],
+                          "relevant_rtl_ids": ["rtl:hazard_unit"]}])
+
+    assert captured["answer_model"] is bench._skip_answer
+    assert bench._skip_answer("any bounded context") == ""
+
+
+def test_retrieval_metrics_slice_by_route_and_naming():
+    rows = [
+        {"id": "A", "naming": "exact", "expected_query_type": "SPEC", "query_type": "SPEC",
+         "route_correct": True, "spec": bench.lane_result(["s1"], ["s1"], 5), "rtl": None},
+        {"id": "B", "naming": "plain", "expected_query_type": "RTL", "query_type": "SPEC",
+         "route_correct": False, "spec": None, "rtl": bench.lane_result([], ["r1"], 5)},
+    ]
+
+    metrics = bench.retrieval_metrics(rows)
+
+    assert metrics["overall"]["routing_accuracy"] == 0.5
+    assert metrics["by_route"]["SPEC"]["spec"]["full_hit_rate"] == 1.0
+    assert metrics["by_naming"]["plain"]["rtl"]["any_hit_rate"] == 0.0
+    assert metrics["by_naming"]["plain"]["rtl"]["availability"] == 0.0
+    assert bench.retrieval_misses(rows) == [{"id": "B", "question": None, "rtl": ["r1"]}]
+
+
+def test_recovery_metrics_count_dual_evidence_at_k_and_query_cost():
+    rows = [{"id": "one", "naming": None, "expected_query_type": "COMPARISON",
+             "route_correct": True, "seconds": 2, "query_llm_calls": 1,
+             "spec": bench.lane_result(["s"], ["s"], 1),
+             "rtl": bench.lane_result(["noise", "r"], ["r"], 1)}]
+    overall = bench.retrieval_metrics(rows)["overall"]
+    assert overall["dual_evidence_recall_at_k"] == 0
+    assert overall["query_llm_calls"] == 1 and overall["mean_seconds"] == 2
+    assert bench.retrieval_row({"id": "one", "question": "q"}, {
+        "trace": [{"event": "query_recovery", "llm_calls": 1},
+                  {"event": "query_recovery", "llm_calls": 1}]}, 5)["query_llm_calls"] == 2
+
+
+def test_paired_recovery_benchmark_disables_answers_and_alternates_order(monkeypatch):
+    import agent
+
+    calls, options = [], []
+
+    def factory(**kwargs):
+        options.append(kwargs)
+        return kwargs["query_recovery"]
+
+    def run(app, question):
+        calls.append((app, question))
+        return {"query_type": "SPEC", "trace": []}
+
+    monkeypatch.setattr(agent, "run", run)
+    questions = [{"id": name, "question": name, "expected_query_type": "SPEC"}
+                 for name in ("one", "two")]
+    report = bench.compare_recovery(questions, graph_factory=factory)
+    assert calls == [(False, "one"), (True, "one"),  # warmup
+                     (False, "one"), (True, "one"), (True, "two"), (False, "two")]
+    assert all(option["answer_model"] is bench._skip_answer for option in options)
+    assert report["baseline"]["metrics"]["overall"]["questions"] == 2

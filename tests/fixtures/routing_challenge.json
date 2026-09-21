@@ -1,0 +1,302 @@
+[
+  {
+    "id": "RC_SPEC_01",
+    "question": "Where does the AXI specification define the reset behavior of ARESETn?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_02",
+    "question": "According to the protocol manual, may a subordinate wait for BREADY before asserting BVALID?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_03",
+    "question": "Can a compliant RISC-V hart treat WFI as a no-op?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_04",
+    "question": "Does the ISA require x0 to read as zero after every write attempt?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_05",
+    "question": "Which section of the standard assigns exception codes to mcause?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_06",
+    "question": "What response encoding must an AXI subordinate return for a decode error?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_07",
+    "question": "Is a cache permitted by the architecture to allocate on a read miss?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_08",
+    "question": "How many transfer beats can an INCR burst contain under AXI4?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_09",
+    "question": "What does the privileged manual say happens to MIE on trap entry?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_10",
+    "question": "Where in the ISA is dynamic rounding mode defined?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_11",
+    "question": "May a decoder legally ignore reserved instruction encodings according to the standard?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_12",
+    "question": "Does the specification allow READY to be asserted before VALID?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_13",
+    "question": "What ordering guarantee does FENCE.I provide?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_14",
+    "question": "Which values of AxBURST are reserved by the protocol?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_15",
+    "question": "Under the architecture, when is a timer interrupt considered pending?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_16",
+    "question": "Can software rely on misaligned accesses being atomic according to the manual?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_17",
+    "question": "What does the standard require a hart to save in mepc?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_18",
+    "question": "Is an implementation required by the ISA to expose the A extension?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_19",
+    "question": "What is the architectural purpose of mtvec MODE?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_SPEC_20",
+    "question": "According to AXI, must WLAST be high on the final write beat?",
+    "expected_query_type": "SPEC"
+  },
+  {
+    "id": "RC_RTL_01",
+    "question": "Trace StallF back to the statement that assigns it.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_02",
+    "question": "Show the source code that computes PCSrcE.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_03",
+    "question": "Inside the DUT, how is FPUValidD produced?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_04",
+    "question": "Point to the combinational process that selects ForwardAE.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_05",
+    "question": "Who updates CsrFile during trap entry in this repository?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_06",
+    "question": "Inspect the code path that chooses the next program counter.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_07",
+    "question": "Which task writes the machine CSR array?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_08",
+    "question": "What expression computes SignImmD?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_09",
+    "question": "How is MAWValid calculated by the cache logic?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_10",
+    "question": "Find the declaration of risc_mux4's select port.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_11",
+    "question": "Within SystemVerilog, what drives FlushE?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_12",
+    "question": "Which always_comb block produces ALUControlD?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_13",
+    "question": "List the child instances under execute_stage.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_14",
+    "question": "What source line assigns MARBurst?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_15",
+    "question": "Follow rm_i from the module input to its readers.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_16",
+    "question": "Show me the register-file write-enable logic in the codebase.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_17",
+    "question": "Which sequential process captures the memory response?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_18",
+    "question": "How do operands reach the Wallace multiplier in this implementation?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_19",
+    "question": "Locate the case statement that decodes floating-point opcodes.",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_RTL_20",
+    "question": "What fan-in logic determines StallD?",
+    "expected_query_type": "RTL"
+  },
+  {
+    "id": "RC_COMPARISON_01",
+    "question": "Is the DUT faithful to the specification's WFI rules?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_02",
+    "question": "Check whether cache.sv obeys the AXI valid-ready requirement.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_03",
+    "question": "Do the hardware sources cover every standard rounding encoding?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_04",
+    "question": "Are all mandatory machine CSRs present in the shipped design?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_05",
+    "question": "Could this DUT legally omit support for FENCE.I?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_06",
+    "question": "Validate the write-response behavior against the protocol manual.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_07",
+    "question": "Does the generated hardware honor the dynamic rounding field defined by the ISA?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_08",
+    "question": "Which required floating-point operations are absent from the decoder?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_09",
+    "question": "Cross-check the cache burst choices against AXI4.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_10",
+    "question": "Does the netlist expose AWID and ARID as required by the bus standard?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_11",
+    "question": "Compare the trap-entry behavior in csr_file with the privileged architecture.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_12",
+    "question": "Tell me whether the implementation and manual agree on MRET behavior.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_13",
+    "question": "Is hazard_unit missing any stall condition required by the pipeline contract?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_14",
+    "question": "Audit whether the RTL matches the standard's exclusive-access rules.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_15",
+    "question": "Can the silicon handle every atomic operation defined by the ISA?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_16",
+    "question": "Does this hardware satisfy the AXI 4 KiB boundary rule?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_17",
+    "question": "Are the specified mtvec modes both realized in csr_file?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_18",
+    "question": "What diverges between the instruction manual and opcode_decoder?",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_19",
+    "question": "Verify that the source implements the required byte strobes.",
+    "expected_query_type": "COMPARISON"
+  },
+  {
+    "id": "RC_COMPARISON_20",
+    "question": "Does the design use all AXI burst types allowed by the standard?",
+    "expected_query_type": "COMPARISON"
+  }
+]

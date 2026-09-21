@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "split": "heldout_candidate",
+  "reviewed_by": null,
+  "thresholds_approved_by": null,
+  "notes": "Agent-authored starter cases, not independent certification. Human review must check labels, topic overlap with development, and representative coverage before freezing as heldout. Never tune retrieval on this set.",
+  "cases": [
+    {
+      "id": "H_WFI_NOP", "category": "spec",
+      "question": "Must WFI physically stall a hart, or is executing it as a NOP permitted?",
+      "intent": "SPEC", "answerable": true,
+      "facts": [{"id": "nop_allowed", "description": "The specification permits WFI to be implemented as a NOP.", "source_ids": ["riscv_privileged#0053#001"]}]
+    },
+    {
+      "id": "H_MAG16", "category": "spec",
+      "question": "What size does MAG16 specify for a misaligned atomicity granule?",
+      "intent": "SPEC", "answerable": true,
+      "facts": [{"id": "at_least_16", "description": "MAG16 specifies a misaligned atomicity granule of at least 16 bytes.", "source_ids": ["riscv_privileged#0063#000", "riscv_privileged#0063#001"]}]
+    },
+    {
+      "id": "H_WFI_FALSE_PREMISE", "category": "contradiction",
+      "question": "The RISC-V specification forbids WFI from behaving as a NOP. Which source passage settles whether that statement is true?",
+      "intent": "SPEC", "answerable": true,
+      "facts": [{"id": "premise_false", "description": "A legal implementation may implement WFI as a NOP; the premise contradicts the source.", "source_ids": ["riscv_privileged#0053#001"]}]
+    },
+    {
+      "id": "H_MUX_CONTROL_ALIAS", "category": "renamed_identifiers",
+      "question": "In risc_mux2 RTL, is the select input called sel or sel_i, and which input reaches Y when it is high?",
+      "intent": "RTL", "answerable": true,
+      "facts": [
+        {"id": "select_name", "description": "The select input of risc_mux2 is sel; no corpus-wide absence of sel_i is asserted.", "source_ids": ["rtl:risc_mux2", "rtl:construct:risc_mux2:always:24-32"]},
+        {"id": "high_selects_second", "description": "The if(sel) branch assigns Y = IN_2.", "source_ids": ["rtl:construct:risc_mux2:always:24-32"]}
+      ]
+    },
+    {
+      "id": "H_TIMING_PROOF", "category": "unanswerable",
+      "question": "Does the RTL meet every AXI setup and hold constraint after place-and-route at 1.2 GHz?",
+      "intent": "COMPARISON", "answerable": false, "facts": [],
+      "reason": "No implementation timing report or constrained timing analysis is supplied. Static source retrieval cannot establish this verdict."
+    },
+    {
+      "id": "H_UNSUPPORTED_PROOF", "category": "unsupported_feature",
+      "question": "Prove that this RTL implements every vector-extension instruction and every exception required by the specification.",
+      "intent": "COMPARISON", "answerable": false, "facts": [],
+      "reason": "No exhaustive behavioral verification evidence is supplied. Neither retrieval nor a missing mnemonic proves conformance or absence."
+    },
+    {
+      "id": "H_MISLEADING_BRIDGE", "category": "misleading_evidence",
+      "question": "A bridge name match has confidence 0.99. Does that prove the RTL meets every specified behavior, so we can skip simulation?",
+      "intent": "COMPARISON", "answerable": false, "facts": [],
+      "reason": "Identity alignment is not behavioral verification. The premise cannot authorize a compliance verdict."
+    }
+  ]
+}

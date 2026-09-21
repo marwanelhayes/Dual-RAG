@@ -1,0 +1,19 @@
+[
+  {
+    "id": "H_FENCEI_SCOPE", "category": "spec",
+    "question": "What does FENCE.I synchronize between instruction-memory writes and instruction fetches on one hart?",
+    "intent": "SPEC", "answerable": true,
+    "facts": [{"id": "same_hart_visibility", "description": "FENCE.I synchronizes instruction-memory writes and instruction fetches on the same hart.", "source_ids": ["riscv_unprivileged#0037#000"]}],
+    "development_reason": "The live evaluation exposed promotion of SPEC intent to COMPARISON; this case informed the intent policy fix."
+  },
+  {
+    "id": "H_PC_ADDER_ALIAS", "category": "renamed_identifiers",
+    "question": "In the pc_adder RTL, is the next sequential address named next_pc or PCPlus4, and how is it calculated?",
+    "intent": "RTL", "answerable": true,
+    "facts": [
+      {"id": "output_name", "description": "The output is PCPlus4; this does not prove next_pc absent from the whole design.", "source_ids": ["rtl:pc_adder", "rtl:construct:pc_adder:always:23-25"]},
+      {"id": "pcplus4", "description": "The assignment is PCPlus4 = PC + 4.", "source_ids": ["rtl:construct:pc_adder:always:23-25"]}
+    ],
+    "development_reason": "The live evaluation exposed promotion of RTL intent to COMPARISON; this case informed the intent policy fix."
+  }
+]

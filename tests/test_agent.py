@@ -3,10 +3,27 @@
 from langchain_core.documents import Document
 
 import agent
+import configure as cfg
 
 
 def _doc(chunk_id, text, **metadata):
     return Document(page_content=text, metadata={"chunk_id": chunk_id, **metadata})
+
+
+_FLOORS = {"spec": -6.0, "rtl": -6.0}
+
+
+class _Reranker:
+    """Score lane candidates deterministically instead of loading a cross-encoder."""
+
+    def __init__(self, scores=None, default=0.0):
+        self.scores = scores or {}
+        self.default = default
+
+    def score_pairs(self, pairs):
+        return [next((score for marker, score in self.scores.items() if marker in text),
+                     self.default)
+                for _, text in pairs]
 
 
 def _runtime_data():
@@ -27,7 +44,7 @@ def _runtime_data():
         "table_id": "tbl:1",
     }]
     rtl = {"modules": {"fpu": {
-        "original_name": "fpu", "always_blocks": [{
+        "original_name": "fpu", "file": "rtl/fpu.sv", "always_blocks": [{
             "construct_id": "rtl:block:fpu:20", "file": "rtl/fpu.sv",
             "start_line": 20, "end_line": 32, "signals_read": ["rm_i"],
             "signals_written": ["result_o"], "source_text": "always_comb result_o = rm_i;",
@@ -56,12 +73,150 @@ def _runtime_data():
 def test_classifier_exposes_exactly_three_routes():
     assert agent.QUERY_TYPES == {agent.SPEC, agent.RTL, agent.COMPARISON}
     assert agent.classify_query("What rounding modes are required?") == agent.SPEC
+    assert agent.classify_query("Where does the specification define AWVALID?") == \
+        agent.SPEC
     assert agent.classify_query("Where is rm_i driven in the RTL?") == agent.RTL
     assert agent.classify_query("Does the RTL implement every rounding mode?") == \
         agent.COMPARISON
 
 
-def test_spec_route_never_runs_rtl_retrieval_or_bridge_lookup():
+def test_dedup_preserves_overlapping_requirements_and_hardware_distinctions():
+    shared = "The register holds the trap vector base address and mode. "
+    texts = [shared + "Direct mode uses BASE.",
+             shared + "Vectored mode uses BASE plus four times cause.",
+             "Ready = count < 32;", "Ready = count > 32;",
+             "Ready = count < 64;", "ready = count < 32;"]
+    records = [agent._hit_record(_doc(str(i), text), "spec")
+               for i, text in enumerate(texts)]
+    assert agent.drop_near_duplicates(records) == records
+    assert agent.drop_near_duplicates([*records, dict(records[0], id="copy")]) == records
+
+
+def test_dedup_keeps_a_larger_chunk_that_adds_requirements():
+    text = "A manager must not wait for ready before asserting valid."
+    short = agent._hit_record(_doc("short", text), "spec")
+    long = agent._hit_record(_doc("long", text + " Valid stays high until acceptance."), "spec")
+    assert agent.drop_near_duplicates([short, long]) == [short, long]
+    assert agent.drop_near_duplicates([long, short]) == [long]
+
+
+def _recovery_graph(searches, model, reranker=None, **kwargs):
+    return agent.build_graph(
+        spec_retriever=searches[0], rtl_retriever=searches[1],
+        answer_model=lambda prompt: "answer", spec_records=[], hierarchy={"sections": []},
+        spec_signals=[], rtl={"modules": {}}, bridge={},
+        reranker=reranker or _Reranker({"relevant": 1}, default=-9),
+        lane_floors=_FLOORS, query_recovery=True, query_model=model, **kwargs)
+
+
+def test_recovery_leaves_strong_lanes_at_one_query_without_generation():
+    calls = []
+
+    def search(query, k):
+        calls.append(query)
+        return [_doc("hit", "relevant")]
+
+    def forbidden(prompt):
+        raise AssertionError("strong lanes must not generate queries")
+
+    state = agent.run(_recovery_graph([search, search], forbidden), "fpu_result_valid 32")
+    assert len(calls) == 2
+    assert not state["recovery_done"]
+    assert not any(event["event"] == "query_recovery" for event in state["trace"])
+
+
+def test_recovery_rescores_domain_query_before_spending_an_llm_call():
+    calls, prompts = [], []
+
+    def spec(query, k):
+        calls.append(query)
+        return [_doc("new" if len(calls) > 1 else "old",
+                     "relevant" if len(calls) > 1 else "noise")]
+
+    state = agent.run(_recovery_graph(
+        [spec, lambda query, k: [_doc("rtl", "relevant")]], prompts.append), "requirements")
+    assert len(calls) == 2 and prompts == []
+    assert state["lane_credible"] == {"spec": True, "rtl": True}
+    assert state["spec_evidence"][0]["id"] == "new"
+    assert sum(event["event"] == "lane_allocation" for event in state["trace"]) == 2
+
+
+def test_recovery_bounds_queries_and_keeps_identifiers_and_values_verbatim():
+    question = "Does fpu implement FADD.S using fpu_result_valid and x1 at 32 and 0x10?"
+    searches, prompts = {"spec": [], "rtl": []}, []
+
+    def search(lane):
+        def retrieve(query, k):
+            searches[lane].append(query)
+            return [_doc(lane + str(len(searches[lane])), "noise")]
+        return retrieve
+
+    def model(prompt):
+        prompts.append(prompt)
+        return "floating point completion evidence"
+
+    state = agent.run(_recovery_graph([search("spec"), search("rtl")], model), question)
+    assert len(prompts) == 2
+    assert "SPEC search" in prompts[0] and "RTL search" in prompts[1]
+    assert all("specified behaviors" in prompt for prompt in prompts)
+    assert all(len(queries) == 3 for queries in searches.values())
+    assert all(query.startswith(question) for queries in searches.values() for query in queries)
+    assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
+    assert sum(event.get("llm_calls", 0) for event in state["trace"]) == 2
+
+
+def test_recovery_model_failure_keeps_evidence_and_finishes():
+    def broken(prompt):
+        raise TimeoutError("offline")
+
+    state = agent.run(_recovery_graph(
+        [lambda query, k: [_doc("spec", "noise")],
+         lambda query, k: [_doc("rtl", "relevant")]], broken), "requirements")
+    assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
+    assert state["spec_evidence"][0]["id"] == "spec"
+    event = next(event for event in state["trace"] if event["event"] == "query_recovery")
+    assert event["error"] == "TimeoutError" and event["llm_calls"] == 1
+
+
+def test_existing_reverse_bridge_query_consumes_domain_slot_before_llm_recovery():
+    records, hierarchy, signals, rtl, bridge = _runtime_data()
+    queries, prompts = [], []
+
+    def spec(query, k):
+        queries.append(query)
+        return [_doc("spec#new" if len(queries) == 3 else "spec#1",
+                     "relevant" if len(queries) == 3 else "noise", section_id="sec:fpu")]
+
+    def model(prompt):
+        prompts.append(prompt)
+        return "rounding requirements"
+
+    app = agent.build_graph(
+        spec, lambda query, k: [_doc("rtl:fpu", "relevant", module="fpu")],
+        lambda prompt: "answer", records, hierarchy, signals, rtl, bridge,
+        reranker=_Reranker({"relevant": 1}, default=-9), lane_floors=_FLOORS,
+        query_model=model, query_recovery=True)
+    state = agent.run(app, "Does fpu implement rounding_mode?")
+    assert len(queries) == 3 and len(prompts) == 1
+    assert "rounding_mode" in queries[1]
+    assert state["spec_evidence"][0]["id"] == "spec#new"
+    assert state["lane_credible"] == {"spec": True, "rtl": True}
+
+
+def test_recovery_rrf_deduplicates_ranks_then_reranks_with_exact_precedence():
+    a = agent._hit_record(_doc("a", "noise", exact_match_type="signal"), "rtl")
+    b = agent._hit_record(_doc("b", "noise"), "rtl")
+    c = agent._hit_record(_doc("c", "noise"), "rtl")
+    # c wins RRF over b even though b occurs earlier and is repeated in one ranking.
+    rankings = [[a, b, b, b, c], [c, b]]
+    assert [item["id"] for item in agent.fuse_recovery(
+        "question", rankings, _Reranker(), 3)] == ["a", "c", "b"]
+    assert [item["id"] for item in agent.fuse_recovery(
+        "question", [[a, b], [dict(c, text="best")]],
+        _Reranker({"best": 10}), 2)] == ["a", "c"]
+
+
+def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     calls = []
     records, hierarchy, signals, rtl, bridge = _runtime_data()
 
@@ -72,91 +227,154 @@ def test_spec_route_never_runs_rtl_retrieval_or_bridge_lookup():
 
     def rtl_search(query, k):
         calls.append("rtl")
-        return []
+        return [_doc("rtl:fpu", "module fpu", module="fpu", file="rtl/fpu.sv", line=1)]
 
     app = agent.build_graph(
-        spec_search, rtl_search, lambda prompt: "spec answer", records, hierarchy,
-        signals, rtl, bridge)
+        spec_search, rtl_search, lambda prompt: "answer", records, hierarchy,
+        signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
     state = agent.run(app, "What rounding modes are required?")
 
-    assert calls == ["spec"]
-    assert state["query_type"] == agent.SPEC and state["answer"] == "spec answer"
+    assert calls == ["spec", "rtl"]
     assert [event["event"] for event in state["trace"]] == [
-        "route", "spec_retrieval", "evidence_merge", "answer",
+        "route_prior", "spec_retrieval", "rtl_retrieval", "bridge_lookup",
+        "evidence_expansion", "lane_allocation", "evidence_merge", "answer",
     ]
 
 
-def test_rtl_route_never_runs_spec_retrieval():
-    calls = []
+def test_requested_route_is_separate_from_observed_evidence():
     records, hierarchy, signals, rtl, bridge = _runtime_data()
-
-    def spec_search(query, k):
-        calls.append("spec")
-        return []
-
-    def rtl_search(query, k):
-        calls.append("rtl")
-        return [_doc("rtl:fpu", "module fpu", module="fpu", file="rtl/fpu.sv", line=1)]
-
+    reranker = _Reranker({"module fpu": 2.0}, default=-9.0)
     app = agent.build_graph(
-        spec_search, rtl_search, lambda prompt: "rtl answer", records, hierarchy,
-        signals, rtl, bridge)
-    state = agent.run(app, "Where is rm_i driven in the RTL?")
+        lambda query, k: [_doc("spec#1", "unrelated prose", section_id="sec:fpu")],
+        lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
+                               file="rtl/fpu.sv", line=1)],
+        lambda prompt: "answer", records, hierarchy, signals, rtl, bridge,
+        reranker=reranker, lane_floors=_FLOORS)
 
-    assert calls == ["rtl"]
-    assert state["query_type"] == agent.RTL and state["answer"] == "rtl answer"
-    assert [event["event"] for event in state["trace"]] == [
-        "route", "rtl_retrieval", "evidence_merge", "answer",
-    ]
+    state = agent.run(app, "What causes a stall?")
+
+    assert state["route_prior"] == agent.SPEC
+    assert state["query_type"] == agent.SPEC
+    assert state["observed_query_type"] == agent.RTL
+    assert state["answer_status"] == "insufficient_evidence"
+    assert state["lane_credible"] == {"spec": False, "rtl": True}
 
 
-def test_comparison_structurally_runs_spec_then_bridge_then_targeted_rtl_then_model():
-    calls = []
+def test_comparison_label_needs_both_lanes_above_the_floor():
     records, hierarchy, signals, rtl, bridge = _runtime_data()
-
-    def spec_search(query, k):
-        calls.append("spec")
-        return [_doc("spec#1", "Rounding modes are required.", section_id="sec:fpu",
-                     subsection_id="sec:round", start_page=12)]
-
-    def rtl_search(query, k):
-        calls.append(("rtl", query))
-        return [_doc("rtl:fpu", "module fpu", module="fpu", file="rtl/fpu.sv", line=1)]
-
-    def answer_model(prompt):
-        calls.append(("model", prompt))
-        return "implemented with cited evidence"
-
     app = agent.build_graph(
-        spec_search, rtl_search, answer_model, records, hierarchy, signals, rtl, bridge)
+        lambda query, k: [_doc("spec#1", "Rounding modes are required.",
+                               section_id="sec:fpu", subsection_id="sec:round",
+                               start_page=12)],
+        lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
+                               file="rtl/fpu.sv", line=1)],
+        lambda prompt: "implemented with cited evidence",
+        records, hierarchy, signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
+
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
-    assert calls[0] == "spec"
-    # Bridge targets steer the block lane only; injecting them into the query buried
-    # the question's own module under exact hits for whatever the spec lane drifted to.
-    assert calls[1] == ("rtl", "Does the RTL implement every rounding mode?")
-    assert calls[2][0] == "model"
-    assert [event["event"] for event in state["trace"]] == [
-        "route", "spec_retrieval", "bridge_lookup", "rtl_retrieval",
-        "evidence_merge", "answer",
-    ]
+    assert state["query_type"] == agent.COMPARISON
     assert state["rtl_blocks"][0]["start_line"] == 20
+    assert state["answer_status"] == "rejected"
+    assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
 
 
-def test_comparison_refuses_to_call_model_when_either_domain_is_empty():
+def test_weak_spec_lane_requeries_the_spec_through_reverse_bridge_terms():
+    queries = []
+    records, hierarchy, signals, rtl, bridge = _runtime_data()
+
+    def spec_search(query, k):
+        queries.append(query)
+        if len(queries) == 1:
+            return [_doc("spec#1", "unrelated prose", section_id="sec:fpu")]
+        return [_doc("spec#2", "Rounding mode selects RNE.", section_id="sec:fpu",
+                     subsection_id="sec:round", start_page=12)]
+
+    app = agent.build_graph(
+        spec_search,
+        lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
+                               file="rtl/fpu.sv", line=1)],
+        lambda prompt: "answer", records, hierarchy, signals, rtl, bridge,
+        reranker=_Reranker({"module fpu": 2.0, "Rounding mode": 1.0}, default=-9.0),
+        lane_floors=_FLOORS)
+    state = agent.run(app, "where does the pipeline stall")
+
+    assert len(queries) == 2 and "rounding_mode" in queries[1]
+    assert [item["id"] for item in state["spec_evidence"]] == ["spec#1", "spec#2"]
+
+
+def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     model_calls = []
     records, hierarchy, signals, rtl, bridge = _runtime_data()
     app = agent.build_graph(
-        lambda query, k: [_doc("spec#1", "spec", section_id="sec:fpu")],
-        lambda query, k: [],
+        lambda query, k: [], lambda query, k: [],
         lambda prompt: model_calls.append(prompt) or "unsafe",
-        records, hierarchy, signals, rtl={"modules": {}}, bridge=bridge)
+        records, hierarchy, signals, rtl={"modules": {}}, bridge=bridge,
+        reranker=_Reranker(), lane_floors=_FLOORS)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
     assert model_calls == []
     assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
     assert state["trace"][-1] == {"event": "answer", "model_called": False}
+
+
+def test_retrieval_absence_is_never_presented_as_corpus_absence():
+    context = agent.merge_evidence({"question": "mimpid?", "query_type": agent.SPEC,
+                                   "absent_terms": ["mimpid"]})
+    assert "absent from" not in context
+    assert not hasattr(agent, "absent_spec_terms")
+
+
+def test_weak_lane_keeps_only_a_slice_of_the_context_budget():
+    state = {
+        "question": "q", "query_type": agent.SPEC,
+        "spec_evidence": [{"id": "s1", "text": "spec " * 2000, "metadata": {}}],
+        "rtl_evidence": [{"id": "r1", "text": "rtl " * 2000, "metadata": {}}],
+        "lane_credible": {"spec": True, "rtl": False},
+    }
+
+    context = agent.merge_evidence(state)
+    balanced = agent.merge_evidence({**state,
+                                     "lane_credible": {"spec": True, "rtl": True}})
+
+    assert context.count("rtl ") < balanced.count("rtl ")
+    assert context.count("spec ") == balanced.count("spec ")
+    assert len(context) < len(balanced)
+
+
+def test_lane_floors_are_measured_against_each_domains_own_background():
+    prose = [{"text": "The manager must not wait for AWREADY before asserting AWVALID."},
+             {"text": "Register x0 is hardwired to zero in the base integer ISA."},
+             {"text": "The mtvec MODE field selects direct or vectored trap entry."}]
+
+    class _Scale:
+        """Return a fixed background so the quantile, not the model, is under test."""
+
+        def __init__(self, values):
+            self.values = values
+
+        def score_pairs(self, pairs):
+            return self.values[:len(list(pairs))]
+
+    probes = agent.background_queries(prose, limit=3)
+
+    assert len(probes) == 3 and probes[0].startswith("The manager must not wait")
+    assert agent.background_floor(_Scale([-9.0, -8.0, -2.0]), prose, probes,
+                                  samples=3, quantile=0.95) == -2.0
+    assert agent.background_floor(_Scale([-9.0, -8.0, -2.0]), prose, probes,
+                                  samples=3, quantile=0.0) == -9.0
+    assert agent.background_floor(None, prose, probes) == cfg.LANE_FLOOR_FALLBACK
+    assert agent.background_floor(_Scale([]), [], probes) == cfg.LANE_FLOOR_FALLBACK
+
+
+def test_credible_lanes_apply_the_floor_of_their_own_domain():
+    scores = {"spec": -4.0, "rtl": -4.0}
+
+    assert agent.credible_lanes(scores, {"spec": 0.0, "rtl": -6.0}) == {
+        "spec": False, "rtl": True}
+    assert agent.credible_lanes({"spec": None, "rtl": 1.0}, {"spec": -6.0, "rtl": -6.0}) == {
+        "spec": False, "rtl": True}
 
 
 def test_section_expansion_uses_only_inline_hierarchy_links():
@@ -179,6 +397,24 @@ def test_section_expansion_uses_only_inline_hierarchy_links():
     expanded = agent.expand_spec_hierarchy(evidence, hierarchy, records, limit=2)
 
     assert [item["id"] for item in expanded] == ["child#1", "parent#1", "previous#1"]
+
+
+def test_section_expansion_prefers_adjacent_chunks_in_the_hit_section():
+    evidence = [{"id": "doc#0010#001", "metadata": {
+        "section_id": "section", "chunk_index": 1,
+    }}]
+    records = [
+        {"chunk_id": f"doc#0010#{index:03d}", "section_id": "section",
+         "chunk_index": index, "text": str(index), "context_header": "Section"}
+        for index in range(3)
+    ]
+
+    expanded = agent.expand_spec_hierarchy(evidence, {"sections": []}, records, limit=2)
+
+    assert [item["id"] for item in expanded] == [
+        "doc#0010#001", "doc#0010#000", "doc#0010#002"]
+    assert all(item.get("expansion") == "same_section_neighbour"
+               for item in expanded[1:])
 
 
 def test_signal_selection_is_grounded_in_retrieved_provenance():
@@ -276,6 +512,12 @@ def test_blocks_follow_registered_and_next_staging_suffixes_both_ways():
 
     assert [block["start_line"] for block in forward] == [415, 660]
     assert {block["start_line"] for block in reverse} == {415, 660}
+
+
+def test_a_module_target_alone_expands_nothing_rather_than_the_first_blocks_in_the_file():
+    blocks = agent.surrounding_rtl_blocks(_staged_rtl(), [], ["cache"], limit=6)
+
+    assert blocks == []
 
 
 def test_staging_hop_ignores_suffixes_that_are_not_a_staging_convention():
@@ -418,3 +660,15 @@ def test_alignment_rows_label_the_score_as_identity_not_as_a_verdict():
     assert "identity_match=WEAK" in rendered
     assert "identity_score=0.695039" in rendered
     assert "confidence=" not in rendered
+
+
+def test_targeted_blocks_are_relabelled_with_store_chunk_ids():
+    blocks = [{"id": "cache:415", "module": "cache", "start_line": 415, "end_line": 459},
+              {"id": "cache:9", "module": "cache", "start_line": 9, "end_line": 11}]
+    records = [{"chunk_id": "rtl:construct:cache:always:415-459", "source_type": "construct",
+                "module": "cache", "start_line": 415, "end_line": 459}]
+
+    aligned = agent.align_block_ids(blocks, records)
+
+    assert aligned[0]["id"] == "rtl:construct:cache:always:415-459"
+    assert aligned[1]["id"] == "cache:9"

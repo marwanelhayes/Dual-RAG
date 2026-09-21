@@ -456,3 +456,60 @@ def test_resolver_hands_back_raw_output_so_truncation_cannot_abort_the_build(mon
     raw = bridge.ollama_resolver("evidence")
 
     assert bridge._resolver_result(lambda _: raw, "evidence", []) is None
+
+
+def _threaded_rtl():
+    """Return an artifact where one port is threaded through two hierarchy levels."""
+    port = {"original_name": "MAWBurst", "direction": "output", "width": 2}
+    return {"modules": {
+        "riscv_processor": {
+            "original_name": "riscv_processor", "file": "rtl/riscv_processor.sv",
+            "ports": [], "instances": [{"target_module": "fetch_stage", "bindings": [
+                {"parent_module": "riscv_processor", "formal_name": "MAWBurst",
+                 "actual_signals": ["IMAWBurst"], "direction": "output"}]}]},
+        "fetch_stage": {
+            "original_name": "fetch_stage", "file": "rtl/fetch_stage.sv",
+            "ports": [dict(port)], "instances": [{"target_module": "cache", "bindings": [
+                {"parent_module": "fetch_stage", "formal_name": "MAWBurst",
+                 "actual_signals": ["MAWBurst"], "direction": "output"}]}]},
+        "cache": {"original_name": "cache", "file": "rtl/cache.sv",
+                  "ports": [dict(port)], "instances": []},
+    }}
+
+
+def test_a_port_threaded_through_the_hierarchy_is_one_net():
+    nets = bridge.port_nets(_threaded_rtl())
+
+    assert nets[("cache", "MAWBurst")] == nets[("fetch_stage", "MAWBurst")]
+
+
+def test_an_unbound_port_belongs_to_no_shared_net():
+    rtl = _threaded_rtl()
+    rtl["modules"]["cache"]["ports"].append(
+        {"original_name": "PrivateState", "direction": "output", "width": 1})
+
+    assert ("cache", "PrivateState") not in bridge.port_nets(rtl)
+
+
+def test_threaded_ports_collapse_to_the_site_that_drives_the_net():
+    def candidate(module, writers, rank):
+        return {"candidate_rank": rank, "rtl": {
+            "net_id": "bridge::net::one", "module_name": module,
+            "signal_id": f"rtl::port::{module}::MAWBurst",
+            "writer_sites": [{"line": 1}] * writers, "reader_sites": []}}
+
+    close = [candidate("fetch_stage", 0, 1), candidate("cache", 2, 2)]
+
+    assert [item["rtl"]["module_name"]
+            for item in bridge._collapse_threaded_ports(close)] == ["cache"]
+
+
+def test_candidates_on_different_nets_stay_ambiguous():
+    def candidate(net, module):
+        return {"candidate_rank": 1, "rtl": {
+            "net_id": net, "module_name": module, "writer_sites": [], "reader_sites": []}}
+
+    close = [candidate("bridge::net::one", "cache"), candidate("bridge::net::two", "risc_mem")]
+
+    assert bridge._collapse_threaded_ports(close) == close
+

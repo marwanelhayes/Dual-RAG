@@ -6,11 +6,14 @@ Run ``python src/ingest.py`` to read ``Ingest/*.pdf`` and write
 
 import collections
 import json
+import logging
 import re
 from operator import itemgetter
 from pathlib import Path
+from string import ascii_uppercase
 
 import fitz  # PyMuPDF
+from langchain_text_splitters import CharacterTextSplitter, TextSplitter
 
 import configure as cfg
 import roles
@@ -87,6 +90,151 @@ def parse_section_number(title):
     return None, title
 
 
+_SECTION_LABEL = r"(?:Chapter|Part|Appendix|Section)\s+"
+_NUMBER_ONLY = re.compile(rf"^(?:{_SECTION_LABEL})?([A-Z]?\d+(?:\.\d+)*)\.?$")
+_NUMBERED_HEADING = re.compile(rf"^(?:{_SECTION_LABEL})?([A-Z]?\d+(?:\.\d+)*)\.?\s+\S")
+_DOT_LEADER = re.compile(r"(?:\.\s*){4,}")
+
+
+def _styled_lines(page):
+    """Return each text line on a page with the type size and weight it was set in.
+
+    Args:
+        page: an open fitz.Page.
+
+    Returns:
+        list of dicts carrying the line's text, size, boldness, and top edge.
+    """
+    lines = []
+    for block in page.get_text("dict")["blocks"]:
+        if block.get("type") != 0:  # type 0 is text; images carry no headings
+            continue
+        for line in block["lines"]:
+            spans = [span for span in line["spans"] if span["text"].strip()]
+            text = "".join(span["text"] for span in line["spans"]).strip()
+            if not spans or not text:
+                continue
+            lines.append({
+                "text": text,
+                "size": max(round(span["size"], 1) for span in spans),
+                "bold": any("bold" in span["font"].lower() or span["flags"] & 16
+                            for span in spans),
+                "top": line["bbox"][1],
+            })
+    return lines
+
+
+def _joined_heading_lines(page):
+    """Join a section number set on its own line to the title line beneath it.
+
+    Args:
+        page: an open fitz.Page.
+
+    Returns:
+        Styled lines with split headings such as "A1.2.1" + "Interface" rejoined.
+    """
+    lines = _styled_lines(page)
+    joined, skip = [], False
+    for index, line in enumerate(lines):
+        if skip:
+            skip = False
+            continue
+        following = lines[index + 1] if index + 1 < len(lines) else None
+        if (_NUMBER_ONLY.match(line["text"]) and following
+                and abs(following["size"] - line["size"]) < cfg.HEADING_SIZE_SLACK
+                and following["bold"] == line["bold"]
+                and 0 <= following["top"] - line["top"] < 3 * line["size"]
+                and not _NUMBER_ONLY.match(following["text"])):
+            joined.append({**line, "text": f"{line['text']} {following['text']}"})
+            skip = True
+        else:
+            joined.append(line)
+    return joined
+
+
+def _body_size(doc, sample=cfg.HEADING_SAMPLE_PAGES):
+    """Estimate the document's running body type size.
+
+    Args:
+        doc: an open fitz.Document.
+        sample: how many pages to sample.
+
+    Returns:
+        The type size carrying the most characters, which is the body text.
+    """
+    step = max(doc.page_count // sample, 1)
+    weight = collections.Counter()
+    for number in range(0, doc.page_count, step):
+        for line in _styled_lines(doc[number]):
+            weight[line["size"]] += len(line["text"])
+    return weight.most_common(1)[0][0] if weight else 10.0
+
+
+def _heading_depth(text):
+    """Return the outline depth implied by a heading's own numbering.
+
+    Args:
+        text: a candidate heading line.
+
+    Returns:
+        Depth counting a letter part as its own level, or None when unnumbered.
+    """
+    match = _NUMBERED_HEADING.match(text) or _NUMBER_ONLY.match(text)
+    if not match:
+        return None
+    number = match.group(1)
+    # "A1.2.1" is one level deeper than "1.2.1" because the part letter counts.
+    letters = 1 if number[0].isalpha() else 0
+    digits = [part for part in number.lstrip(ascii_uppercase).split(".") if part]
+    return letters + len(digits)
+
+
+def detect_headings(doc):
+    """Recover an outline from type size and weight for PDFs that ship none.
+
+    Args:
+        doc: an open fitz.Document with an empty or missing outline.
+
+    Returns:
+        ``(level, title, page)`` triples in the shape ``get_toc`` returns.
+    """
+    body = _body_size(doc)
+    candidates = []
+    for number in range(doc.page_count):
+        for line in _joined_heading_lines(doc[number]):
+            text = line["text"]
+            if not 2 <= len(text) <= cfg.HEADING_MAX_CHARS:
+                continue
+            if text.endswith((",", ";", ":")) or _DOT_LEADER.search(text):
+                continue  # trailing punctuation and dot leaders mark prose and contents
+            depth = _heading_depth(text)
+            distinct = abs(line["size"] - body) > cfg.HEADING_SIZE_SLACK
+            if (line["size"] >= body * cfg.HEADING_LARGER
+                    or (line["bold"] and (depth or distinct))):
+                candidates.append((depth, line["size"], text, number + 1))
+
+    # A heading repeated across the document is a table header, not a heading.
+    repeats = collections.Counter(_normalized_heading(item[2]) for item in candidates)
+    candidates = [item for item in candidates
+                  if repeats[_normalized_heading(item[2])] <= cfg.HEADING_MAX_REPEATS]
+    sizes = sorted({item[1] for item in candidates}, reverse=True)
+    by_size = {size: rank + 1 for rank, size in enumerate(sizes)}
+    return [(depth or by_size[size], text, page)
+            for depth, size, text, page in candidates]
+
+
+def _normalized_heading(text):
+    """Return a heading's comparison form, ignoring spacing and part labels.
+
+    Args:
+        text: a heading line.
+
+    Returns:
+        Lowercased text with runs of whitespace collapsed.
+    """
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
 def _subtree_end_page(toc, index, level, page_count):
     """Return the first page after an outline entry's complete subtree.
 
@@ -117,7 +265,8 @@ def build_sections(doc, doc_id, doc_name):
         Section records in document order, each linked inline to its parent,
         children, and true siblings.
     """
-    toc = doc.get_toc()
+    # Some PDFs ship no outline at all, so recover one from the page typography.
+    toc = doc.get_toc() or detect_headings(doc)
     nodes = []
     for i, (level, title, page) in enumerate(toc):
         number, name = parse_section_number(title)
@@ -191,7 +340,6 @@ def repeated_lines(doc, sample=cfg.FURNITURE_SAMPLE_PAGES):
     Returns:
         set of line strings that appear on most sampled pages.
     """
-
     step = max(doc.page_count // sample, 1)
     pages = list(range(0, doc.page_count, step))[:sample]
     counts = {}
@@ -394,43 +542,89 @@ def unstack_row(row):
     return [[(p[i].strip() if len(p) > 1 else p[0].strip()) for p in parts] for i in range(depth)]
 
 
-def _table_size(table):
-    """Return a table's cell count for selecting the largest extraction.
+def _ruled_tables(page):
+    """Return the page's ruled tables that are large enough to be real tables.
 
     Args:
-        table: PyMuPDF table candidate with row and column counts.
+        page: the fitz.Page to scan.
 
     Returns:
-        The number of cells in the table candidate.
+        list of pymupdf Table objects with at least two rows and two columns.
     """
-    return table.row_count * table.col_count
+    return [table for table in page.find_tables(strategy="lines").tables
+            if table.row_count > 1 and table.col_count > 1]
 
 
-def extract_table(page, caption_bbox):
+def nearest_ruled_table(page, caption_bbox):
+    """Return the ruled table nearest the caption, searching both sides of it.
+
+    Args:
+        page: the fitz.Page holding the caption.
+        caption_bbox: bounding box of the caption block.
+
+    Returns:
+        The closest qualifying Table, or None when the caption stands alone.
+    """
+    top, bottom = caption_bbox[1], caption_bbox[3]
+    best = None
+    for table in _ruled_tables(page):
+        if table.bbox[1] >= bottom - cfg.CAPTION_SLACK:
+            gap, above = table.bbox[1] - bottom, False
+        elif table.bbox[3] <= top + cfg.CAPTION_SLACK:
+            gap, above = top - table.bbox[3], True
+        else:
+            continue  # the caption sits inside this table, so it is not its caption
+        # Captions lead their table more often than they follow, so ties go below.
+        key = (gap, above)
+        if gap <= cfg.CAPTION_MAX_GAP and (best is None or key < best[0]):
+            best = (key, table)
+    return best[1] if best else None
+
+
+def _table_rows(table):
+    """Flatten one pymupdf table into cleaned, unstacked rows.
+
+    Args:
+        table: a pymupdf Table object.
+
+    Returns:
+        list of row lists with collapsed multi-row cells split back apart.
+    """
+    rows = [[(cell or "").strip() for cell in row] for row in table.extract()]
+    return [out for row in rows for out in unstack_row(row)]
+
+
+def extract_table(page, caption_bbox, next_page=None):
     """Pull the cell contents of one table off the page.
 
     Args:
         page: the fitz.Page holding the table.
         caption_bbox: bounding box of the table's caption block.
+        next_page: following fitz.Page, used when a caption ends its own page.
 
     Returns:
         (rows, method) where rows is a list of row lists and method names the
-        strategy that worked; rows is empty if neither strategy found anything.
+        strategy that worked; rows is empty if no strategy found anything.
     """
-    region = table_region(page, caption_bbox)
-    if region is None:
-        return [], "none"
-
     # Prefer ruled extraction because RISC-V's per-column blocks defeat alignment.
-    found = page.find_tables(clip=region, strategy="lines")
-    if found.tables:
-        biggest = max(found.tables, key=_table_size)
-        rows = [[(c or "").strip() for c in r] for r in biggest.extract()]
-        rows = [out for r in rows for out in unstack_row(r)]
+    table = nearest_ruled_table(page, caption_bbox)
+    if table is not None:
+        rows = _table_rows(table)
         if len(rows) > 1:
             return rows, "lines"
 
+    # A caption low on the page introduces a table that starts on the next one.
+    if next_page is not None and caption_bbox[3] > page.rect.height * cfg.CAPTION_PAGE_BREAK:
+        carried = _ruled_tables(next_page)
+        if carried:
+            rows = _table_rows(min(carried, key=lambda item: item.bbox[1]))
+            if len(rows) > 1:
+                return rows, "lines_page_break"
+
     # Fall back to alignment for unruled ARM tables.
+    region = table_region(page, caption_bbox)
+    if region is None:
+        return [], "none"
     rows = rows_by_alignment(page, region)
     return (rows, "alignment") if len(rows) > 1 else ([], "none")
 
@@ -452,6 +646,32 @@ def rows_to_markdown(rows):
     return "\n".join(out)
 
 
+def table_row_windows(columns, rows, max_chars=cfg.MAX_TABLE_CHUNK_CHARS):
+    """Split a long table's rows into windows that each restate the header row.
+
+    Args:
+        columns: The table's header cells, repeated into every window.
+        rows: The table's data rows, in source order.
+        max_chars: Soft character cap per window, header included.
+
+    Returns:
+        List of ``(row_start, window_rows)`` pairs covering every row exactly once.
+    """
+    windows, start = [], 0
+    while start < len(rows):
+        end = start
+        while end < len(rows):
+            # Measure the real rendering, so the cap can never drift from the markdown.
+            if end > start and len(rows_to_markdown([columns] + rows[start:end + 1])) > max_chars:
+                break
+            end += 1
+        # Always admit one row so a single oversized row cannot stall the loop.
+        windows.append((start, rows[start:max(end, start + 1)]))
+        start = max(end, start + 1)
+    # Rows never flow into each other the way sentences do, so windows do not overlap.
+    return windows or [(0, [])]
+
+
 def build_tables(doc, doc_id, doc_name, nodes):
     """Extract every captioned table and attach it to the section that contains it.
 
@@ -467,7 +687,8 @@ def build_tables(doc, doc_id, doc_name, nodes):
     tables = {}
     for label, cap in build_caption_index(doc).items():
         page = doc[cap["page"] - 1]
-        rows, method = extract_table(page, cap["bbox"])
+        following = doc[cap["page"]] if cap["page"] < doc.page_count else None
+        rows, method = extract_table(page, cap["bbox"], next_page=following)
         # Ordered outlines make the latest section start the table's owner.
         owner = None
         for node in nodes:
@@ -573,7 +794,10 @@ def enrich_spec_record(record):
     return record
 
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# A cap below any sentence forces one sentence per split; mute the resulting per-chunk notice.
+logging.getLogger("langchain_text_splitters.base").setLevel(logging.ERROR)
+_SENTENCE_SPLITTER = CharacterTextSplitter(
+    separator=r"(?<=[.!?])\s+", is_separator_regex=True, chunk_size=1, chunk_overlap=0)
 
 
 def split_sentences(text):
@@ -586,7 +810,7 @@ def split_sentences(text):
         list of sentence strings, whitespace-normalised, empties dropped.
     """
     # Keep this stage offline; overlap absorbs occasional regex miscuts of spec tokens.
-    parts = _SENTENCE_END.split(text)
+    parts = _SENTENCE_SPLITTER.split_text(text)
     sentences = []
     for part in parts:
         part = part.strip()
@@ -601,6 +825,49 @@ def split_sentences(text):
                 continue
         sentences.append(part)
     return sentences
+
+
+class SentenceWindowSplitter(TextSplitter):
+    """LangChain splitter packing sentences into character-capped windows.
+
+    The overlap is counted in whole sentences rather than characters, so a chunk
+    boundary never lands mid-sentence and citations stay quotable.
+    """
+
+    def __init__(self, chunk_size=cfg.MAX_CHUNK_CHARS, overlap_sentences=cfg.OVERLAP_SENTENCES):
+        """Configure the character cap and the sentence-counted overlap.
+
+        Args:
+            chunk_size: soft character cap per chunk.
+            overlap_sentences: trailing sentences of chunk N that open chunk N+1.
+
+        Returns:
+            None.
+        """
+        super().__init__(chunk_size=chunk_size, chunk_overlap=0)
+        self.overlap_sentences = overlap_sentences
+
+    def split_units(self, sentences):
+        """Window pre-split sentences, keeping any per-sentence payload intact.
+
+        Args:
+            sentences: sentence strings, or ``(sentence, page)`` pairs.
+
+        Returns:
+            list of chunks, each a list of the input units.
+        """
+        return sliding_window_chunks(sentences, self._chunk_size, self.overlap_sentences)
+
+    def split_text(self, text):
+        """Split raw text into windowed chunks, as the LangChain API expects.
+
+        Args:
+            text: cleaned section text.
+
+        Returns:
+            list of chunk strings.
+        """
+        return [" ".join(chunk) for chunk in self.split_units(split_sentences(text))]
 
 
 def sliding_window_chunks(sentences, max_chars=cfg.MAX_CHUNK_CHARS, overlap=cfg.OVERLAP_SENTENCES):
@@ -632,6 +899,9 @@ def sliding_window_chunks(sentences, max_chars=cfg.MAX_CHUNK_CHARS, overlap=cfg.
         # Reopen the next chunk with the configured trailing overlap.
         i = max(j - overlap, i + 1)
     return chunks
+
+
+_WINDOW_SPLITTER = SentenceWindowSplitter()
 
 
 def ingest_pdf(path):
@@ -666,7 +936,7 @@ def ingest_pdf(path):
         header = f"{doc_name} ({revision}) > " + " > ".join(sec["path"])
         sentences = [(sentence, page) for page, page_text in page_texts
                      for sentence in split_sentences(page_text)]
-        for k, chunk in enumerate(sliding_window_chunks(sentences)):
+        for k, chunk in enumerate(_WINDOW_SPLITTER.split_units(sentences)):
             body = " ".join(sentence for sentence, _ in chunk)
             chunk_pages = [page for _, page in chunk]
             # Deterministic IDs support stable vector-store updates.
@@ -709,42 +979,49 @@ def ingest_pdf(path):
                 "text": body,
             }))
 
-    # Emit each table whole because a partial table is worse than none for retrieval.
+    # Window long tables by row, because the encoder truncates an oversized one silently.
     for table in tables.values():
         if not table["markdown"]:
             continue
-        records.append(enrich_spec_record({
-            "chunk_id": f"{doc_id}#table#{table['label']}",
-            "chunk_type": "table",
-            "document_id": doc_id,
-            "doc_name": doc_name,
-            "source_file": doc_name,
-            "revision": revision,
-            "hierarchy_id": table["hierarchy_id"],
-            "section_id": table["section_id"],
-            "section_title": table["section_title"],
-            "subsection_id": table["subsection_id"],
-            "subsection_title": table["subsection_title"],
-            "section_number": table["section_number"],
-            "section_name": table["subsection_title"] or table["section_title"],
-            "section_path": table["section_path"],
-            "context_header": (
-                f"{doc_name} ({revision}) > Table {table['label']}: {table['caption']}"),
-            "table_label": table["label"],
-            "table_id": table["table_id"],
-            "table_ids": [table["table_id"]],
-            "caption": table["caption"],
-            "start_page": table["page"],
-            "end_page": table["page"],
-            "page": table["page"],
-            "columns": table["columns"],
-            "rows": table["rows"],
-            "n_rows": table["n_rows"],
-            "extraction": table["extraction"],
-            "n_chars": len(table["markdown"]),
-            "tables_cited": [],
-            "text": table["markdown"],
-        }))
+        windows = table_row_windows(table["columns"], table["rows"])
+        for start, window in windows:
+            markdown = rows_to_markdown([table["columns"]] + window)
+            # Unsplit tables keep their bare id so their chunk ids stay stable.
+            suffix = f"#{start:04d}" if len(windows) > 1 else ""
+            records.append(enrich_spec_record({
+                "chunk_id": f"{doc_id}#table#{table['label']}{suffix}",
+                "chunk_type": "table",
+                "document_id": doc_id,
+                "doc_name": doc_name,
+                "source_file": doc_name,
+                "revision": revision,
+                "hierarchy_id": table["hierarchy_id"],
+                "section_id": table["section_id"],
+                "section_title": table["section_title"],
+                "subsection_id": table["subsection_id"],
+                "subsection_title": table["subsection_title"],
+                "section_number": table["section_number"],
+                "section_name": table["subsection_title"] or table["section_title"],
+                "section_path": table["section_path"],
+                "context_header": (
+                    f"{doc_name} ({revision}) > Table {table['label']}: {table['caption']}"),
+                "table_label": table["label"],
+                "table_id": table["table_id"],
+                "table_ids": [table["table_id"]],
+                "caption": table["caption"],
+                "start_page": table["page"],
+                "end_page": table["page"],
+                "page": table["page"],
+                "columns": table["columns"],
+                "rows": window,
+                "n_rows": len(window),
+                "row_start": start,
+                "table_rows": table["n_rows"],
+                "extraction": table["extraction"],
+                "n_chars": len(markdown),
+                "tables_cited": [],
+                "text": markdown,
+            }))
 
     # Document role needs the whole document, so it is stamped once every chunk exists.
     document_scores = roles.document_role_scores(record["text"] for record in records)

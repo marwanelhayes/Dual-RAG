@@ -3,26 +3,24 @@
 import re
 
 
-# Callers may replace or extend these aliases through ``set_abbreviation_aliases``.
+# Vendor-neutral only; domain vocabulary arrives from config via ``set_abbreviation_aliases``.
 ABBREVIATION_ALIASES = {
     "addr": ("address",),
-    "alu": ("arithmetic", "logic", "unit"),
     "cfg": ("configuration",),
     "clk": ("clock",),
-    "csr": ("control", "status", "register"),
     "ctrl": ("control",),
     "dst": ("destination",),
     "exc": ("exception",),
-    "fp": ("floating", "point"),
-    "fpu": ("floating", "point", "unit"),
-    "i": ("input",),
-    "o": ("output",),
     "req": ("request",),
     "resp": ("response",),
-    "rm": ("rounding", "mode"),
-    "rnd": ("rounding",),
     "rst": ("reset",),
     "src": ("source",),
+}
+
+# Role letters mean a direction only as a suffix; ``ICacheHit`` splits an ``I`` that does not.
+SUFFIX_ALIASES = {
+    "i": ("input",),
+    "o": ("output",),
 }
 
 _ACRONYM_BOUNDARY = re.compile(r"([A-Z]+)([A-Z][a-z])")
@@ -99,8 +97,11 @@ def identifier_tokens(name: object, expand_abbreviations: bool = True) -> list[s
     tokens = _raw_tokens(name)
     if not expand_abbreviations:
         return tokens
-    return [expanded for token in tokens
-            for expanded in ABBREVIATION_ALIASES.get(token, (token,))]
+    expanded = []
+    for position, token in enumerate(tokens):
+        suffix = SUFFIX_ALIASES if position and position == len(tokens) - 1 else {}
+        expanded.extend(suffix.get(token) or ABBREVIATION_ALIASES.get(token, (token,)))
+    return expanded
 
 
 def normalize_module_name(name: object) -> str:

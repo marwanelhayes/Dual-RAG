@@ -79,17 +79,11 @@ def stage_scripts(include_embeddings=True):
         Stage label and script-path pairs.
     """
     source = Path(__file__).resolve().parent
-    stages = [
-        ("spec ingestion", source / "ingest.py"),
-        ("spec signals", source / "spec_signals.py"),
-    ]
-    if include_embeddings:
-        stages.append(("spec index", source / "embed.py"))
-    stages.append(("RTL ingestion", source / "rtl_ingest.py"))
-    if include_embeddings:
-        stages.append(("RTL index", source / "rtl_embed.py"))
-    stages.append(("cross-domain bridge", source / "bridge.py"))
-    return stages
+    stages = (("spec ingestion", "ingest.py"), ("spec signals", "spec_signals.py"),
+              ("spec index", "embed.py"), ("RTL ingestion", "rtl_ingest.py"),
+              ("RTL index", "rtl_embed.py"), ("cross-domain bridge", "bridge.py"))
+    return [(label, source / name) for label, name in stages
+            if include_embeddings or name not in ("embed.py", "rtl_embed.py")]
 
 
 def stage_command(script, include_embeddings=True):

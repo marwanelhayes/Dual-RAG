@@ -9,10 +9,15 @@ sentence-transformers>=3.0
 faiss-cpu>=1.8            # the index runs on CPU; only the encoder uses the GPU
 langchain-core>=0.3      # Document, the Embeddings protocol
 langchain-community>=0.3 # the FAISS vector-store wrapper
+langchain-text-splitters>=0.3 # sentence splitting and the windowing splitter base
 
 # Local LLM client and tests
 httpx>=0.27              # one bounded local reasoning call after deterministic retrieval
 pytest>=8.0
+
+# Thin HTTP service boundary
+fastapi>=0.115
+uvicorn>=0.30
 
 # Retrieval - lexical ranker and cross-encoder rerank
 # the cross-encoder needs no new package: sentence-transformers above already ships it
@@ -20,3 +25,6 @@ rank-bm25>=0.2           # the lexical half of the hybrid; pure Python, no index
 
 # Stage 6 (agent) - deterministic evidence routing and bounded tool loop
 langgraph>=1.0
+
+# Experiment tracking: one run per pipeline step, local SQLite store
+mlflow>=3.0

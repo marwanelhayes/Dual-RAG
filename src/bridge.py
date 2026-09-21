@@ -40,10 +40,22 @@ _STOP_WORDS = frozenset({
     "to", "with",
 })
 _MODULE_NAME_FILLERS = frozenset({"file", "state"})
+# A bare suffix token can only name a port direction; the wider set also accepts declarations.
+_PORT_DIRECTIONS = {"i": "input", "in": "input", "input": "input",
+                    "o": "output", "out": "output", "output": "output"}
+_DIRECTIONS = {**_PORT_DIRECTIONS, "io": "inout", "inout": "inout",
+               "internal": "internal"}
 
 
 def _as_list(value):
-    """Return a schema field as a list without splitting scalar strings."""
+    """Return a schema field as a list without splitting scalar strings.
+
+    Args:
+        value: Field value of any shape.
+
+    Returns:
+        The value as a list; a scalar becomes a one-element list.
+    """
     if value is None:
         return []
     if isinstance(value, list):
@@ -54,7 +66,16 @@ def _as_list(value):
 
 
 def _first(record, *names, default=None):
-    """Return the first present, non-null field from a mapping."""
+    """Return the first present, non-null field from a mapping.
+
+    Args:
+        record: Mapping to read.
+        *names: Field names tried in preference order.
+        default: Value returned when no name is present and non-null.
+
+    Returns:
+        The first non-null field value, or ``default``.
+    """
     for name in names:
         if name in record and record[name] is not None:
             return record[name]
@@ -62,7 +83,14 @@ def _first(record, *names, default=None):
 
 
 def _unique(values):
-    """Keep non-empty values once in encounter order."""
+    """Keep non-empty values once in encounter order.
+
+    Args:
+        values: Values to deduplicate.
+
+    Returns:
+        Unique non-empty values in first-seen order.
+    """
     found = []
     for value in values:
         if value not in (None, "") and value not in found:
@@ -71,7 +99,15 @@ def _unique(values):
 
 
 def _tokens(value, expand=True):
-    """Return normalized content tokens for an identifier or short prose field."""
+    """Return normalized content tokens for an identifier or short prose field.
+
+    Args:
+        value: Identifier or short prose to tokenize.
+        expand: Expand configured abbreviations when true.
+
+    Returns:
+        Unique lowercase content tokens, stop words removed.
+    """
     found = []
     for raw in _TEXT_TOKEN.findall(str(value or "")):
         parts = identifier_tokens(raw, expand_abbreviations=expand)
@@ -80,7 +116,14 @@ def _tokens(value, expand=True):
 
 
 def _module_identity_tokens(values):
-    """Normalize harmless morphology and container nouns for module-title matching."""
+    """Normalize harmless morphology and container nouns for module-title matching.
+
+    Args:
+        values: Tokens taken from a section title or module name.
+
+    Returns:
+        Lowercase tokens, depluralized, with generic container nouns dropped.
+    """
     normalized = []
     for value in values:
         token = str(value).lower()
@@ -94,46 +137,78 @@ def _module_identity_tokens(values):
 
 
 def _without_direction(tokens):
-    """Remove one conventional input/output role token from an identifier tail."""
+    """Remove one conventional input/output role token from an identifier tail.
+
+    Args:
+        tokens: Identifier tokens in source order.
+
+    Returns:
+        The tokens without a trailing direction token.
+    """
     values = list(tokens)
     return values[:-1] if values and values[-1] in _DIRECTION_TOKENS else values
 
 
-def _strip_direction_suffix(name):
-    """Return a normalized identifier without one conventional direction suffix."""
-    return "_".join(_without_direction(identifier_tokens(name, expand_abbreviations=False)))
-
-
 def _flat_name(name):
-    """Return one identifier flattened to its comparable spelling without a role suffix."""
+    """Return one identifier flattened to its comparable spelling without a role suffix.
+
+    Args:
+        name: Source identifier spelling.
+
+    Returns:
+        The identifier's tokens concatenated, direction suffix removed.
+    """
     return "".join(_without_direction(identifier_tokens(name, expand_abbreviations=False)))
 
 
 def _namespace_prefixed(spec_flat, rtl_flat):
-    """Report an RTL name that is a specification name behind one known namespace prefix."""
+    """Report an RTL name that is a specification name behind one known namespace prefix.
+
+    Args:
+        spec_flat: Flattened specification identifier.
+        rtl_flat: Flattened RTL identifier.
+
+    Returns:
+        True when the RTL name is the spec name behind a known prefix.
+    """
     return (len(spec_flat) >= 4 and rtl_flat.endswith(spec_flat)
             and rtl_flat[:-len(spec_flat)] in _NAMESPACE_PREFIXES)
 
 
 def _suffix_direction(name):
-    """Infer input/output from a conventional final identifier token when present."""
+    """Infer input/output from a conventional final identifier token when present.
+
+    Args:
+        name: Source identifier spelling.
+
+    Returns:
+        ``input``, ``output``, or None when the tail names no direction.
+    """
     tokens = identifier_tokens(name, expand_abbreviations=False)
-    if not tokens:
-        return None
-    return {"i": "input", "in": "input", "input": "input",
-            "o": "output", "out": "output", "output": "output"}.get(tokens[-1])
+    return _PORT_DIRECTIONS.get(tokens[-1]) if tokens else None
 
 
 def _direction(value):
-    """Normalize common direction spellings, retaining internal when explicit."""
-    folded = str(value or "").strip().lower()
-    return {"i": "input", "in": "input", "input": "input",
-            "o": "output", "out": "output", "output": "output",
-            "io": "inout", "inout": "inout", "internal": "internal"}.get(folded)
+    """Normalize common direction spellings, retaining internal when explicit.
+
+    Args:
+        value: Raw direction field.
+
+    Returns:
+        A canonical direction, or None when the value names none.
+    """
+    return _DIRECTIONS.get(str(value or "").strip().lower())
 
 
 def _source_role(value):
-    """Normalize the interface role a specification names as one signal's driver."""
+    """Normalize the interface role a specification names as one signal's driver.
+
+    Args:
+        value: Raw source or driver field.
+
+    Returns:
+        ``manager``, ``subordinate``, or None when no role is named.
+    """
     folded = str(value or "").strip().lower()
     return {"manager": "manager", "master": "manager", "initiator": "manager",
             "requester": "manager", "transmitter": "manager", "tx": "manager",
@@ -143,14 +218,29 @@ def _source_role(value):
 
 
 def _row_kind(value):
-    """Normalize the declaration class a specification row describes."""
+    """Normalize the declaration class a specification row describes.
+
+    Args:
+        value: Raw row-kind field.
+
+    Returns:
+        One of the three known row kinds, defaulting to ``port``.
+    """
     folded = str(value or "").strip().lower()
     return (folded if folded in (PORT_ROW, REGISTER_FIELD_ROW, INSTRUCTION_ROW)
             else PORT_ROW)
 
 
 def _width(value, expression=None):
-    """Parse a concrete bit width when one is directly available."""
+    """Parse a concrete bit width when one is directly available.
+
+    Args:
+        value: Raw width field, integer or text.
+        expression: Optional range expression used as a fallback.
+
+    Returns:
+        A positive integer width, or None when none is stated outright.
+    """
     if isinstance(value, int) and not isinstance(value, bool):
         return value if value > 0 else None
     text = str(value or "").strip()
@@ -166,30 +256,67 @@ def _width(value, expression=None):
 
 
 def _jaccard(left, right):
-    """Return set Jaccard similarity, with no evidence scoring zero."""
+    """Return set Jaccard similarity, with no evidence scoring zero.
+
+    Args:
+        left: First token collection.
+        right: Second token collection.
+
+    Returns:
+        Similarity in ``[0, 1]``; zero when either side is empty.
+    """
     a, b = set(left), set(right)
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
 def _edit_similarity(left, right):
-    """Return deterministic character edit similarity in the closed unit interval."""
+    """Return deterministic character edit similarity in the closed unit interval.
+
+    Args:
+        left: First string.
+        right: Second string.
+
+    Returns:
+        Similarity in ``[0, 1]``; zero when either side is empty.
+    """
     return SequenceMatcher(None, str(left), str(right)).ratio() if left and right else 0.0
 
 
 def _round(value):
-    """Round scores consistently so persisted artifacts remain easy to diff."""
+    """Round scores consistently so persisted artifacts remain easy to diff.
+
+    Args:
+        value: Raw score.
+
+    Returns:
+        The score rounded to six decimal places.
+    """
     return round(float(value), 6)
 
 
 def _data_fingerprint(value):
-    """Hash one decoded input deterministically for in-memory bridge builds."""
+    """Hash one decoded input deterministically for in-memory bridge builds.
+
+    Args:
+        value: JSON-compatible decoded artifact.
+
+    Returns:
+        A hex SHA-256 digest of its canonical serialization.
+    """
     material = json.dumps(value, sort_keys=True, ensure_ascii=False,
                           separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(material).hexdigest()
 
 
 def _path_fingerprint(path):
-    """Hash an input artifact byte-for-byte for rebuild provenance."""
+    """Hash an input artifact byte-for-byte for rebuild provenance.
+
+    Args:
+        path: Artifact file to hash.
+
+    Returns:
+        A hex SHA-256 digest of the file's bytes.
+    """
     digest = hashlib.sha256()
     with open(path, "rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
@@ -198,7 +325,14 @@ def _path_fingerprint(path):
 
 
 def _spec_signal_rows(data):
-    """Return signal rows from the canonical object or reasonable migration aliases."""
+    """Return signal rows from the canonical object or reasonable migration aliases.
+
+    Args:
+        data: Decoded specification signal artifact.
+
+    Returns:
+        The raw signal rows, or an empty list when none are present.
+    """
     if isinstance(data, list):
         return data
     if not isinstance(data, dict):
@@ -210,7 +344,15 @@ def _spec_signal_rows(data):
 
 
 def _canonical_spec_signal(raw, ordinal):
-    """Adapt one specification signal into the bridge's stable internal shape."""
+    """Adapt one specification signal into the bridge's stable internal shape.
+
+    Args:
+        raw: One raw specification signal row.
+        ordinal: Row position, used only for the fallback identifier.
+
+    Returns:
+        A canonical specification signal record.
+    """
     original = str(_first(raw, "original_name", "name", "signal_name", "display", default=""))
     normalized = str(_first(raw, "normalized_name", default="") or
                      normalize_identifier(original))
@@ -250,7 +392,14 @@ def _canonical_spec_signal(raw, ordinal):
 
 
 def spec_signals(data):
-    """Return canonical specification signals sorted by stable identity."""
+    """Return canonical specification signals sorted by stable identity.
+
+    Args:
+        data: Decoded specification signal artifact.
+
+    Returns:
+        Named canonical signals ordered by signal identifier.
+    """
     rows = [_canonical_spec_signal(raw, ordinal)
             for ordinal, raw in enumerate(_spec_signal_rows(data)) if isinstance(raw, dict)]
     return sorted((row for row in rows if row["original_name"]),
@@ -258,7 +407,14 @@ def spec_signals(data):
 
 
 def _module_rows(rtl):
-    """Return ``(fallback_name, module)`` pairs from dict- or list-shaped RTL artifacts."""
+    """Return ``(fallback_name, module)`` pairs from dict- or list-shaped RTL artifacts.
+
+    Args:
+        rtl: Decoded RTL artifact.
+
+    Returns:
+        ``(fallback name, raw module)`` pairs, empty when the shape is unknown.
+    """
     raw = rtl.get("modules", {}) if isinstance(rtl, dict) else {}
     if isinstance(raw, dict):
         return [(str(name), module) for name, module in raw.items() if isinstance(module, dict)]
@@ -269,7 +425,15 @@ def _module_rows(rtl):
 
 
 def _site_rows(signal, *names):
-    """Collect unique read/write site mappings from compatible field aliases."""
+    """Collect unique read/write site mappings from compatible field aliases.
+
+    Args:
+        signal: Raw RTL declaration.
+        *names: Field names holding site lists.
+
+    Returns:
+        Unique site mappings in encounter order.
+    """
     rows = []
     for name in names:
         for site in _as_list(signal.get(name)):
@@ -279,7 +443,14 @@ def _site_rows(signal, *names):
 
 
 def _module_blocks(module):
-    """Collect structural blocks without depending on one upstream grouping spelling."""
+    """Collect structural blocks without depending on one upstream grouping spelling.
+
+    Args:
+        module: Raw RTL module record.
+
+    Returns:
+        Unique structural block mappings in encounter order.
+    """
     blocks = []
     for key in ("always_blocks", "functions_tasks", "assignment_groups", "other_blocks",
                 "blocks", "structural_blocks"):
@@ -290,7 +461,15 @@ def _module_blocks(module):
 
 
 def _signal_usage(signal, module):
-    """Render bounded deterministic usage context for one RTL signal."""
+    """Render bounded deterministic usage context for one RTL signal.
+
+    Args:
+        signal: Partially built canonical RTL signal.
+        module: Raw RTL module owning that signal.
+
+    Returns:
+        Bounded usage text describing how the signal is read and written.
+    """
     name = signal["original_name"]
     parts = [signal.get("description", "")]
     if signal["reader_sites"]:
@@ -312,7 +491,17 @@ def _signal_usage(signal, module):
 
 
 def _canonical_rtl_signal(raw, module, fallback_name, ordinal):
-    """Adapt one module-local RTL declaration into the bridge's stable shape."""
+    """Adapt one module-local RTL declaration into the bridge's stable shape.
+
+    Args:
+        raw: One raw RTL declaration.
+        module: Raw RTL module owning it.
+        fallback_name: Module name used when the record states none.
+        ordinal: Declaration position, used only for the fallback identifier.
+
+    Returns:
+        A canonical RTL signal record including its usage context.
+    """
     module_name = str(_first(module, "original_name", "name", "module_name",
                              default=fallback_name))
     original = str(_first(raw, "original_name", "name", "signal_name", "symbol_name",
@@ -354,7 +543,14 @@ def _canonical_rtl_signal(raw, module, fallback_name, ordinal):
 
 
 def rtl_modules(rtl):
-    """Return canonical module records with compatible structural field aliases."""
+    """Return canonical module records with compatible structural field aliases.
+
+    Args:
+        rtl: Decoded RTL artifact.
+
+    Returns:
+        Canonical module records ordered by module identifier.
+    """
     modules = []
     for fallback_name, raw in _module_rows(rtl):
         name = str(_first(raw, "original_name", "name", "module_name", default=fallback_name))
@@ -375,10 +571,67 @@ def rtl_modules(rtl):
     return sorted(modules, key=lambda module: module["module_id"])
 
 
+def port_nets(rtl):
+    """Group ports that the elaborated netlist shows are one signal threaded through modules.
+
+    A port bound to the same parent-scope net as another module's port is not a competing
+    alignment target: both name one wire. Bindings are transitive, so a net seen at two
+    hierarchy levels merges into one group.
+
+    Args:
+        rtl: Decoded RTL artifact.
+
+    Returns:
+        ``(module_name, port_name)`` to a stable net identifier, for threaded ports only.
+    """
+    owned = {}
+    for fallback, module in _module_rows(rtl):
+        name = str(_first(module, "original_name", "name", "module_name", default=fallback))
+        owned[name] = {str(_first(port, "original_name", "name", "symbol_name", default=""))
+                       for port in _as_list(module.get("ports"))}
+    groups = []
+    for _, module in _module_rows(rtl):
+        scoped = {}
+        for instance in _as_list(module.get("instances")):
+            target = instance.get("target_module")
+            for binding in _as_list(instance.get("bindings")):
+                formal = binding.get("formal_name")
+                if not target or not formal:
+                    continue
+                parent = str(binding.get("parent_module") or "")
+                for actual in _as_list(binding.get("actual_signals")):
+                    members = scoped.setdefault((parent, str(actual)), set())
+                    members.add((str(target), str(formal)))
+                    # A parent port used as the actual continues the same net one level up.
+                    if str(actual) in owned.get(parent, ()):
+                        members.add((parent, str(actual)))
+        groups.extend(scoped.values())
+    merged = {}
+    for group in groups:
+        found = [existing for existing in merged.values() if existing & group]
+        union = set(group).union(*found)
+        for member in union:
+            merged[member] = union
+    nets = {}
+    for member, union in merged.items():
+        if len(union) > 1:
+            nets[member] = "bridge::net::" + content_hash(
+                *sorted(f"{module}.{port}" for module, port in union))
+    return nets
+
+
 def rtl_signals(rtl):
-    """Flatten module-local ports and signals into canonical scoped declarations."""
+    """Flatten module-local ports and signals into canonical scoped declarations.
+
+    Args:
+        rtl: Decoded RTL artifact.
+
+    Returns:
+        Canonical RTL signals, deduplicated and ordered by signal identifier.
+    """
     rows = []
     seen = set()
+    nets = port_nets(rtl)
     for fallback_name, module in _module_rows(rtl):
         candidates = []
         for key in ("ports", "signals", "declarations", "symbol_records"):
@@ -387,13 +640,22 @@ def rtl_signals(rtl):
             signal = _canonical_rtl_signal(raw, module, fallback_name, ordinal)
             if not signal["original_name"] or signal["signal_id"] in seen:
                 continue
+            signal["net_id"] = nets.get(
+                (signal["module_name"], signal["original_name"]))
             seen.add(signal["signal_id"])
             rows.append(signal)
     return sorted(rows, key=lambda signal: signal["signal_id"])
 
 
 def enum_members(rtl):
-    """Flatten every declared enumeration member into a comparable row."""
+    """Flatten every declared enumeration member into a comparable row.
+
+    Args:
+        rtl: Decoded RTL artifact.
+
+    Returns:
+        Member rows ordered by enumeration identifier and member name.
+    """
     rows = []
     for enum in _as_list(rtl.get("enums")) if isinstance(rtl, dict) else []:
         if not isinstance(enum, dict):
@@ -422,6 +684,13 @@ def align_enum(spec, members):
 
     Specification mnemonics and RTL enumeration members normalize onto the same
     identifier, so identity decides the mapping and no rival candidate is ranked.
+
+    Args:
+        spec: Canonical specification instruction row.
+        members: Enumeration member rows from ``enum_members``.
+
+    Returns:
+        An enumeration alignment record, or None when no member matches.
     """
     match = next((member for member in members
                   if member["normalized_name"] == spec["normalized_name"]), None)
@@ -464,6 +733,13 @@ def module_roles(specs, rtl_rows):
     votes for the spec role when it is an output and for the opposite role when it
     is an input.  Only deterministic name identity casts a vote, and a module keeps
     a role only when several ports agree, so one generic name cannot decide it.
+
+    Args:
+        specs: Canonical specification signals.
+        rtl_rows: Canonical RTL signals to vote with.
+
+    Returns:
+        Module identifier to its inferred role, only where the vote is decisive.
     """
     stated = {}
     for spec in specs:
@@ -488,13 +764,29 @@ def module_roles(specs, rtl_rows):
 
 
 def with_module_roles(rtl_rows, specs):
-    """Return RTL rows annotated with the interface role inferred for their module."""
+    """Return RTL rows annotated with the interface role inferred for their module.
+
+    Args:
+        rtl_rows: Canonical RTL signals.
+        specs: Canonical specification signals.
+
+    Returns:
+        Copies of the RTL rows carrying a ``module_role`` field.
+    """
     roles = module_roles(specs, rtl_rows)
     return [{**rtl, "module_role": roles.get(rtl["module_id"])} for rtl in rtl_rows]
 
 
 def expected_direction(spec, rtl):
-    """Return the port direction a specification implies for one candidate module."""
+    """Return the port direction a specification implies for one candidate module.
+
+    Args:
+        spec: Canonical specification signal.
+        rtl: Candidate canonical RTL signal.
+
+    Returns:
+        The implied direction, or None when neither side states enough.
+    """
     if spec["direction"]:
         return spec["direction"]
     role, module_role = spec["source_role"], rtl.get("module_role")
@@ -504,7 +796,15 @@ def expected_direction(spec, rtl):
 
 
 def cheap_name_evidence(spec, rtl):
-    """Measure every deterministic layer-one name probe for one signal pair."""
+    """Measure every deterministic layer-one name probe for one signal pair.
+
+    Args:
+        spec: Canonical specification signal.
+        rtl: Candidate canonical RTL signal.
+
+    Returns:
+        Per-probe evidence with the best ``score`` and the ``methods`` that fired.
+    """
     spec_original, rtl_original = spec["original_name"], rtl["original_name"]
     spec_normal, rtl_normal = spec["normalized_name"], rtl["normalized_name"]
     spec_raw = _without_direction(identifier_tokens(spec_original, expand_abbreviations=False))
@@ -547,7 +847,16 @@ def cheap_name_evidence(spec, rtl):
 
 
 def generate_signal_candidates(spec, rtl_rows, limit=None):
-    """Generate several cheap candidates without selecting a mapping."""
+    """Generate several cheap candidates without selecting a mapping.
+
+    Args:
+        spec: Canonical specification signal.
+        rtl_rows: Canonical RTL signals to search.
+        limit: Optional candidate cap; defaults to the configured maximum.
+
+    Returns:
+        Scored candidate wrappers, best cheap score first.
+    """
     ranked = []
     for rtl in rtl_rows:
         evidence = cheap_name_evidence(spec, rtl)
@@ -570,13 +879,30 @@ def generate_signal_candidates(spec, rtl_rows, limit=None):
 
 
 def _component(score, weight, available, detail):
-    """Describe one understandable structural score component."""
+    """Describe one understandable structural score component.
+
+    Args:
+        score: Component score in ``[0, 1]``.
+        weight: Configured component weight.
+        available: Whether both sides stated enough to score this component.
+        detail: Human-readable explanation of what was compared.
+
+    Returns:
+        One component-evidence mapping.
+    """
     return {"score": _round(score), "weight": _round(weight),
             "available": bool(available), "detail": detail}
 
 
 def _weighted_components(components):
-    """Average available score components by configured weight."""
+    """Average available score components by configured weight.
+
+    Args:
+        components: Component name to component evidence.
+
+    Returns:
+        The weighted mean of available components, or zero when none are.
+    """
     active = [component for component in components.values() if component["available"]]
     weight = sum(component["weight"] for component in active)
     return (sum(component["score"] * component["weight"] for component in active) / weight
@@ -584,7 +910,15 @@ def _weighted_components(components):
 
 
 def structural_signal_score(spec, candidate):
-    """Score one layer-one candidate using source and compiler metadata."""
+    """Score one layer-one candidate using source and compiler metadata.
+
+    Args:
+        spec: Canonical specification signal.
+        candidate: Candidate wrapper carrying its RTL row and cheap evidence.
+
+    Returns:
+        ``(structural score, component evidence)``.
+    """
     rtl, cheap = candidate["rtl"], candidate["cheap"]
     weights = cfg.BRIDGE_SIGNAL_WEIGHTS
     spec_width, rtl_width = spec["width"], rtl["width"]
@@ -633,7 +967,14 @@ def structural_signal_score(spec, candidate):
 
 
 def _spec_pair_text(spec):
-    """Render compact contextual specification evidence for semantic scoring."""
+    """Render compact contextual specification evidence for semantic scoring.
+
+    Args:
+        spec: Canonical specification signal.
+
+    Returns:
+        Bounded text describing the specification side of the pair.
+    """
     return "\n".join(str(part) for part in (
         f"Signal: {spec['original_name']}",
         f"Width: {spec['width']}" if spec["width"] is not None else "",
@@ -645,7 +986,14 @@ def _spec_pair_text(spec):
 
 
 def _rtl_pair_text(rtl):
-    """Render compact contextual RTL evidence for semantic scoring."""
+    """Render compact contextual RTL evidence for semantic scoring.
+
+    Args:
+        rtl: Canonical RTL signal.
+
+    Returns:
+        Bounded text describing the RTL side of the pair.
+    """
     return "\n".join(str(part) for part in (
         f"Signal: {rtl['original_name']}",
         f"Width: {rtl['width']}" if rtl["width"] is not None else "",
@@ -656,7 +1004,18 @@ def _rtl_pair_text(rtl):
 
 
 def _score_adapter(scorer, pairs):
-    """Invoke a callable or ``score_pairs`` adapter and validate result cardinality."""
+    """Invoke a callable or ``score_pairs`` adapter and validate result cardinality.
+
+    Args:
+        scorer: Pair scorer, adapter object, or None.
+        pairs: Text pairs to score.
+
+    Returns:
+        One float per pair, or an empty list when no scorer is configured.
+
+    Raises:
+        ValueError: If the scorer returns a different number of scores than pairs.
+    """
     if scorer is None:
         return []
     raw = scorer.score_pairs(pairs) if hasattr(scorer, "score_pairs") else scorer(pairs)
@@ -667,7 +1026,14 @@ def _score_adapter(scorer, pairs):
 
 
 def _semantic_unit(value):
-    """Keep probability-like scores and squash arbitrary logits deterministically."""
+    """Keep probability-like scores and squash arbitrary logits deterministically.
+
+    Args:
+        value: Raw scorer output.
+
+    Returns:
+        A score in ``[0, 1]``.
+    """
     if 0.0 <= value <= 1.0:
         return value
     return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, value))))
@@ -678,6 +1044,13 @@ def _width_conflict(spec, candidate):
 
     Names that are identical outright are trusted over the widths, so a genuine
     width disagreement stays visible as evidence instead of discarding the pair.
+
+    Args:
+        spec: Canonical specification signal.
+        candidate: Candidate wrapper to test.
+
+    Returns:
+        True only when both widths are stated integers that disagree.
     """
     cheap, rtl = candidate["cheap"], candidate["rtl"]
     if cheap["exact_name"] or cheap["normalized_name"]:
@@ -687,7 +1060,16 @@ def _width_conflict(spec, candidate):
 
 
 def rerank_signal_candidates(spec, candidates, scorer=None):
-    """Apply layers two and three, scoring only structural survivors semantically."""
+    """Apply layers two and three, scoring only structural survivors semantically.
+
+    Args:
+        spec: Canonical specification signal.
+        candidates: Candidate wrappers from ``generate_signal_candidates``.
+        scorer: Optional semantic pair scorer.
+
+    Returns:
+        The same candidates, scored, ranked, and numbered in place.
+    """
     for candidate in candidates:
         score, components = structural_signal_score(spec, candidate)
         candidate["structural_score"] = score
@@ -715,7 +1097,14 @@ def rerank_signal_candidates(spec, candidates, scorer=None):
 
 
 def _public_candidate(candidate):
-    """Project an internal scored candidate into inspectable persisted evidence."""
+    """Project an internal scored candidate into inspectable persisted evidence.
+
+    Args:
+        candidate: Internal scored candidate wrapper.
+
+    Returns:
+        A JSON-compatible candidate record with its scores and provenance.
+    """
     rtl = candidate["rtl"]
     return {
         "candidate_rank": candidate["candidate_rank"],
@@ -736,19 +1125,39 @@ def _public_candidate(candidate):
         "cheap_evidence": {key: value for key, value in candidate["cheap"].items()
                            if key != "methods"},
         "component_evidence": candidate["component_evidence"],
-        "provenance": {
-            "file": rtl["file"], "start_line": rtl["start_line"],
-            "end_line": rtl["end_line"],
-            "reader_site_count": len(rtl["reader_sites"]),
-            "writer_site_count": len(rtl["writer_sites"]),
-            "reader_sites": rtl["reader_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
-            "writer_sites": rtl["writer_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
-        },
+        "provenance": _rtl_provenance(rtl),
+    }
+
+
+def _rtl_provenance(rtl):
+    """Return the source handles and bounded sites needed to inspect an RTL signal.
+
+    Args:
+        rtl: Canonical RTL signal.
+
+    Returns:
+        Provenance with the file extent, site counts, and bounded sites.
+    """
+    return {
+        "file": rtl["file"], "start_line": rtl["start_line"], "end_line": rtl["end_line"],
+        "reader_site_count": len(rtl["reader_sites"]),
+        "writer_site_count": len(rtl["writer_sites"]),
+        "reader_sites": rtl["reader_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
+        "writer_sites": rtl["writer_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
     }
 
 
 def ambiguity_evidence(spec, candidates, max_chars=None):
-    """Render one strictly bounded temporary evidence file for an ambiguous signal."""
+    """Render one strictly bounded temporary evidence file for an ambiguous signal.
+
+    Args:
+        spec: Canonical specification signal.
+        candidates: Close candidates offered to the resolver.
+        max_chars: Optional cap, never exceeding the configured maximum.
+
+    Returns:
+        Bounded plain-text evidence describing the signal and its candidates.
+    """
     limit = min(max_chars or cfg.BRIDGE_LLM_MAX_CHARS, cfg.BRIDGE_LLM_MAX_CHARS)
     lines = ["SPEC SIGNAL", "", f"id: {spec['signal_id']}",
              f"name: {spec['original_name']}", f"width: {spec['width']}",
@@ -768,7 +1177,16 @@ def ambiguity_evidence(spec, candidates, max_chars=None):
 
 
 def _resolver_result(resolver, evidence, candidates):
-    """Validate a tiny-model resolver response against the offered candidate IDs."""
+    """Validate a tiny-model resolver response against the offered candidate IDs.
+
+    Args:
+        resolver: Callable taking evidence text and returning a decision.
+        evidence: Bounded evidence text passed to the resolver.
+        candidates: Candidates the resolver was allowed to choose between.
+
+    Returns:
+        ``{candidate_id, confidence, reason}``, or None when the reply is unusable.
+    """
     raw = resolver(evidence)
     if isinstance(raw, str):
         try:
@@ -806,8 +1224,32 @@ def _implementation_sites(candidate):
     return len(rtl["reader_sites"]) + len(rtl["writer_sites"])
 
 
+def _collapse_threaded_ports(candidates):
+    """Reduce ports carrying one elaborated net to the single site that drives it.
+
+    Args:
+        candidates: Close-scoring internal candidates.
+
+    Returns:
+        One representative per net when every candidate shares it, else the input.
+    """
+    nets = {candidate["rtl"].get("net_id") for candidate in candidates}
+    if len(candidates) < 2 or len(nets) != 1 or None in nets:
+        return candidates
+    return [max(candidates, key=lambda candidate: (
+        len(candidate["rtl"]["writer_sites"]), _implementation_sites(candidate),
+        -candidate["candidate_rank"]))]
+
+
 def confidence_level(score):
-    """Map a numeric accepted alignment score to the configured trust band."""
+    """Map a numeric accepted alignment score to the configured trust band.
+
+    Args:
+        score: Accepted alignment score.
+
+    Returns:
+        ``STRONG``, ``MEDIUM``, ``WEAK``, or ``UNRESOLVED``.
+    """
     if score >= cfg.BRIDGE_STRONG_MIN:
         return STRONG
     if score >= cfg.BRIDGE_MEDIUM_MIN:
@@ -818,14 +1260,31 @@ def confidence_level(score):
 
 
 def _spec_provenance(spec):
-    """Return the source handles required to inspect a specification signal."""
+    """Return the source handles required to inspect a specification signal.
+
+    Args:
+        spec: Canonical specification signal.
+
+    Returns:
+        The stated provenance fields, omitting those the signal leaves unset.
+    """
     return {key: spec.get(key) for key in (
         "document_id", "section_id", "section_title", "subsection_id", "subsection_title",
         "table_id", "chunk_id", "page", "source_file") if spec.get(key) is not None}
 
 
 def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
-    """Run all enabled layers and return either an alignment or unresolved record."""
+    """Run all enabled layers and return either an alignment or unresolved record.
+
+    Args:
+        spec: Canonical specification signal.
+        rtl_rows: Canonical RTL signals to align against.
+        scorer: Optional semantic pair scorer.
+        llm_resolver: Optional tiny-model tie-breaker.
+
+    Returns:
+        ``("aligned", record)`` or ``("unresolved", record)``.
+    """
     candidates = rerank_signal_candidates(
         spec, generate_signal_candidates(spec, rtl_rows), scorer=scorer)
     survivors = [candidate for candidate in candidates if candidate["survived_structural"]]
@@ -837,16 +1296,30 @@ def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
         "provenance": {"spec": _spec_provenance(spec)},
         "candidates": public,
     }
+    def unresolved(reason, ambiguous, **extra):
+        """Return the shared unresolved outcome carrying this rejection's reason.
+
+        Args:
+            reason: Why no candidate was accepted.
+            ambiguous: Whether the top candidates were too close to choose between.
+            **extra: Additional diagnostic fields for this rejection.
+
+        Returns:
+            ``("unresolved", record)``.
+        """
+        return "unresolved", {**base, "confidence": 0.0, "confidence_level": UNRESOLVED,
+                              "ambiguous": ambiguous, "reason": reason, **extra}
+
     if not survivors:
         contradicted = candidates and all(item["rejected_by"] for item in candidates)
-        return "unresolved", {**base, "confidence": 0.0, "confidence_level": UNRESOLVED,
-                              "ambiguous": False,
-                              "reason": ("every candidate contradicts the specified width"
-                                         if contradicted else
-                                         "no candidate survived structural scoring")}
+        return unresolved("every candidate contradicts the specified width" if contradicted
+                          else "no candidate survived structural scoring", False)
     top = survivors[0]
     close = [candidate for candidate in survivors
              if top["final_score"] - candidate["final_score"] <= cfg.BRIDGE_AMBIGUITY_MARGIN]
+    # Ports threaded through the hierarchy are one wire, so they never compete with each other.
+    close = _collapse_threaded_ports(close)
+    top = close[0] if len(close) == 1 else top
     # Observed usage separates a driving module from identically named pass-through ports.
     most_used = [candidate for candidate in close
                  if _implementation_sites(candidate)
@@ -865,23 +1338,17 @@ def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
                             if candidate["rtl"]["signal_id"] == resolution["candidate_id"])
     score = selected["final_score"]
     if score < cfg.BRIDGE_ACCEPT_MIN:
-        return "unresolved", {**base, "confidence": 0.0, "confidence_level": UNRESOLVED,
-                              "ambiguous": ambiguous,
-                              "reason": "best candidate is below the acceptance threshold",
-                              "best_candidate_score": _round(score)}
+        return unresolved("best candidate is below the acceptance threshold", ambiguous,
+                          best_candidate_score=_round(score))
     if ambiguous and resolution is None:
-        return "unresolved", {**base, "confidence": 0.0, "confidence_level": UNRESOLVED,
-                              "ambiguous": True,
-                              "reason": "top candidates are too close to choose safely",
-                              "best_candidate_score": _round(score)}
+        return unresolved("top candidates are too close to choose safely", True,
+                          best_candidate_score=_round(score))
     if resolution is not None:
         score = min(score, resolution["confidence"])
         if score < cfg.BRIDGE_ACCEPT_MIN:
-            return "unresolved", {**base, "confidence": 0.0,
-                                  "confidence_level": UNRESOLVED, "ambiguous": True,
-                                  "reason": "tiny-model resolution confidence is too low",
-                                  "resolution": resolution,
-                                  "best_candidate_score": _round(selected["final_score"])}
+            return unresolved("tiny-model resolution confidence is too low", True,
+                              resolution=resolution,
+                              best_candidate_score=_round(selected["final_score"]))
     rtl = selected["rtl"]
     alignment_id = "bridge::signal::" + content_hash(spec["signal_id"], rtl["signal_id"])
     methods = _unique(selected["cheap"]["methods"] + ["structural_score"] +
@@ -903,19 +1370,19 @@ def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
                       "margin": cfg.BRIDGE_AMBIGUITY_MARGIN,
                       "resolver_used": resolution is not None,
                       "resolution": resolution},
-        "provenance": {"spec": _spec_provenance(spec), "rtl": {
-            "file": rtl["file"], "start_line": rtl["start_line"],
-            "end_line": rtl["end_line"],
-            "reader_site_count": len(rtl["reader_sites"]),
-            "writer_site_count": len(rtl["writer_sites"]),
-            "reader_sites": rtl["reader_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
-            "writer_sites": rtl["writer_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
-        }},
+        "provenance": {"spec": _spec_provenance(spec), "rtl": _rtl_provenance(rtl)},
     }
 
 
 def _section_rows(hierarchy):
-    """Return section rows from canonical hierarchy or legacy node aliases."""
+    """Return section rows from canonical hierarchy or legacy node aliases.
+
+    Args:
+        hierarchy: Decoded specification hierarchy artifact.
+
+    Returns:
+        Raw section rows, deduplicated by their stated identity.
+    """
     if isinstance(hierarchy, list):
         return hierarchy
     if not isinstance(hierarchy, dict):
@@ -944,7 +1411,14 @@ def _section_rows(hierarchy):
 
 
 def _canonical_section(raw):
-    """Adapt one hierarchy section into the module-alignment surface."""
+    """Adapt one hierarchy section into the module-alignment surface.
+
+    Args:
+        raw: One raw hierarchy section row.
+
+    Returns:
+        A canonical section record with its title, path, and provenance.
+    """
     section_id = str(_first(raw, "node_id", "id", "section_id", default=""))
     title = str(_first(raw, "subsection_title", "section_name", "section_title", "title",
                        "raw_title", "name",
@@ -962,7 +1436,17 @@ def _canonical_section(raw):
 
 
 def _module_candidate(section, module, scoped_alignments, scoped_specs):
-    """Score one section-to-module candidate using names, context, and child mappings."""
+    """Score one section-to-module candidate using names, context, and child mappings.
+
+    Args:
+        section: Canonical section record.
+        module: Canonical RTL module record.
+        scoped_alignments: Signal alignments belonging to this section.
+        scoped_specs: Specification signals belonging to this section.
+
+    Returns:
+        A scored candidate record carrying its eligibility flag.
+    """
     title_tokens = _module_identity_tokens(_tokens(section["title"]))
     module_tokens = _module_identity_tokens(module["normalized_tokens"])
     token_score = _jaccard(title_tokens, module_tokens)
@@ -1012,7 +1496,17 @@ def _module_candidate(section, module, scoped_alignments, scoped_specs):
 
 
 def derive_module_alignments(hierarchy, modules, alignments, specs):
-    """Derive inspectable section-to-module alignments from names, context, and child signals."""
+    """Derive inspectable section-to-module alignments from names, context, and child signals.
+
+    Args:
+        hierarchy: Decoded specification hierarchy artifact.
+        modules: Canonical RTL module records.
+        alignments: Accepted signal alignments.
+        specs: Canonical specification signals.
+
+    Returns:
+        Section alignment records ordered by section identifier.
+    """
     by_spec_id = {spec["signal_id"]: spec for spec in specs}
     results = []
     for raw in _section_rows(hierarchy):
@@ -1073,7 +1567,19 @@ def derive_module_alignments(hierarchy, modules, alignments, specs):
 
 def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=None,
                  source_fingerprints=None):
-    """Build the complete deterministic bridge artifact from decoded upstream artifacts."""
+    """Build the complete deterministic bridge artifact from decoded upstream artifacts.
+
+    Args:
+        spec_data: Decoded specification signal artifact.
+        rtl_data: Decoded RTL artifact.
+        hierarchy_data: Decoded specification hierarchy artifact.
+        scorer: Optional semantic pair scorer.
+        llm_resolver: Optional tiny-model tie-breaker.
+        source_fingerprints: Optional precomputed input fingerprints.
+
+    Returns:
+        The complete ``bridge.json`` payload with its summary counts.
+    """
     every_spec = spec_signals(spec_data)
     instructions = [row for row in every_spec if row["row_kind"] == INSTRUCTION_ROW]
     specs = [row for row in every_spec if row["row_kind"] != INSTRUCTION_ROW]
@@ -1086,7 +1592,14 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=
     resolver_calls = 0
 
     def bounded_resolver(evidence):
-        """Permit at most one configured tiny-model ambiguity decision per build."""
+        """Permit at most one configured tiny-model ambiguity decision per build.
+
+        Args:
+            evidence: Bounded evidence text for one ambiguous signal.
+
+        Returns:
+            The resolver's reply, or None once the per-build budget is spent.
+        """
         nonlocal resolver_calls
         if llm_resolver is None or resolver_calls >= cfg.BRIDGE_LLM_MAX_CALLS:
             return None
@@ -1127,7 +1640,14 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=
 
 
 def load_bridge(path=cfg.BRIDGE_PATH):
-    """Load a bridge artifact, returning an empty compatible view when absent."""
+    """Load a bridge artifact, returning an empty compatible view when absent.
+
+    Args:
+        path: Bridge artifact path.
+
+    Returns:
+        The decoded artifact, or an empty artifact of the same shape.
+    """
     if not Path(path).is_file():
         return {"schema_version": SCHEMA_VERSION, "source_fingerprints": {},
                 "signal_alignments": [], "unresolved_signals": [],
@@ -1137,7 +1657,16 @@ def load_bridge(path=cfg.BRIDGE_PATH):
 
 
 def lookup_signal(bridge, name_or_id, include_unresolved=False):
-    """Return bridge rows matching a spec or RTL signal ID/name."""
+    """Return bridge rows matching a spec or RTL signal ID/name.
+
+    Args:
+        bridge: Decoded bridge artifact.
+        name_or_id: Specification or RTL signal identifier or name.
+        include_unresolved: Also search unresolved signals when true.
+
+    Returns:
+        Matching alignment rows, empty when nothing matches.
+    """
     normalized = normalize_identifier(name_or_id)
     rows = list(bridge.get("signal_alignments", []))
     if include_unresolved:
@@ -1151,7 +1680,16 @@ def lookup_signal(bridge, name_or_id, include_unresolved=False):
 
 
 def lookup_module(bridge, name_or_id, include_unresolved=False):
-    """Return section-to-module rows matching either side of the bridge."""
+    """Return section-to-module rows matching either side of the bridge.
+
+    Args:
+        bridge: Decoded bridge artifact.
+        name_or_id: Section or module identifier or name.
+        include_unresolved: Also return rows with no accepted module when true.
+
+    Returns:
+        Matching module alignment rows, empty when nothing matches.
+    """
     normalized = normalize_module_name(name_or_id)
     return [row for row in bridge.get("module_alignments", [])
             if (include_unresolved or row.get("rtl_module_id") is not None) and (
@@ -1163,7 +1701,17 @@ def lookup_module(bridge, name_or_id, include_unresolved=False):
 
 
 def _load_json(path):
-    """Load a required JSON artifact with a concise missing-file failure."""
+    """Load a required JSON artifact with a concise missing-file failure.
+
+    Args:
+        path: Required artifact path.
+
+    Returns:
+        The decoded artifact.
+
+    Raises:
+        SystemExit: If the artifact does not exist.
+    """
     if not Path(path).is_file():
         raise SystemExit(f"missing {path}; rebuild its upstream ingestion stage")
     with open(path, encoding="utf-8") as source:
@@ -1171,7 +1719,11 @@ def _load_json(path):
 
 
 def source_fingerprints():
-    """Return current byte hashes for every upstream bridge input artifact."""
+    """Return current byte hashes for every upstream bridge input artifact.
+
+    Returns:
+        Artifact name to the hex digest of its current bytes.
+    """
     return {
         "spec_signals": _path_fingerprint(cfg.SPEC_SIGNALS_PATH),
         "rtl": _path_fingerprint(cfg.RTL_PATH),
@@ -1180,7 +1732,15 @@ def source_fingerprints():
 
 
 def _write_bridge(artifact, path=cfg.BRIDGE_PATH):
-    """Publish a bridge artifact atomically so readers never see partial JSON."""
+    """Publish a bridge artifact atomically so readers never see partial JSON.
+
+    Args:
+        artifact: Complete bridge payload.
+        path: Destination JSON path.
+
+    Returns:
+        None.
+    """
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
@@ -1191,7 +1751,14 @@ def _write_bridge(artifact, path=cfg.BRIDGE_PATH):
 
 
 def ollama_resolver(evidence):
-    """Ask the configured tiny local model to resolve one bounded ambiguous shortlist."""
+    """Ask the configured tiny local model to resolve one bounded ambiguous shortlist.
+
+    Args:
+        evidence: Bounded evidence text for one ambiguous signal.
+
+    Returns:
+        The model's raw reply text, left unparsed so a truncated reply stays recoverable.
+    """
     import httpx
 
     schema = {"type": "object", "properties": {
@@ -1214,7 +1781,14 @@ def ollama_resolver(evidence):
 
 
 def _arguments(argv=None):
-    """Parse full-build bridge options without accepting the obsolete prefix mode."""
+    """Parse full-build bridge options without accepting the obsolete prefix mode.
+
+    Args:
+        argv: Optional argument list for tests.
+
+    Returns:
+        Parsed command-line arguments.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rerank", action="store_true",
                         help="rerank structural survivors with the configured cross-encoder")
@@ -1224,7 +1798,14 @@ def _arguments(argv=None):
 
 
 def main(argv=None):
-    """Build every signal and module alignment into ``output/bridge.json``."""
+    """Build every signal and module alignment into ``output/bridge.json``.
+
+    Args:
+        argv: Optional argument list for tests.
+
+    Returns:
+        None.
+    """
     args = _arguments(argv)
     spec_data = _load_json(cfg.SPEC_SIGNALS_PATH)
     rtl_data = _load_json(cfg.RTL_PATH)

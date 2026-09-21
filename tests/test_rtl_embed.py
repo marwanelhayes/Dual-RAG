@@ -222,6 +222,52 @@ def test_exact_lookup_resolves_a_module_named_in_expanded_words(tmp_path):
     assert "exact_match_type" not in hit.metadata
 
 
+def test_module_text_names_the_peer_modules_its_ports_are_wired_to(tmp_path):
+    source = tmp_path / "hazard_unit.sv"
+    source.write_text("module hazard_unit; endmodule\n")
+    rtl = {"modules": {}, "instance_tree": []}
+    for module in ("hazard_unit", "fetch_stage", "riscv_processor"):
+        rtl["modules"][module] = {
+            "file": str(source), "start_line": 1, "end_line": 2, "ports": [],
+            "signals": [], "parameters": [], "always_blocks": [],
+            "functions_tasks": [], "assignment_groups": [], "instances": [],
+        }
+    rtl["modules"]["riscv_processor"]["instances"] = [
+        {"target_module": target, "bindings": [
+            {"parent_module": "riscv_processor", "formal_name": "StallD",
+             "actual_signals": ["StallD"], "direction": direction}]}
+        for target, direction in (("hazard_unit", "output"), ("fetch_stage", "input"))
+    ]
+    records = re_.retrieval_records(rtl)
+    text = {record["chunk_id"]: record["text"] for record in records}
+
+    assert "drives: StallD -> fetch_stage" in text["rtl:hazard_unit"]
+    assert "reads: StallD <- hazard_unit" in text["rtl:fetch_stage"]
+
+
+def test_exact_lookup_prefers_the_module_the_query_named_over_a_shared_signal(tmp_path):
+    named = tmp_path / "risc_fpu.sv"
+    named.write_text("module risc_fpu; endmodule\n")
+    other = tmp_path / "flp_add_sub.sv"
+    other.write_text("module flp_add_sub; endmodule\n")
+    rtl = {"modules": {}, "instance_tree": []}
+    for source, module in ((named, "risc_fpu"), (other, "flp_add_sub")):
+        rtl["modules"][module] = {
+            "file": str(source), "start_line": 1, "end_line": 2, "ports": [],
+            "parameters": [{"signal_id": f"rtl::par::{module}::PRECISION",
+                            "construct_type": "PARAMETER", "original_name": "PRECISION"}],
+            "signals": [], "always_blocks": [], "functions_tasks": [],
+            "assignment_groups": [], "instances": [],
+        }
+    records = re_.retrieval_records(rtl)
+
+    ranked = [hit.metadata["module"]
+              for hit in re_.exact_lookup("which module instantiates risc_fpu "
+                                          "and with what PRECISION parameter?", records)]
+
+    assert ranked[0] == "risc_fpu"
+
+
 def test_exact_lookup_ignores_plain_words_that_collide_with_a_signal_name(tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")
@@ -321,6 +367,69 @@ def test_non_exact_fill_uses_domain_hybrid_reranking(monkeypatch, tmp_path):
     assert hits == [document]
 
 
+def test_exact_signal_search_splits_module_and_construct_budget():
+    records = []
+    for module in ("a", "b", "c", "d"):
+        records.extend([
+            {
+                "chunk_id": f"rtl:{module}", "record_id": f"module:{module}",
+                "context_header": f"RTL > {module}", "text": f"module {module}",
+                "source_type": "module", "module": module, "lookup_terms": [],
+                "signal_metadata": [{
+                    "signal_id": f"signal:{module}", "original_name": "SharedSignal",
+                    "normalized_name": "shared_signal", "writer_sites": [{}],
+                    "reader_sites": [],
+                }],
+            },
+            {
+                "chunk_id": f"rtl:construct:{module}:always:1-2",
+                "record_id": f"block:{module}", "context_header": f"RTL > {module} > always",
+                "text": "writes SharedSignal", "source_type": "construct",
+                "module": module, "lookup_terms": [], "signals_read": [],
+                "signals_written": ["SharedSignal"], "start_line": 1,
+            },
+        ])
+
+    hits = re_.RTLRetriever(records).search("Where is SharedSignal written?", top_k=4)
+
+    assert [hit.metadata["source_type"] for hit in hits] == [
+        "module", "construct", "module", "construct"]
+
+
+def test_semantic_module_hit_reranks_its_constructs():
+    module = {
+        "chunk_id": "rtl:hazard_unit", "record_id": "module", "source_id": "file",
+        "context_header": "RTL > hazard_unit", "text": "module hazard_unit",
+        "source_type": "module", "module": "hazard_unit", "lookup_terms": [],
+    }
+    block = {
+        "chunk_id": "rtl:construct:hazard_unit:always:1-2", "record_id": "block",
+        "source_id": "file", "context_header": "RTL > hazard_unit > always",
+        "text": "writes StallD", "source_type": "construct", "module": "hazard_unit",
+        "lookup_terms": [],
+    }
+    module_doc = re_.record_to_document(module)
+
+    class Ranker:
+        def rank(self, query, documents):
+            del query
+            return [(document, int(document.metadata["source_type"] == "construct"))
+                    for document in reversed(list(documents))]
+
+    class Hybrid:
+        reranker = Ranker()
+
+        def search(self, query, top_k):
+            del query, top_k
+            return [(module_doc, 0.0)]
+
+    hits = re_.RTLRetriever([module, block], hybrid=Hybrid()).search(
+        "where does the pipeline stall", top_k=2)
+
+    assert [hit.metadata["chunk_id"] for hit in hits] == [
+        "rtl:construct:hazard_unit:always:1-2", "rtl:hazard_unit"]
+
+
 def test_generic_short_words_do_not_activate_signal_lookup(tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")
@@ -385,3 +494,53 @@ def test_main_writes_manifest_last_and_skips_an_unchanged_index(monkeypatch, tmp
 
     assert len(builds) == 1
     assert read_manifest(manifest_path) == build_manifest(builds[0])
+
+
+def test_module_facets_are_bounded_into_one_chunk():
+    parts = [("identity", "module wide"), ("ports", "ports: " + "a, " * 200),
+             ("comments", "comments: " + "b " * 200)]
+
+    kept = re_._budgeted_facets(parts, max_chars=400)
+
+    assert kept[0] == "module wide"
+    assert len("\n".join(kept)) <= 400
+
+
+def test_a_small_module_keeps_every_facet():
+    parts = [("identity", "module tiny"), ("ports", "ports: clk, rst")]
+
+    assert re_._budgeted_facets(parts, max_chars=400) == [
+        "module tiny", "ports: clk, rst"]
+
+
+def test_a_long_trailing_facet_is_trimmed_rather_than_dropped():
+    parts = [("identity", "module m"), ("comments", "comments: " + "x" * 500)]
+
+    kept = re_._budgeted_facets(parts, max_chars=200)
+
+    assert len(kept) == 2
+    assert kept[1].startswith("comments: ")
+    assert len("\n".join(kept)) <= 200
+
+
+def test_source_is_trimmed_on_whole_lines_only():
+    source = "\n".join(f"line {index}" for index in range(40))
+
+    trimmed = re_._whole_lines(source, max_chars=60)
+
+    assert len(trimmed) <= 60
+    assert source.startswith(trimmed)
+    assert not trimmed.endswith("lin")
+    assert all(line in source.split("\n") for line in trimmed.split("\n"))
+
+
+def test_a_single_long_source_line_is_kept_rather_than_dropped():
+    trimmed = re_._whole_lines("x" * 500 + "\nshort", max_chars=100)
+
+    assert trimmed == "x" * 100
+
+
+def test_decoration_banners_are_stripped_from_comments():
+    source = "// ─── risc_alu: multiplication unit ────────────\nassign a = b;"
+
+    assert re_.comments(source) == ["risc_alu: multiplication unit"]

@@ -11,6 +11,8 @@ IDENTIFIER_RE = re.compile(
     r"\b(?:0x[0-9a-f]+|[A-Z][A-Z0-9_.]{2,}|"
     r"[A-Za-z_][A-Za-z0-9]*_[A-Za-z0-9_.]+|"
     r"[A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.]+)\b")
+# These describe the question's domain, not a specific hardware identity.
+CONTEXT_TERMS = frozenset({"RTL", "SPEC", "AXI", "FPU"})
 
 
 def tokenize(text):
@@ -34,18 +36,19 @@ def identifier_terms(text):
     Returns:
         Exact-looking hardware identifiers.
     """
-    return list(dict.fromkeys(IDENTIFIER_RE.findall(text or "")))
+    return [term for term in dict.fromkeys(IDENTIFIER_RE.findall(text or ""))
+            if term not in CONTEXT_TERMS]
 
 
 def exact_document_ids(documents, terms):
-    """Return documents with token-bounded identifier matches in corpus order.
+    """Prioritize the most selective matching identifier, retaining frequency ties.
 
     Args:
         documents: LangChain documents keyed by stable chunk identifier.
         terms: Literal identifier terms to match.
 
     Returns:
-        Matching document identifiers in corpus order.
+        Matching IDs in corpus order. Broad-only hits remain eligible via hybrid search.
     """
     wanted = [term for term in dict.fromkeys(terms or []) if term]
     if not wanted:
@@ -55,10 +58,14 @@ def exact_document_ids(documents, terms):
                    re.IGNORECASE)
         for term in wanted
     ]
-    return [
-        chunk_id for chunk_id, document in documents.items()
-        if any(pattern.search(document.page_content) for pattern in patterns)
-    ]
+    matches = [{chunk_id for chunk_id, document in documents.items()
+                if pattern.search(document.page_content)} for pattern in patterns]
+    matches = [ids for ids in matches if ids]
+    if not matches:
+        return []
+    smallest = min(map(len, matches))
+    selected = set().union(*(ids for ids in matches if len(ids) == smallest))
+    return [chunk_id for chunk_id in documents if chunk_id in selected]
 
 
 class BM25Index:
@@ -273,7 +280,7 @@ class Retriever:
         return exact + [chunk_id for chunk_id in fused if chunk_id not in exact_set]
 
     def search(self, query, top_k=cfg.RETRIEVE_TOP_K, exact_terms=None):
-        """Rerank a bounded shortlist while keeping literal hits first.
+        """Keep a bounded exact prefix, then fill by relevance across all candidates.
 
         Args:
             query: Query used by every retrieval lane.
@@ -283,19 +290,22 @@ class Retriever:
         Returns:
             Document and cross-encoder score pairs.
         """
+        if top_k <= 0:
+            return []
         terms = identifier_terms(query) if exact_terms is None else exact_terms
         exact_ids = exact_document_ids(self.documents, terms)
-        candidate_ids = self.candidates(query, exact_terms=exact_terms)
-        if not candidate_ids:
-            return []
+        candidate_ids = self.candidates(query, exact_terms=terms)
         exact_set = set(exact_ids)
-        exact = [self.documents[item] for item in exact_ids if item in self.documents]
-        remaining = [self.documents[item] for item in candidate_ids
-                     if item in self.documents and item not in exact_set]
-        ranked_exact = self.reranker.rank(query, exact) if exact else []
-        room = max(top_k - len(ranked_exact), 0)
-        ranked_remaining = self.reranker.rank(query, remaining)[:room] if room else []
-        return ranked_exact[:top_k] + ranked_remaining
+        if top_k == 1 and exact_ids:
+            return self.reranker.rank(query, [self.documents[item] for item in exact_ids])[:1]
+        ranked = self.reranker.rank(query, [self.documents[item] for item in candidate_ids
+                                            if item in self.documents])
+        # Exact identity gets priority, but cannot reserve the entire evidence budget.
+        pinned = [pair for pair in ranked if pair[0].metadata["chunk_id"] in exact_set][
+            :max(1, top_k // 2)]
+        pinned_ids = {document.metadata["chunk_id"] for document, _ in pinned}
+        remaining = [pair for pair in ranked if pair[0].metadata["chunk_id"] not in pinned_ids]
+        return pinned + remaining[:top_k - len(pinned)]
 
 
 def main():

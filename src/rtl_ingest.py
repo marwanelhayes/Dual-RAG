@@ -23,7 +23,14 @@ _BLOCK_KINDS = ("always", "func", "task", "contassign", "initial")
 
 
 def parse_loc(loc):
-    """Return ``(file id, first line, last line)`` for a Verilator location."""
+    """Return ``(file id, first line, last line)`` for a Verilator location.
+
+    Args:
+        loc: Raw Verilator ``loc`` attribute.
+
+    Returns:
+        ``(file id, first line, last line)``, or None when unparseable.
+    """
     match = _LOC.match(loc or "")
     if not match:
         return None
@@ -31,7 +38,15 @@ def parse_loc(loc):
 
 
 def file_table(root, rtl_dir):
-    """Map Verilator file ids to project SystemVerilog paths."""
+    """Map Verilator file ids to project SystemVerilog paths.
+
+    Args:
+        root: Parsed Verilator XML root element.
+        rtl_dir: Directory holding the project's SystemVerilog sources.
+
+    Returns:
+        Verilator file id to the matching existing ``.sv`` path.
+    """
     table = {}
     for element in root.iter("file"):
         name = element.get("filename", "")
@@ -44,18 +59,41 @@ def file_table(root, rtl_dir):
 
 
 def source_name(name):
-    """Collapse a Verilator parameter clone to its source module name."""
+    """Collapse a Verilator parameter clone to its source module name.
+
+    Args:
+        name: Possibly parameter-specialized module name.
+
+    Returns:
+        The source module name with any clone suffix removed.
+    """
     return _CLONE_SUFFIX.sub("", name or "")
 
 
 def read_lines(path, first, last):
-    """Read an inclusive, one-based source line range."""
+    """Read an inclusive, one-based source line range.
+
+    Args:
+        path: Source file to read.
+        first: First one-based line to include.
+        last: Last one-based line to include.
+
+    Returns:
+        The requested lines joined as one string.
+    """
     with open(path, encoding="utf-8", errors="replace") as source:
         return "".join(source.readlines()[first - 1:last])
 
 
 def block_extent(node):
-    """Return a compiler-bounded block extent without following declaration refs."""
+    """Return a compiler-bounded block extent without following declaration refs.
+
+    Args:
+        node: Verilator AST node opening the block.
+
+    Returns:
+        ``(file id, first line, last line)``, or None without a usable location.
+    """
     own = parse_loc(node.get("loc"))
     if not own:
         return None
@@ -70,7 +108,14 @@ def block_extent(node):
 
 
 def _unique(values):
-    """Deduplicate non-empty values while preserving compiler order."""
+    """Deduplicate non-empty values while preserving compiler order.
+
+    Args:
+        values: Values to deduplicate.
+
+    Returns:
+        Unique non-empty values in first-seen order.
+    """
     out = []
     for value in values:
         if value not in (None, "") and value not in out:
@@ -79,17 +124,40 @@ def _unique(values):
 
 
 def _normal_direction(direction):
-    """Normalize Verilator's abbreviated port directions."""
+    """Normalize Verilator's abbreviated port directions.
+
+    Args:
+        direction: Raw Verilator direction attribute.
+
+    Returns:
+        ``input``, ``output``, or the value unchanged.
+    """
     return {"in": "input", "out": "output"}.get(direction, direction)
 
 
 def _parent_map(root):
-    """Build child-to-parent links for ElementTree nodes."""
+    """Build child-to-parent links for ElementTree nodes.
+
+    Args:
+        root: Parsed Verilator XML root element.
+
+    Returns:
+        Child element to its parent element.
+    """
     return {child: parent for parent in root.iter() for child in parent}
 
 
 def _owned_by(node, owner, parents):
-    """Return whether a node's nearest module ancestor is ``owner``."""
+    """Return whether a node's nearest module ancestor is ``owner``.
+
+    Args:
+        node: AST node to test.
+        owner: Module element expected to own it.
+        parents: Child-to-parent map from ``_parent_map``.
+
+    Returns:
+        True when the node belongs to ``owner`` rather than a nested module.
+    """
     current = parents.get(node)
     while current is not None:
         if current.tag == "module":
@@ -99,7 +167,16 @@ def _owned_by(node, owner, parents):
 
 
 def _scope_names(node, parents, stop):
-    """Return named compiler scopes enclosing a node inside its module."""
+    """Return named compiler scopes enclosing a node inside its module.
+
+    Args:
+        node: AST node to walk up from.
+        parents: Child-to-parent map from ``_parent_map``.
+        stop: Ancestor element at which to stop, normally the module.
+
+    Returns:
+        Named enclosing scopes, outermost first.
+    """
     names = []
     current = parents.get(node)
     while current is not None and current is not stop:
@@ -112,7 +189,16 @@ def _scope_names(node, parents, stop):
 
 
 def _generate_node(node, parents, stop):
-    """Return a node's nearest named non-procedural generate scope."""
+    """Return a node's nearest named non-procedural generate scope.
+
+    Args:
+        node: AST node to walk up from.
+        parents: Child-to-parent map from ``_parent_map``.
+        stop: Ancestor element at which to stop, normally the module.
+
+    Returns:
+        The generate-scope element, or None inside procedural code.
+    """
     chain = []
     current = parents.get(node)
     while current is not None and current is not stop:
@@ -128,7 +214,15 @@ def _generate_node(node, parents, stop):
 
 
 def _generate_id(module, node):
-    """Build a stable identifier for a compiler-named generate scope."""
+    """Build a stable identifier for a compiler-named generate scope.
+
+    Args:
+        module: Owning source module name.
+        node: Generate-scope element.
+
+    Returns:
+        An ``rtl::gen::`` identifier fixed by module, name, and line.
+    """
     located = parse_loc(node.get("loc"))
     line = located[1] if located else 0
     name = node.get("name") or node.get("origName") or "generate"
@@ -136,7 +230,14 @@ def _generate_id(module, node):
 
 
 def _symbol_kind(var):
-    """Classify a declaration as a port, parameter, or internal signal."""
+    """Classify a declaration as a port, parameter, or internal signal.
+
+    Args:
+        var: Verilator ``var`` declaration element.
+
+    Returns:
+        ``PORT``, ``PARAMETER``, or ``SIGNAL``.
+    """
     if (var.get("param") in {"true", "1"}
             or var.get("localparam") in {"true", "1"}
             or var.get("vartype") in {"param", "localparam"}):
@@ -145,13 +246,29 @@ def _symbol_kind(var):
 
 
 def _symbol_base_id(kind, module, name):
-    """Build the canonical identifier for a module-owned declaration."""
+    """Build the canonical identifier for a module-owned declaration.
+
+    Args:
+        kind: Declaration kind from ``_symbol_kind``.
+        module: Owning source module name.
+        name: Declared identifier.
+
+    Returns:
+        The unscoped canonical ``rtl::`` identifier for that declaration.
+    """
     prefix = {"PORT": "port", "PARAMETER": "param", "SIGNAL": "sig"}[kind]
     return f"rtl::{prefix}::{module}::{name}"
 
 
 def _integer(value):
-    """Decode an ordinary integer used in Verilator type ranges."""
+    """Decode an ordinary integer used in Verilator type ranges.
+
+    Args:
+        value: Decimal or sized-based Verilog literal.
+
+    Returns:
+        The integer value, or None when the literal is not a plain constant.
+    """
     if value is None:
         return None
     text = str(value).replace("_", "").strip()
@@ -165,7 +282,14 @@ def _integer(value):
 
 
 def _range_descriptor(node):
-    """Return numeric width and source-like range text for a dtype node."""
+    """Return numeric width and source-like range text for a dtype node.
+
+    Args:
+        node: Verilator dtype element.
+
+    Returns:
+        ``(width, range expression)``; either is None when not deterministic.
+    """
     left, right = node.get("left"), node.get("right")
     if left is None or right is None:
         range_node = node.find("range")
@@ -182,7 +306,14 @@ def _range_descriptor(node):
 
 
 def type_descriptors(root):
-    """Resolve Verilator dtype ids to type and packed-width metadata."""
+    """Resolve Verilator dtype ids to type and packed-width metadata.
+
+    Args:
+        root: Parsed Verilator XML root element.
+
+    Returns:
+        Dtype id to a descriptor with data type, width, and width expression.
+    """
     table = {}
     type_table = root.find("typetable")
     if type_table is None:
@@ -196,7 +327,15 @@ def type_descriptors(root):
     nodes = {node.get("id"): node for node in type_table if node.get("id")}
 
     def resolve(dtype_id, stack=()):
-        """Recursively resolve one dtype while breaking malformed cycles."""
+        """Recursively resolve one dtype while breaking malformed cycles.
+
+        Args:
+            dtype_id: Dtype identifier to resolve.
+            stack: Dtype ids already being resolved on this path.
+
+        Returns:
+            The resolved descriptor, or an empty mapping when unresolvable.
+        """
         if not dtype_id or dtype_id in table:
             return table.get(dtype_id, {})
         if dtype_id in stack or dtype_id not in nodes:
@@ -227,7 +366,15 @@ def type_descriptors(root):
 
 
 def _enum_item(node, files):
-    """Project one enumeration member with its constant and declaration site."""
+    """Project one enumeration member with its constant and declaration site.
+
+    Args:
+        node: Verilator ``enumitem`` element.
+        files: Verilator file id to source path.
+
+    Returns:
+        One member record with its value and declaration site.
+    """
     constant = next((child for child in node if child.tag == "const"), None)
     located = parse_loc(node.get("loc"))
     path = files.get(located[0]) if located else None
@@ -243,7 +390,15 @@ def _enum_item(node, files):
 
 
 def enum_types(root, files):
-    """Return package-scoped enumeration types with their members in source order."""
+    """Return package-scoped enumeration types with their members in source order.
+
+    Args:
+        root: Parsed Verilator XML root element.
+        files: Verilator file id to source path.
+
+    Returns:
+        Enumeration records ordered by their stable identifier.
+    """
     records = {}
     for node in root.iter("enumdtype"):
         package, _, name = (node.get("name") or "").rpartition("::")
@@ -268,13 +423,27 @@ def enum_types(root, files):
 
 
 def _declared_names(module):
-    """Return every identifier one module declares in its own scope."""
+    """Return every identifier one module declares in its own scope.
+
+    Args:
+        module: One assembled module record.
+
+    Returns:
+        The module's declared port, signal, and parameter names.
+    """
     return {item.get("original_name") for key in ("ports", "signals", "parameters")
             for item in module.get(key, []) if item.get("original_name")}
 
 
 def _usage_blocks(module_records):
-    """Return every structural block that carries source, paired with its module."""
+    """Return every structural block that carries source, paired with its module.
+
+    Args:
+        module_records: Assembled module records keyed by module name.
+
+    Returns:
+        ``(module name, block)`` pairs in module-name order.
+    """
     return [(name, block) for name, module in sorted(module_records.items())
             for key in ("always_blocks", "functions_tasks", "assignment_groups",
                         "other_blocks")
@@ -286,6 +455,13 @@ def enum_usage(enums, module_records):
 
     A member mentioned by a module that also declares that identifier is ambiguous,
     so the site is left out rather than credited to the enumeration.
+
+    Args:
+        enums: Enumeration records from ``enum_types``.
+        module_records: Assembled module records keyed by module name.
+
+    Returns:
+        Copies of the enumerations whose members carry their usage sites.
     """
     declared = {name: _declared_names(module) for name, module in module_records.items()}
     blocks = _usage_blocks(module_records)
@@ -307,7 +483,24 @@ def enum_usage(enums, module_records):
 
 def _declaration_record(var, module, kind, name, located, scopes, files, parents,
                         element, order, dtypes):
-    """Project one compiler-owned declaration before stable-id assignment."""
+    """Project one compiler-owned declaration before stable-id assignment.
+
+    Args:
+        var: Verilator ``var`` declaration element.
+        module: Owning source module name.
+        kind: Declaration kind from ``_symbol_kind``.
+        name: Declared identifier.
+        located: Parsed ``(file id, first line, last line)`` for the declaration.
+        scopes: Named enclosing scopes inside the module.
+        files: Verilator file id to source path.
+        parents: Child-to-parent map from ``_parent_map``.
+        element: Elaborated module element the declaration was found in.
+        order: Compiler discovery position, used to restore source order.
+        dtypes: Dtype descriptors from ``type_descriptors``.
+
+    Returns:
+        A declaration record still carrying its private ordering fields.
+    """
     path = files[located[0]]
     source_text = read_lines(path, located[1], located[2])
     generate = _generate_node(var, parents, element)
@@ -347,7 +540,14 @@ def _declaration_record(var, module, kind, name, located, scopes, files, parents
 
 
 def _assign_symbol_ids(candidates):
-    """Assign deterministic scoped IDs and hashes to declaration candidates."""
+    """Assign deterministic scoped IDs and hashes to declaration candidates.
+
+    Args:
+        candidates: Declaration records keyed by their discovery key.
+
+    Returns:
+        Declaration records in compiler order, with IDs and hashes set.
+    """
     grouped = {}
     for record in candidates.values():
         grouped.setdefault((record["module_name"], record["symbol_name"]), []).append(record)
@@ -377,7 +577,15 @@ def _assign_symbol_ids(candidates):
 
 
 def symbol_records(root, files):
-    """Return deduplicated declarations for assembling module metadata."""
+    """Return deduplicated declarations for assembling module metadata.
+
+    Args:
+        root: Parsed Verilator XML root element.
+        files: Verilator file id to source path.
+
+    Returns:
+        Declaration records in compiler order with stable identifiers.
+    """
     parents = _parent_map(root)
     dtypes = type_descriptors(root)
     candidates = {}
@@ -409,7 +617,14 @@ def symbol_records(root, files):
 
 
 def _symbol_lookup(records):
-    """Index declarations whose module/name pair resolves unambiguously."""
+    """Index declarations whose module/name pair resolves unambiguously.
+
+    Args:
+        records: Declaration records from ``symbol_records``.
+
+    Returns:
+        ``(module, name)`` to its single unambiguous declaration.
+    """
     grouped = {}
     for record in records:
         grouped.setdefault((record["module_name"], record["symbol_name"]), []).append(record)
@@ -425,12 +640,26 @@ def _symbol_lookup(records):
 
 
 def ref_names(node):
-    """Return compiler-ordered signal references inside a subtree."""
+    """Return compiler-ordered signal references inside a subtree.
+
+    Args:
+        node: AST node to scan.
+
+    Returns:
+        Referenced signal names in compiler order, duplicates kept.
+    """
     return [ref.get("name") for ref in node.iter("varref") if ref.get("name")]
 
 
 def _assignment_signal_roles(node):
-    """Split an assignment's AST references into reads and writes."""
+    """Split an assignment's AST references into reads and writes.
+
+    Args:
+        node: Verilator assignment element.
+
+    Returns:
+        ``(read names, written names)``, each deduplicated in order.
+    """
     if node.tag not in _ASSIGN_KINDS or len(node) < 2:
         return [], []
     lhs = ref_names(node[-1])
@@ -442,7 +671,14 @@ def _assignment_signal_roles(node):
 
 
 def _construct_signal_roles(node):
-    """Aggregate sensitivity, condition, and assignment roles for a block."""
+    """Aggregate sensitivity, condition, and assignment roles for a block.
+
+    Args:
+        node: Verilator block element.
+
+    Returns:
+        ``(read names, written names)``, each deduplicated in order.
+    """
     read, written = [], []
     for child in node.iter():
         if child.tag == "senitem":
@@ -457,7 +693,14 @@ def _construct_signal_roles(node):
 
 
 def _sensitivity(node):
-    """Extract ordered signal-and-edge sensitivity descriptors."""
+    """Extract ordered signal-and-edge sensitivity descriptors.
+
+    Args:
+        node: Verilator block element carrying sensitivity items.
+
+    Returns:
+        Unique ``{signal, edge}`` descriptors in compiler order.
+    """
     edges = {"POS": "posedge", "NEG": "negedge", "BOTH": "edge",
              "ANY": "change", "COMBO": "change"}
     found = []
@@ -471,7 +714,15 @@ def _sensitivity(node):
 
 
 def _block_type(kind, text):
-    """Refine a compiler block tag to its useful structural category."""
+    """Refine a compiler block tag to its useful structural category.
+
+    Args:
+        kind: Verilator block tag.
+        text: Block source text, used to read the always flavour.
+
+    Returns:
+        A structural category such as ``ALWAYS_FF`` or ``FUNCTION``.
+    """
     if kind == "always":
         first_line = text.splitlines()[0] if text else ""
         match = re.search(r"\balways_(ff|comb|latch)\b", first_line)
@@ -481,7 +732,16 @@ def _block_type(kind, text):
 
 
 def statement_site(node, module, files):
-    """Return a citable source site for a compiler statement."""
+    """Return a citable source site for a compiler statement.
+
+    Args:
+        node: Verilator statement element.
+        module: Owning source module name.
+        files: Verilator file id to source path.
+
+    Returns:
+        A ``{module, file, line}`` site, or None when it is not citable.
+    """
     located = parse_loc(node.get("loc"))
     if not located or located[0] not in files:
         return None
@@ -489,7 +749,14 @@ def statement_site(node, module, files):
 
 
 def collapse_sites(found):
-    """Deduplicate and deterministically order reader or writer sites."""
+    """Deduplicate and deterministically order reader or writer sites.
+
+    Args:
+        found: Signal name to the sites collected for it.
+
+    Returns:
+        Signal name to its unique sites, ordered by file, line, and module.
+    """
     out = {}
     for name, sites in sorted(found.items()):
         unique = {(site["file"], site["line"], site["module"]): site for site in sites}
@@ -498,7 +765,15 @@ def collapse_sites(found):
 
 
 def driver_reader_sites(root, files):
-    """Return deterministic compiler-derived writer and reader sites."""
+    """Return deterministic compiler-derived writer and reader sites.
+
+    Args:
+        root: Parsed Verilator XML root element.
+        files: Verilator file id to source path.
+
+    Returns:
+        ``(writer sites, reader sites)``, each keyed by signal name.
+    """
     driven, read = {}, {}
     for element in root.iter("module"):
         located = parse_loc(element.get("loc"))
@@ -526,7 +801,14 @@ def driver_reader_sites(root, files):
 
 
 def _cell_paths(root):
-    """Index elaborated occurrence paths by source instance declaration."""
+    """Index elaborated occurrence paths by source instance declaration.
+
+    Args:
+        root: Parsed Verilator XML root element.
+
+    Returns:
+        ``(loc, name, target)`` to its unique elaborated hierarchy paths.
+    """
     found = {}
     for cell in root.iter("cell"):
         hier = cell.get("hier")
@@ -537,7 +819,20 @@ def _cell_paths(root):
 
 
 def _instance_record(node, element, module, files, symbols, cell_paths, parents):
-    """Project an instance and its compiler-resolved formal/actual bindings."""
+    """Project an instance and its compiler-resolved formal/actual bindings.
+
+    Args:
+        node: Verilator ``instance`` element.
+        element: Elaborated module element containing the instance.
+        module: Owning source module name.
+        files: Verilator file id to source path.
+        symbols: Unambiguous declaration lookup from ``_symbol_lookup``.
+        cell_paths: Elaborated occurrence paths from ``_cell_paths``.
+        parents: Child-to-parent map from ``_parent_map``.
+
+    Returns:
+        An instance record with its port bindings, or None when not citable.
+    """
     located = parse_loc(node.get("loc"))
     if not located or located[0] not in files:
         return None
@@ -626,7 +921,15 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
 
 
 def _module_extents(root, files):
-    """Bound modules with compiler starts and the next module/file boundary."""
+    """Bound modules with compiler starts and the next module/file boundary.
+
+    Args:
+        root: Parsed Verilator XML root element.
+        files: Verilator file id to source path.
+
+    Returns:
+        Module name to ``(file id, first line, last line)``.
+    """
     starts = {}
     for element in root.iter("module"):
         located = parse_loc(element.get("loc"))
@@ -648,7 +951,18 @@ def _module_extents(root, files):
 
 
 def _block_record(node, module, element, files, parents):
-    """Project one useful compiler-bounded structural block."""
+    """Project one useful compiler-bounded structural block.
+
+    Args:
+        node: Verilator block element.
+        module: Owning source module name.
+        element: Elaborated module element containing the block.
+        files: Verilator file id to source path.
+        parents: Child-to-parent map from ``_parent_map``.
+
+    Returns:
+        A block record with roles and sensitivity, or None when not citable.
+    """
     extent = block_extent(node)
     if not extent or extent[0] not in files:
         return None
@@ -683,7 +997,15 @@ def _block_record(node, module, element, files, parents):
 
 
 def _assignment_groups(module, records):
-    """Group adjacent continuous assignments into useful retrieval units."""
+    """Group adjacent continuous assignments into useful retrieval units.
+
+    Args:
+        module: Owning source module name.
+        records: Continuous-assignment block records for that module.
+
+    Returns:
+        Assignment-group records in source order, each with a stable ID.
+    """
     groups = []
     for record in sorted(records, key=lambda item: (item["start_line"], item["end_line"])):
         if (groups and record["file"] == groups[-1]["file"]
@@ -721,7 +1043,16 @@ def _assignment_groups(module, records):
 
 
 def modules(root, files, declarations=None):
-    """Build deterministic source-module records from the Verilator AST."""
+    """Build deterministic source-module records from the Verilator AST.
+
+    Args:
+        root: Parsed Verilator XML root element.
+        files: Verilator file id to source path.
+        declarations: Optional precomputed declarations from ``symbol_records``.
+
+    Returns:
+        Module records keyed by module name, in module-name order.
+    """
     declarations = symbol_records(root, files) if declarations is None else declarations
     symbol_lookup = _symbol_lookup(declarations)
     writers, readers = driver_reader_sites(root, files)
@@ -812,11 +1143,28 @@ def modules(root, files, declarations=None):
 
 
 def tree(root):
-    """Flatten Verilator's authoritative instance hierarchy."""
+    """Flatten Verilator's authoritative instance hierarchy.
+
+    Args:
+        root: Parsed Verilator XML root element.
+
+    Returns:
+        Instance nodes in pre-order, each carrying its depth and path.
+    """
     nodes = []
 
     def walk(element, depth, parent_hier=None, fallback=()):
-        """Append cell descendants in Verilator's authoritative pre-order."""
+        """Append cell descendants in Verilator's authoritative pre-order.
+
+        Args:
+            element: Element whose children are visited.
+            depth: Instance depth of ``element``.
+            parent_hier: Elaborated hierarchy path of the enclosing instance.
+            fallback: Instance names used when the compiler states no hierarchy.
+
+        Returns:
+            None; visited cells are appended to the enclosing ``nodes`` list.
+        """
         for child in element:
             if child.tag == "cell":
                 fallback_path = (*fallback, child.get("name"))
@@ -841,7 +1189,14 @@ def tree(root):
 
 
 def parse_warnings(text):
-    """Turn Verilator lint diagnostics into structured records."""
+    """Turn Verilator lint diagnostics into structured records.
+
+    Args:
+        text: Raw Verilator lint output.
+
+    Returns:
+        One record per recognized warning line.
+    """
     out = []
     for line in text.splitlines():
         match = _WARNING.match(line)
@@ -852,7 +1207,17 @@ def parse_warnings(text):
 
 
 def run_verilator(extra, mdir=None):
-    """Run Verilator and fail before writing an artifact when it reports an error."""
+    """Run Verilator and fail before writing an artifact when it reports an error.
+
+    Raises SystemExit when Verilator reports an error.
+
+    Args:
+        extra: Mode arguments placed before the configured arguments.
+        mdir: Optional Verilator output directory.
+
+    Returns:
+        Combined standard output and standard error.
+    """
     import subprocess
 
     args = ["verilator", *extra, *cfg.VERILATOR_ARGS]
@@ -866,7 +1231,15 @@ def run_verilator(extra, mdir=None):
 
 
 def build(xml_path, lint_text):
-    """Assemble the versioned module-centric RTL artifact."""
+    """Assemble the versioned module-centric RTL artifact.
+
+    Args:
+        xml_path: Verilator XML dump to read.
+        lint_text: Raw lint output collected from the lint-only pass.
+
+    Returns:
+        The complete ``rtl.json`` payload.
+    """
     root = ET.parse(xml_path).getroot()
     files = file_table(root, cfg.RTL_DIR)
     declarations = symbol_records(root, files)
@@ -885,7 +1258,11 @@ def build(xml_path, lint_text):
 
 
 def main():
-    """Run Verilator and write ``output/rtl.json``."""
+    """Run Verilator and write ``output/rtl.json``.
+
+    Returns:
+        None.
+    """
     import json
     import tempfile
 

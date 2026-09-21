@@ -1,6 +1,7 @@
 """Evaluate Dual-RAG retrieval, alignment, routing, and comparison evidence use."""
 
 import json
+import sys
 import time
 
 import configure as cfg
@@ -61,6 +62,20 @@ def tally(outcomes):
             for label in (CORRECT, WRONG, UNVERIFIED, ABSTAINED)}
 
 
+def _mean(values, default=1.0):
+    """Average a sequence, scoring an empty one as perfect rather than undefined.
+
+    Args:
+        values: Numeric or boolean scores to average.
+        default: Value returned when nothing was scored.
+
+    Returns:
+        The arithmetic mean, or ``default`` when ``values`` is empty.
+    """
+    values = list(values)
+    return sum(values) / len(values) if values else default
+
+
 def recall_at_k(ranked, relevant, k):
     """Measure distinct relevant retrieval coverage within the first ``k`` IDs.
 
@@ -78,40 +93,32 @@ def recall_at_k(ranked, relevant, k):
     return len(set(ranked[:k]).intersection(relevant)) / len(relevant)
 
 
-def mean_reciprocal_rank(cases, k=None):
-    """Return mean reciprocal rank of the first relevant result per case.
+def mrr(cases, k=None):
+    """Average the reciprocal rank of each case's first relevant result.
 
     Args:
         cases: ``(ranked_ids, relevant_ids)`` pairs.
-        k: Optional rank cutoff.
+        k: Optional rank cutoff; ``None`` scores the whole ranking.
 
     Returns:
         Mean reciprocal rank; empty cases score one.
     """
-    cases = list(cases)
-    if not cases:
-        return 1.0
-    scores = []
-    for ranked, relevant in cases:
+    def reciprocal(ranked, relevant):
+        """Return one over the rank of the first relevant identifier, else zero.
+
+        Args:
+            ranked: Retrieved identifiers in rank order.
+            relevant: Identifiers that count as a hit.
+
+        Returns:
+            The reciprocal rank, or ``0.0`` when nothing relevant was retrieved.
+        """
         relevant = set(relevant)
-        ranked = list(ranked)[:k] if k is not None else list(ranked)
-        rank = next((index for index, item in enumerate(ranked, start=1)
+        rank = next((index for index, item in enumerate(list(ranked)[:k], start=1)
                      if item in relevant), None)
-        scores.append(0.0 if rank is None else 1.0 / rank)
-    return sum(scores) / len(scores)
+        return 0.0 if rank is None else 1.0 / rank
 
-
-def mrr(cases, k=None):
-    """Alias ``mean_reciprocal_rank`` for compact reports.
-
-    Args:
-        cases: Ranked/relevant case pairs.
-        k: Optional rank cutoff.
-
-    Returns:
-        Mean reciprocal rank.
-    """
-    return mean_reciprocal_rank(cases, k=k)
+    return _mean(reciprocal(ranked, relevant) for ranked, relevant in cases)
 
 
 def top1_accuracy(cases):
@@ -123,11 +130,8 @@ def top1_accuracy(cases):
     Returns:
         Top-1 accuracy; empty cases score one.
     """
-    cases = list(cases)
-    if not cases:
-        return 1.0
-    return sum(bool(ranked) and ranked[0] in set(relevant)
-               for ranked, relevant in cases) / len(cases)
+    return _mean(bool(ranked) and ranked[0] in set(relevant)
+                 for ranked, relevant in cases)
 
 
 def routing_accuracy(predicted, expected):
@@ -140,12 +144,9 @@ def routing_accuracy(predicted, expected):
     Returns:
         Accuracy over expected cases; missing predictions are wrong.
     """
-    expected = list(expected)
     predicted = list(predicted)
-    if not expected:
-        return 1.0
-    return sum(index < len(predicted) and predicted[index] == value
-               for index, value in enumerate(expected)) / len(expected)
+    return _mean(index < len(predicted) and predicted[index] == value
+                 for index, value in enumerate(expected))
 
 
 def alignment_metrics(predicted, expected, k=5):
@@ -160,10 +161,9 @@ def alignment_metrics(predicted, expected, k=5):
         Alignment metric mapping.
     """
     cases = [(predicted.get(key, []), targets) for key, targets in expected.items()]
-    recall = (sum(recall_at_k(ranked, relevant, k) for ranked, relevant in cases)
-              / len(cases) if cases else 1.0)
-    return {"recall_at_k": recall, "mrr": mrr(cases, k=k),
-            "top1_accuracy": top1_accuracy(cases)}
+    return {"recall_at_k": _mean(recall_at_k(ranked, relevant, k)
+                                 for ranked, relevant in cases),
+            "mrr": mrr(cases, k=k), "top1_accuracy": top1_accuracy(cases)}
 
 
 def comparison_both_domain_rate(results):
@@ -175,11 +175,8 @@ def comparison_both_domain_rate(results):
     Returns:
         Fraction of comparison rows containing spec and RTL retrieval events.
     """
-    comparisons = [row for row in results if row.get("query_type") == "COMPARISON"]
-    if not comparisons:
-        return 1.0
-    return sum(row.get("saw_spec") and row.get("saw_rtl")
-               for row in comparisons) / len(comparisons)
+    return _mean(row.get("saw_spec") and row.get("saw_rtl") for row in results
+                 if row.get("query_type") == "COMPARISON")
 
 
 def citation_completeness(answer, citation):
@@ -192,12 +189,9 @@ def citation_completeness(answer, citation):
     Returns:
         Fraction of citation groups represented.
     """
-    groups = citation.get("required", [])
-    if not groups:
-        return 1.0
     folded = (answer or "").casefold()
-    return sum(any(option.casefold() in folded for option in group)
-               for group in groups) / len(groups)
+    return _mean(any(option.casefold() in folded for option in group)
+                 for group in citation.get("required", []))
 
 
 def _target_values(mapping):
@@ -298,24 +292,345 @@ def aggregate_metrics(results, gold_records, k=5):
     for row, gold in aligned:
         predicted_alignments.update(row.get("alignment_candidates", {}))
         expected_alignments.update(gold.get("expected_alignments", {}))
-    spec_recall = (sum(recall_at_k(*case, k) for case in spec_cases) / len(spec_cases)
-                   if spec_cases else 1.0)
-    rtl_recall = (sum(recall_at_k(*case, k) for case in rtl_cases) / len(rtl_cases)
-                  if rtl_cases else 1.0)
-    citations = [citation_completeness(row.get("answer", ""), gold.get("citation", {}))
-                 for row, gold in aligned]
     return {
-        "spec_recall_at_k": spec_recall,
+        "spec_recall_at_k": _mean(recall_at_k(*case, k) for case in spec_cases),
         "spec_mrr": mrr(spec_cases, k=k),
-        "rtl_recall_at_k": rtl_recall,
+        "rtl_recall_at_k": _mean(recall_at_k(*case, k) for case in rtl_cases),
         "rtl_mrr": mrr(rtl_cases, k=k),
         "routing_accuracy": routing_accuracy(
             [row.get("query_type") for row, _ in aligned],
             [gold.get("expected_query_type") for _, gold in aligned]),
         "alignment": alignment_metrics(predicted_alignments, expected_alignments, k=k),
         "comparison_both_domain_rate": comparison_both_domain_rate(results),
-        "citation_completeness": sum(citations) / len(citations) if citations else 1.0,
+        "citation_completeness": _mean(
+            citation_completeness(row.get("answer", ""), gold.get("citation", {}))
+            for row, gold in aligned),
     }
+
+
+def _skip_answer(context):
+    """Stand in for the answer model so retrieval can be scored without generation.
+
+    Args:
+        context: Merged evidence package, ignored.
+
+    Returns:
+        Empty answer text.
+    """
+    del context
+    return ""
+
+
+def retrieved_ids(state):
+    """Return the spec and RTL identifiers a question actually pulled into context.
+
+    Args:
+        state: Final state returned by ``agent.run``.
+
+    Returns:
+        ``(spec_ids, rtl_ids)`` in rank order; targeted RTL blocks follow lane hits.
+    """
+    spec_ids = [item.get("id") for item in state.get("spec_evidence", [])]
+    rtl_ids = [item.get("id") for item in state.get("rtl_evidence", [])]
+    rtl_ids += [item.get("id") for item in state.get("rtl_blocks", [])]
+    return ([item for item in dict.fromkeys(spec_ids) if item],
+            [item for item in dict.fromkeys(rtl_ids) if item])
+
+
+def _chunk_family(chunk_id, lane):
+    """Return the section or module family encoded in a stable chunk ID."""
+    chunk_id = str(chunk_id)
+    if lane == "spec":
+        # ponytail: table IDs stay exact; use stored hierarchy metadata if that ceiling matters.
+        parent, separator, suffix = chunk_id.rpartition("#")
+        return parent if separator and suffix.isdigit() else chunk_id
+    if lane == "rtl" and chunk_id.startswith("rtl:construct:"):
+        return "rtl:" + chunk_id.split(":", 3)[2]
+    return chunk_id
+
+
+def lane_result(ranked, relevant, k, groups=None, lane=None):
+    """Score one evidence lane against its expected chunks.
+
+    Args:
+        ranked: Retrieved identifiers in rank order.
+        relevant: Expected chunk identifiers.
+        k: Rank cutoff for recall.
+        groups: Alternative chunk IDs grouped by fact.
+        lane: Domain name used to derive section or module families.
+
+    Returns:
+        Exact, family, and fact-group coverage at one shared cutoff.
+    """
+    if not relevant:
+        return None
+    ranked, relevant = list(ranked), list(relevant)
+    top = ranked[:k]
+    hits = [item for item in relevant if item in top]
+    misses = [item for item in relevant if item not in top]
+    groups = list(groups or [relevant])
+    top_families = {_chunk_family(item, lane) for item in top}
+    exact_recall = len(hits) / len(relevant)
+    family_recall = _mean(_chunk_family(item, lane) in top_families for item in relevant)
+    fact_coverage = _mean(any(item in top for item in group) for group in groups)
+    first = next((index for index, item in enumerate(top, start=1)
+                  if item in set(relevant)), None)
+    return {
+        "k": k, "expected": relevant, "groups": groups, "retrieved": ranked,
+        "searched": bool(ranked),
+        "hits_of_expected": f"{len(hits)} of {len(relevant)}",
+        "hits": hits, "misses": misses,
+        "exact_id_recall_at_k": exact_recall, "recall_at_k": exact_recall,
+        "family_recall_at_k": family_recall,
+        "fact_coverage_at_k": fact_coverage,
+        "hit_at_k": bool(hits), "full_hit_at_k": not misses,
+        "recall": exact_recall,
+        "first_hit_rank": first,
+    }
+
+
+def retrieval_row(question, state, k):
+    """Project one question's retrieval behavior into a scored row.
+
+    Args:
+        question: Gold case record.
+        state: Final graph state for that question.
+        k: Rank cutoff for recall.
+
+    Returns:
+        Row with route outcome and per-lane retrieval results.
+    """
+    spec_ids, rtl_ids = retrieved_ids(state)
+    predicted = state.get("query_type")
+    return {
+        "id": question["id"], "question": question["question"],
+        "naming": question.get("naming"),
+        "expected_query_type": question.get("expected_query_type"),
+        "query_type": predicted,
+        "route_correct": predicted == question.get("expected_query_type"),
+        "spec": lane_result(
+            spec_ids, question.get("relevant_spec_ids", []), k,
+            question.get("relevant_spec_groups"), "spec"),
+        "rtl": lane_result(
+            rtl_ids, question.get("relevant_rtl_ids", []), k,
+            question.get("relevant_rtl_groups"), "rtl"),
+        "query_llm_calls": sum(event.get("llm_calls", 0) for event in state.get("trace", [])
+                               if event.get("event") == "query_recovery"),
+        "query_errors": [event["error"] for event in state.get("trace", [])
+                         if event.get("event") == "query_recovery" and event.get("error")],
+    }
+
+
+def run_retrieval(questions, app=None, k=5):
+    """Run every question through retrieval only and score the evidence lanes.
+
+    Args:
+        questions: Gold case records.
+        app: Optional compiled graph; the default graph never calls the answer model.
+        k: Rank cutoff for recall.
+
+    Returns:
+        Scored retrieval rows.
+    """
+    import agent
+
+    app = agent.build_graph(answer_model=_skip_answer) if app is None else app
+    rows = []
+    for question in questions:
+        started = time.perf_counter()
+        state = agent.run(app, question["question"])
+        row = retrieval_row(question, state, k)
+        row["seconds"] = round(time.perf_counter() - started, 3)
+        rows.append(row)
+    return rows
+
+
+def _lane_summary(rows, lane):
+    """Aggregate one lane across the rows that expect it.
+
+    Args:
+        rows: Scored retrieval rows.
+        lane: ``"spec"`` or ``"rtl"``.
+
+    Returns:
+        Lane metric mapping; a lane no question expects reports only its zero count.
+    """
+    scored = [row[lane] for row in rows if row.get(lane)]
+    if not scored:
+        return {"questions": 0}
+    cases = [(item["retrieved"], item["expected"]) for item in scored]
+    cutoff = scored[0]["k"]
+    stated = [item["hits_of_expected"] for item in scored]
+    exact_recall = _mean(item["exact_id_recall_at_k"] for item in scored)
+    reciprocal_rank = mrr(cases, k=cutoff)
+    return {
+        "questions": len(scored), "k": cutoff,
+        "availability": _mean(item["searched"] for item in scored),
+        "exact_id_recall_at_k": exact_recall, "recall_at_k": exact_recall,
+        "family_recall_at_k": _mean(item["family_recall_at_k"] for item in scored),
+        "fact_coverage_at_k": _mean(item["fact_coverage_at_k"] for item in scored),
+        "mean_recall": exact_recall,
+        "mrr_at_k": reciprocal_rank, "mrr": reciprocal_rank,
+        "hit_at_k": _mean(item["hit_at_k"] for item in scored),
+        "any_hit_rate": _mean(item["hit_at_k"] for item in scored),
+        "full_hit_at_k": _mean(item["full_hit_at_k"] for item in scored),
+        "full_hit_rate": _mean(item["full_hit_at_k"] for item in scored),
+        "hit_distribution": {label: stated.count(label) for label in sorted(set(stated))},
+    }
+
+
+def retrieval_metrics(rows):
+    """Summarize routing and per-lane retrieval, split by route and signal naming.
+
+    Args:
+        rows: Scored retrieval rows.
+
+    Returns:
+        Metric mapping covering all rows plus route and naming slices.
+    """
+    def summarize(subset):
+        """Return routing and lane metrics for one slice of rows.
+
+        Args:
+            subset: Scored retrieval rows belonging to this slice.
+
+        Returns:
+            Metric mapping, or only a zero question count for an empty slice.
+        """
+        if not subset:
+            return {"questions": 0}
+        return {
+            "questions": len(subset),
+            "routing_accuracy": _mean(row["route_correct"] for row in subset),
+            "dual_evidence_recall_at_k": _mean((
+                row["spec"]["hit_at_k"] and row["rtl"]["hit_at_k"]
+                for row in subset if row.get("spec") and row.get("rtl")), default=0.0),
+            "mean_seconds": _mean(row.get("seconds", 0) for row in subset),
+            "query_llm_calls": sum(row.get("query_llm_calls", 0) for row in subset),
+            "query_failures": sum(len(row.get("query_errors", [])) for row in subset),
+            "spec": _lane_summary(subset, "spec"),
+            "rtl": _lane_summary(subset, "rtl"),
+        }
+
+    routes = sorted({row["expected_query_type"] for row in rows if row["expected_query_type"]})
+    namings = sorted({row["naming"] for row in rows if row["naming"]})
+    return {
+        "overall": summarize(rows),
+        "by_route": {route: summarize([row for row in rows
+                                       if row["expected_query_type"] == route])
+                     for route in routes},
+        "by_naming": {naming: summarize([row for row in rows
+                                         if row["naming"] == naming])
+                      for naming in namings},
+    }
+
+
+def retrieval_misses(rows):
+    """List every expected chunk that retrieval failed to reach.
+
+    Args:
+        rows: Scored retrieval rows.
+
+    Returns:
+        One entry per question that missed at least one expected chunk.
+    """
+    misses = []
+    for row in rows:
+        entry = {lane: row[lane]["misses"] for lane in ("spec", "rtl")
+                 if row.get(lane) and row[lane]["misses"]}
+        if entry:
+            misses.append({"id": row["id"], "question": row.get("question"), **entry})
+    return misses
+
+
+def hit_report(rows):
+    """Render one line per question stating what each lane retrieved of what it owed.
+
+    Args:
+        rows: Scored retrieval rows.
+
+    Returns:
+        A fixed-width table naming the route outcome and per-lane hit counts.
+    """
+    def stated(row, lane):
+        """Return one lane's ``hits of expected`` count, or a dash when unexpected.
+
+        Args:
+            row: One scored retrieval row.
+            lane: ``"spec"`` or ``"rtl"``.
+
+        Returns:
+            The stated hit count, or ``"-"`` when the question expects this lane nothing.
+        """
+        return row[lane]["hits_of_expected"] if row.get(lane) else "-"
+
+    width = max((len(str(row["id"])) for row in rows), default=8)
+    lines = [f"{'question':<{width}}  route  spec      rtl",
+             f"{'-' * width}  -----  --------  --------"]
+    lines.extend(
+        f"{row['id']:<{width}}  {'ok   ' if row['route_correct'] else 'WRONG'}  "
+        f"{stated(row, 'spec'):<8}  {stated(row, 'rtl')}" for row in rows)
+    return "\n".join(lines)
+
+
+def compare_recovery(questions, k=5, graph_factory=None):
+    """Measure both variants on identical questions, alternating their execution order.
+
+    Warm both graphs on the first question before timing; warmup calls are excluded.
+    Answer generation is disabled, so every measured LLM call is query expansion.
+    """
+    import agent
+
+    factory = graph_factory or agent.build_graph
+    apps = {name: factory(answer_model=_skip_answer, query_recovery=enabled)
+            for name, enabled in (("baseline", False), ("recovery", True))}
+    if questions:
+        for app in apps.values():
+            agent.run(app, questions[0]["question"])
+    results = {name: [] for name in apps}
+    for index, question in enumerate(questions):
+        order = list(apps) if index % 2 == 0 else list(reversed(apps))
+        for name in order:
+            results[name].extend(run_retrieval([question], apps[name], k))
+    return {"k": k, "warmup_questions_per_variant": int(bool(questions)),
+            **{name: {"metrics": retrieval_metrics(rows), "results": rows}
+               for name, rows in results.items()}}
+
+
+def retrieval_main(path=None, k=5, compare=False):
+    """Score retrieval alone and write the per-question report.
+
+    Args:
+        path: Optional question-set path; defaults to the 60-question set.
+        k: Rank cutoff for recall.
+
+    Returns:
+        None.
+    """
+    from agent import build_graph
+
+    questions = load_gold(path or getattr(cfg, "QUESTION_SET_PATH", cfg.GOLD_PATH))
+    if compare:
+        report = compare_recovery(questions, k)
+        path = cfg.OUTPUT_DIR / "retrieval_recovery_bench.json"
+        cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False, indent=2)
+        print(json.dumps({name: report[name]["metrics"]["overall"]
+                          for name in ("baseline", "recovery")}, indent=2))
+        print(f"Full report in {path}")
+        return
+    rows = run_retrieval(questions, build_graph(answer_model=_skip_answer), k)
+    report = {"k": k, "metrics": retrieval_metrics(rows),
+              "misses": retrieval_misses(rows), "results": rows}
+    cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with open(cfg.RETRIEVAL_PATH, "w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
+    print(hit_report(rows))
+    print()
+    print(json.dumps(report["metrics"], indent=2))
+    print(f"{len(report['misses'])} of {len(rows)} questions missed an expected chunk; "
+          f"full report in {cfg.RETRIEVAL_PATH}")
 
 
 def main():
@@ -338,4 +653,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--retrieval" in sys.argv[1:]:
+        arguments = [item for item in sys.argv[1:]
+                     if item not in {"--retrieval", "--compare-recovery"}]
+        retrieval_main(arguments[0] if arguments else None,
+                       compare="--compare-recovery" in sys.argv[1:])
+    else:
+        main()
