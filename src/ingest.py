@@ -293,21 +293,13 @@ def build_sections(doc, doc_id, doc_name):
         parent = last_at_level.get(node["level"] - 1)
         node["type"] = "subsection" if parent else "section"
         node["parent_id"] = parent["node_id"] if parent else None
-        node["parent_number"] = parent["section_number"] if parent else None
-        node["parent_name"] = parent["section_name"] if parent else None
 
         sibling_key = (node["parent_id"], node["level"])
         earlier = last_sibling.get(sibling_key)
         node["prev_id"] = earlier["node_id"] if earlier else None
-        node["prev_section"] = (
-            (earlier["section_number"] or earlier["section_name"])
-            if earlier else None
-        )
-
-        node["next_id"] = node["next_section"] = None
+        node["next_id"] = None
         if earlier:
             earlier["next_id"] = node["node_id"]
-            earlier["next_section"] = node["section_number"] or node["section_name"]
         # Breadcrumbs give both readers and embeddings the section hierarchy.
         crumb = " ".join(x for x in (node["section_number"], node["section_name"]) if x)
         node["path"] = (parent["path"] + [crumb]) if parent else [crumb]
@@ -891,25 +883,12 @@ def ingest_pdf(path):
                 "section_name": sec["section_name"],
                 "section_path": sec["path"],
                 "context_header": header,
-                "level": sec["level"],
                 "parent_id": sec["parent_id"],
-                "parent_number": sec["parent_number"],
-                "parent_name": sec["parent_name"],
-                "prev_section": sec["prev_section"],
-                "next_section": sec["next_section"],
-                # Cite chunk pages; retain the wider section span only for navigation.
+                # Cite chunk pages, not the wider section span.
                 "start_page": min(chunk_pages),
                 "end_page": max(chunk_pages),
                 "page": min(chunk_pages),
-                "section_start_page": sec["start_page"],
-                "section_end_page": sec["end_page"],
-                "own_start_page": sec["own_start_page"],  # this section's prose only
-                "own_end_page": sec["own_end_page"],
                 "chunk_index": k,
-                "n_sentences": len(chunk),
-                "n_chars": len(body),
-                "sentence_sources": [
-                    {"text": sentence, "page": page} for sentence, page in chunk],
                 "tables_cited": find_table_refs(body, tables),
                 "text": body,
             }))
@@ -953,16 +932,13 @@ def ingest_pdf(path):
                 "row_start": start,
                 "table_rows": table["n_rows"],
                 "extraction": table["extraction"],
-                "n_chars": len(markdown),
                 "tables_cited": [],
                 "text": markdown,
             }))
 
     # Document role needs the whole document, so it is stamped once every chunk exists.
     document_scores = roles.document_role_scores(record["text"] for record in records)
-    document_role = roles.leading_role(document_scores)
     for record in records:
-        record["document_role"] = document_role
         record["document_role_scores"] = document_scores
 
     doc.close()
@@ -1020,7 +996,7 @@ def main():
         with fitz.open(path) as document:
             documents.append(hierarchy_document(path, revision, document.page_count, nodes))
         prose = [r for r in records if r["chunk_type"] == "prose"]
-        avg = sum(r["n_chars"] for r in prose) // max(len(prose), 1)
+        avg = sum(len(r["text"]) for r in prose) // max(len(prose), 1)
         n_tab = len(records) - len(prose)
         print(f"{path.name:<28} sections={len(nodes):<5} tables={n_tab:<4} "
               f"chunks={len(records):<6} avg_chars={avg}")

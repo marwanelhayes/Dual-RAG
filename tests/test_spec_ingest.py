@@ -380,3 +380,30 @@ def test_ingest_does_not_load_langchain_text_splitters():
                             capture_output=True, text=True, check=True)
 
     assert result.stdout.strip() == "False"
+
+
+DEAD_CHUNK_FIELDS = {
+    "document_role", "sentence_sources", "prev_section", "next_section", "parent_name",
+    "n_sentences", "parent_number", "level", "own_start_page", "own_end_page",
+    "section_start_page", "section_end_page", "n_chars"}
+
+
+def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):
+    """Fields nothing downstream reads are not emitted."""
+    import fitz
+
+    path = tmp_path / "tiny.pdf"
+    doc = fitz.open()
+    for page_number in range(2):
+        doc.new_page().insert_text(
+            (72, 120), f"AWVALID is asserted by the manager until AWREADY. Page "
+            f"{page_number} carries enough words to pass the minimum section size.",
+            fontsize=10)
+    doc.set_toc([[1, "1 Channels", 1], [2, "1.1 Write address", 2]])
+    doc.save(path)
+
+    nodes, _, records = ingest.ingest_pdf(path)
+
+    assert records and not DEAD_CHUNK_FIELDS & set().union(*records)
+    assert not {"parent_number", "parent_name", "prev_section", "next_section"} & set(
+        ).union(*nodes)
