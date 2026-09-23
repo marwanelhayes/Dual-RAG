@@ -489,6 +489,20 @@ def _clean_pdf_text(raw, furniture):
     return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
+def is_heading_block(text, title):
+    """Tell whether a text block is the printed form of an outline title.
+
+    Args:
+        text: Raw block text from ``get_text("blocks")``.
+        title: The outline entry's raw title.
+
+    Returns:
+        True when the block equals the title once line wraps are joined.
+    """
+    # A title wrapped after a hyphen ("Floating-\nPoint") keeps its hyphen.
+    return " ".join(text.replace("-\n", "-").split()) == " ".join(title.split())
+
+
 def section_page_texts(doc, sec, furniture, bands=(None, None)):
     """Extract a section as ``(page, text)`` spans cut at outline destination points.
 
@@ -499,19 +513,26 @@ def section_page_texts(doc, sec, furniture, bands=(None, None)):
         bands: Header and footer band edges from ``furniture_bands``.
 
     Returns:
-        Non-empty ``(one-based page, cleaned text)`` spans in page order.
+        Non-empty ``(one-based page, cleaned text)`` spans in page order, without the
+        printed heading block.
     """
     start = (sec["own_start_page"], sec["start_y"])
     end = (sec["own_end_page"], sec["own_end_y"])
     spans = []
     for number in range(sec["own_start_page"], min(sec["own_end_page"], doc.page_count) + 1):
         kept = []
+        # The breadcrumb names the section, so its printed heading block is not repeated.
+        skip_heading = number == sec["own_start_page"]
         for block in doc[number - 1].get_text("blocks"):
             if block[6] != 0 or _is_furniture(block, bands):
                 continue
             # A block belongs to the section whose point sits at or just above its top.
             at = (number, block[1] + cfg.HEADING_POINT_SLACK)
             if at >= start and (end[1] is None or at < end):
+                if skip_heading:
+                    skip_heading = False
+                    if is_heading_block(block[4], sec["raw_title"]):
+                        continue
                 kept.append(block[4])
         text = _clean_pdf_text("".join(kept), furniture)
         if text:

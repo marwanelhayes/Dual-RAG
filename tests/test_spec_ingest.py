@@ -470,8 +470,8 @@ def test_fallback_heading_scores_match_outline_by_title_and_page():
     assert ingest.fallback_heading_scores([], toc)["fallback_heading_f1"] == 0.0
 
 
-def test_sections_are_cut_at_outline_points_not_by_title_text(tmp_path):
-    """The printed heading differs from the outline title; the short section survives."""
+def _points_pdf(tmp_path):
+    """Write a one-page PDF whose two outline entries point at their printed headings."""
     import fitz
 
     path = tmp_path / "points.pdf"
@@ -485,9 +485,28 @@ def test_sections_are_cut_at_outline_points_not_by_title_text(tmp_path):
         [1, "1 Alpha", 1, {"kind": fitz.LINK_GOTO, "to": fitz.Point(0, 85)}],
         [1, "2 Beta Section", 1, {"kind": fitz.LINK_GOTO, "to": fitz.Point(0, 385)}]])
     doc.save(path)
+    return path
 
-    _, _, records = ingest.ingest_pdf(path)
+
+def test_sections_are_cut_at_outline_points_not_by_title_text(tmp_path):
+    """The printed heading differs from the outline title; the short section survives."""
+    _, _, records = ingest.ingest_pdf(_points_pdf(tmp_path))
     by_section = {record["section_name"]: record["text"] for record in records}
 
     assert "Alpha body" in by_section["Alpha"] and "Beta" not in by_section["Alpha"]
     assert "Beta is short." in by_section["Beta Section"]
+
+
+def test_printed_heading_block_stays_out_of_section_text(tmp_path):
+    """The breadcrumb already names the section; a block that differs from the title stays."""
+    _, _, records = ingest.ingest_pdf(_points_pdf(tmp_path))
+    by_section = {record["section_name"]: record["text"] for record in records}
+
+    assert by_section["Alpha"].startswith("Alpha body")
+    assert by_section["Beta Section"] == "2. Beta Beta is short."
+
+
+def test_heading_block_matches_title_across_wrapped_lines():
+    assert ingest.is_heading_block("Chapter 24. BFloat16-precision Floating-\nPoint, V1\n",
+                                   "Chapter 24. BFloat16-precision Floating-Point, V1")
+    assert not ingest.is_heading_block("Alpha body says AWVALID.\n", "1 Alpha")
