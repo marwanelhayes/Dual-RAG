@@ -410,3 +410,50 @@ def test_context_header_is_document_and_section_path_without_revision(tmp_path):
 
     assert [record["context_header"] for record in records] == [
         "tiny.pdf > 1 Channels", "tiny.pdf > 1 Channels > 1.1 Write address"]
+
+
+def _running_header_pdf(tmp_path):
+    """Write a five-page PDF whose header text changes per page; page 1 has none."""
+    import fitz
+
+    path = tmp_path / "headers.pdf"
+    doc = fitz.open()
+    for index in range(5):
+        page = doc.new_page()
+        if index:
+            page.insert_text((72, 30), f"Chapter A{index} Topic {index}", fontsize=9)
+        page.insert_text((72, 300), f"Body sentence {index} says AWVALID stays high until "
+                         "AWREADY is sampled on a rising clock edge.", fontsize=10)
+        page.insert_text((72, 800), f"Page {index + 1} of 5", fontsize=9)
+    doc.set_toc([[1, "1 Channels", 1]])
+    doc.save(path)
+    return path
+
+
+def test_running_headers_and_footers_are_stripped_by_position_not_text(tmp_path):
+    """Per-page header text never repeats, so only its position identifies it."""
+    _, _, records = ingest.ingest_pdf(_running_header_pdf(tmp_path))
+    text = " ".join(record["text"] for record in records)
+
+    assert "Chapter A" not in text and "of 5" not in text
+    assert all(f"Body sentence {index}" in text for index in range(5))
+
+
+def test_furniture_counts_report_band_and_text_only_strips(tmp_path):
+    import fitz
+
+    with fitz.open(_running_header_pdf(tmp_path)) as doc:
+        counts = ingest.furniture_counts(doc)
+
+    assert counts == {"furniture_blocks_stripped": 9, "furniture_text_only_hits": 0}
+
+
+def test_hierarchy_document_records_furniture_counts():
+    sections = ingest.build_sections(OutlineDocument(), "fpu_spec", "fpu.pdf")
+    counts = {"furniture_blocks_stripped": 9, "furniture_text_only_hits": 0}
+
+    document = ingest.hierarchy_document(
+        Path("fpu.pdf"), "Revision A", OutlineDocument.page_count, sections, counts)
+
+    assert document["furniture_blocks_stripped"] == 9
+    assert document["furniture_text_only_hits"] == 0

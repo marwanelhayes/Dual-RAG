@@ -36,6 +36,8 @@ REVISION_SCAN_PAGES = 4
 # Sample enough pages to detect recurring PDF headers and footers cheaply.
 FURNITURE_SAMPLE_PAGES = 40
 FURNITURE_THRESHOLD = 0.6
+# Header and footer blocks sit within this many points of their recurring band edge.
+FURNITURE_BAND_TOLERANCE = 2
 
 # Table geometry is measured in PDF points.
 COLUMN_GAP = 25

@@ -342,6 +342,80 @@ def repeated_lines(doc, sample=cfg.FURNITURE_SAMPLE_PAGES):
     return {line for line, c in counts.items() if c >= threshold}
 
 
+def furniture_bands(doc):
+    """Find the recurring top and bottom edges where running headers and footers sit.
+
+    Args:
+        doc: an open fitz.Document.
+
+    Returns:
+        ``(top, bottom)``: the topmost block's y0 and bottommost block's y1 that recur on
+        at least ``FURNITURE_THRESHOLD`` of voting pages, each None when nothing recurs.
+    """
+    tops, bottoms = collections.Counter(), collections.Counter()
+    for page in doc:
+        blocks = [block for block in page.get_text("blocks") if block[6] == 0]
+        # A lone block is both topmost and bottommost, so it says nothing about bands.
+        if len(blocks) > 1:
+            tops[round(min(block[1] for block in blocks))] += 1
+            bottoms[round(max(block[3] for block in blocks))] += 1
+    threshold = sum(tops.values()) * cfg.FURNITURE_THRESHOLD
+    edges = []
+    for counts in (tops, bottoms):
+        edge, count = counts.most_common(1)[0] if counts else (None, 0)
+        edges.append(edge if count >= threshold else None)
+    return tuple(edges)
+
+
+def _is_furniture(block, bands):
+    """Tell whether one text block sits in a running header or footer band.
+
+    Args:
+        block: ``page.get_text("blocks")`` entry.
+        bands: ``(top, bottom)`` from ``furniture_bands``.
+
+    Returns:
+        True when the block starts at the top band or ends at the bottom band.
+    """
+    top, bottom = bands
+    tolerance = cfg.FURNITURE_BAND_TOLERANCE
+    return ((top is not None and block[1] <= top + tolerance)
+            or (bottom is not None and block[3] >= bottom - tolerance))
+
+
+def page_text(page, bands):
+    """Return a page's text without its header and footer band blocks.
+
+    Args:
+        page: fitz page.
+        bands: ``(top, bottom)`` from ``furniture_bands``.
+
+    Returns:
+        The page text in ``get_text()`` order, furniture blocks left out.
+    """
+    return "".join(block[4] for block in page.get_text("blocks")
+                   if block[6] == 0 and not _is_furniture(block, bands))
+
+
+def furniture_counts(doc):
+    """Measure what position bands strip and what text matching would still strip.
+
+    Args:
+        doc: an open fitz.Document.
+
+    Returns:
+        ``furniture_blocks_stripped``: band blocks across all pages;
+        ``furniture_text_only_hits``: lines ``repeated_lines`` removes after the bands.
+    """
+    bands = furniture_bands(doc)
+    repeated = repeated_lines(doc)
+    stripped = sum(_is_furniture(block, bands) for page in doc
+                   for block in page.get_text("blocks") if block[6] == 0)
+    text_only = sum(line.strip() in repeated for page in doc
+                    for line in page_text(page, bands).splitlines())
+    return {"furniture_blocks_stripped": stripped, "furniture_text_only_hits": text_only}
+
+
 def _clean_pdf_text(raw, furniture):
     """Apply the established PDF furniture and line-wrap cleanup to one text span.
 
@@ -367,7 +441,7 @@ def _clean_pdf_text(raw, furniture):
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def section_page_texts(doc, sec, furniture, next_title=None):
+def section_page_texts(doc, sec, furniture, next_title=None, bands=(None, None)):
     """Extract a section as ``(page, text)`` spans without erasing provenance.
 
     Args:
@@ -375,6 +449,7 @@ def section_page_texts(doc, sec, furniture, next_title=None):
         sec: Section node whose own page range should be read.
         furniture: Repeated header and footer lines to remove.
         next_title: Following outline title used to stop shared-page extraction.
+        bands: Header and footer band edges from ``furniture_bands``.
 
     Returns:
         Non-empty ``(one-based page, cleaned text)`` spans in page order.
@@ -382,7 +457,7 @@ def section_page_texts(doc, sec, furniture, next_title=None):
     spans = []
     pages = range(sec["own_start_page"] - 1, min(sec["own_end_page"], doc.page_count))
     for page_index in pages:
-        text = _clean_pdf_text(doc[page_index].get_text(), furniture)
+        text = _clean_pdf_text(page_text(doc[page_index], bands), furniture)
         if page_index == pages.start:
             start = text.find(sec["raw_title"])
             if start != -1:
@@ -823,6 +898,7 @@ def ingest_pdf(path):
     doc_id = slugify(doc_name)
     revision = find_revision(doc)
     furniture = repeated_lines(doc)
+    bands = furniture_bands(doc)
 
     # Build structure first so every chunk inherits deterministic hierarchy metadata.
     nodes = build_sections(doc, doc_id, doc_name)
@@ -833,7 +909,7 @@ def ingest_pdf(path):
         if sec["section_name"].strip().lower() in cfg.SKIP_TITLES:
             continue
         next_title = nodes[i + 1]["raw_title"] if i + 1 < len(nodes) else None
-        page_texts = section_page_texts(doc, sec, furniture, next_title)
+        page_texts = section_page_texts(doc, sec, furniture, next_title, bands)
         text = " ".join(page_text for _, page_text in page_texts)
         if len(text) < cfg.MIN_SECTION_CHARS:  # front matter, contents and empty stubs
             continue
@@ -922,7 +998,7 @@ def ingest_pdf(path):
     return nodes, tables, records
 
 
-def hierarchy_document(path, revision, page_count, sections):
+def hierarchy_document(path, revision, page_count, sections, furniture=None):
     """Build one document record containing only its inline-linked section hierarchy.
 
     Args:
@@ -930,6 +1006,7 @@ def hierarchy_document(path, revision, page_count, sections):
         revision: Deterministically extracted document revision.
         page_count: Number of pages in the source PDF.
         sections: Inline-linked outline records belonging to the document.
+        furniture: Optional ``furniture_counts`` report for the document.
 
     Returns:
         A document record with its complete section list nested inline.
@@ -944,6 +1021,7 @@ def hierarchy_document(path, revision, page_count, sections):
         "revision": revision,
         "page_count": page_count,
         "root_section_ids": roots,
+        **(furniture or {}),
         "sections": sections,
         "content_hash": content_hash(
             document_id, revision,
@@ -971,7 +1049,8 @@ def main():
         revision = records[0]["revision"] if records else "unknown"
         all_records.extend(records)
         with fitz.open(path) as document:
-            documents.append(hierarchy_document(path, revision, document.page_count, nodes))
+            documents.append(hierarchy_document(path, revision, document.page_count, nodes,
+                                                furniture_counts(document)))
         prose = [r for r in records if r["chunk_type"] == "prose"]
         avg = sum(len(r["text"]) for r in prose) // max(len(prose), 1)
         n_tab = len(records) - len(prose)

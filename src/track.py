@@ -182,6 +182,8 @@ def pipeline_metrics():
     with open(cfg.SPEC_HIERARCHY_PATH, encoding="utf-8") as handle:
         for document in json.load(handle)["documents"]:
             metrics[f"ingest.{document['document_id']}.sections"] = len(document["sections"])
+            for key in ("furniture_blocks_stripped", "furniture_text_only_hits"):
+                metrics[f"ingest.{document['document_id']}.{key}"] = document[key]
     with open(cfg.SPEC_SIGNALS_PATH, encoding="utf-8") as handle:
         signals = json.load(handle)["signals"]
     with open(AXI_CHANNEL_GOLD, encoding="utf-8") as handle:
