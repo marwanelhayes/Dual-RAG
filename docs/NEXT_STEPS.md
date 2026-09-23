@@ -8,7 +8,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-09).
 
 ## Where we are
 
-Branch `simplify`, head `ab0d479` (+ docs). Decision metric: `retrieval.spec.section_recall_at_k`.
+Branch `simplify`, head `0521d80` (+ docs). Decision metric: `retrieval.spec.section_recall_at_k`.
 
 | Step | Commit | MLflow run | section recall | Notes |
 |---|---|---|---|---|
@@ -26,7 +26,13 @@ Branch `simplify`, head `ab0d479` (+ docs). Decision metric: `retrieval.spec.sec
 | test fix (gold by section) | `ff6013e` | - | - | re-chunking dropped 2 of 83 gold IDs |
 | ingest 8 `fallback-validation` | `cfc2deb` | `de8ec716` | 0.640 | fallback F1 0.61-0.73 |
 | ingest 9 `position-sections` | `e29b845` | `83c7ca01` | 0.625 | boundaries correct; see below |
-| ingest 9b `drop-heading-block` | `ab0d479` | `6e60695d` | **0.633** | 1432 headings out of text |
+| ingest 9b `drop-heading-block` | `ab0d479` | `6e60695d` | 0.633 | 1432 headings out of text |
+| embed e0 `move-shared-helpers` | `e5712c4` | `10478889` | 0.633 | zero diff; stage import-order test |
+| embed e1 `drop-smoke-query` | `8cbe025` | `d6e6f1c5` | 0.633 | zero diff |
+| embed e2 `drop-dedup` | `20be791` | `6a4d6155` | 0.633 | zero diff |
+| embed e3 `text-manifest` | `1424b58` | `624ee454` | 0.633 | zero diff; main no longer writes to default paths |
+| embed e4 `drop-normalize-knob` | `f130141` | `c75cefc5` | 0.633 | zero diff |
+| embed e5 `chroma` | `0521d80` | `ec0aa075` | **0.633** | zero diff on all 60 questions; index 18 MB → 56 MB |
 
 Step 7b (`drop-text-furniture`) is skipped by its own rule: `furniture_text_only_hits` is
 not 0 (AXI 321, waveform 125, riscv-privileged 266: stacked copyright footers above the
@@ -65,8 +71,8 @@ test PDFs have points but no printed heading, and it would delete body text.
    position, 12 continuations, 12b wrapped cells, 13 code-line split, 14 token caps, 15
    sweep). Step 13 uses the newlines step 9 now keeps.
 2. spec_signals s2-s7 after the ingest queue (row deltas attributable).
-3. `embed.py` walked 2026-09-23: execute queue e0-e5 in [`docs/specs/embed.md`](specs/embed.md)
-   (e5 moves spec and RTL indexes to Chroma). Next walk: `rtl_ingest.py`.
+3. `embed.py` walked and executed 2026-09-23 (e0-e5, [`docs/specs/embed.md`](specs/embed.md)):
+   spec and RTL indexes are Chroma. Next walk: `rtl_ingest.py`.
 
 ## Pending consolidation (bridge / agent walk)
 
