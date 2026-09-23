@@ -8,7 +8,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-11).
 
 ## Where we are
 
-Branch `simplify`, head `0521d80` (+ docs). Decision metric: `retrieval.spec.section_recall_at_k`.
+Branch `simplify`, head `71e2a3a` (+ docs). Decision metric: `retrieval.spec.section_recall_at_k`.
 
 | Step | Commit | MLflow run | section recall | Notes |
 |---|---|---|---|---|
@@ -32,7 +32,13 @@ Branch `simplify`, head `0521d80` (+ docs). Decision metric: `retrieval.spec.sec
 | embed e2 `drop-dedup` | `20be791` | `6a4d6155` | 0.633 | zero diff |
 | embed e3 `text-manifest` | `1424b58` | `624ee454` | 0.633 | zero diff; main no longer writes to default paths |
 | embed e4 `drop-normalize-knob` | `f130141` | `c75cefc5` | 0.633 | zero diff |
-| embed e5 `chroma` | `0521d80` | `ec0aa075` | **0.633** | zero diff on all 60 questions; index 18 MB → 56 MB |
+| embed e5 `chroma` | `0521d80` | `ec0aa075` | 0.633 | zero diff on all 60 questions; index 18 MB → 56 MB |
+| rtl r0 `metrics` | `4948e96` | `a9576171` | 0.633 | rtl.* counts + 4 rates (all resolution rates 1.0) |
+| rtl r1 `drop-aliases` | `63b1bd0` | `b4202fea` | 0.633 | rtl.json = old minus keys; schema 4 |
+| rtl r2 `drop-compiler-internals` | `81ff2c2` | `6499c7a0` | 0.633 | rtl.json = old minus keys |
+| rtl r3 `hierarchy-once` | `4c3f869` | `11ff82ba` | 0.633 | rtl.json = old minus keys; 4.1 → 3.4 MB |
+| rtl r4 `drop-clock-reset` | `0d124ac` | `1a02e5ef` | 0.633 | rtl.json = old minus keys |
+| rtl r5 `drop-content-hash` | `71e2a3a` | `4515b440` | **0.633** | rtl.json = old minus keys; 3.3 MB |
 
 Step 7b (`drop-text-furniture`) is skipped by its own rule: `furniture_text_only_hits` is
 not 0 (AXI 321, waveform 125, riscv-privileged 266: stacked copyright footers above the
@@ -73,8 +79,11 @@ test PDFs have points but no printed heading, and it would delete body text.
 2. spec_signals s2-s7 after the ingest queue (row deltas attributable).
 3. `embed.py` walked and executed 2026-09-23 (e0-e5, [`docs/specs/embed.md`](specs/embed.md)):
    spec and RTL indexes are Chroma.
-4. `rtl_ingest.py` walked 2026-09-23: queue r0-r5 in [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md).
-   Next walk: `rtl_embed.py` (it also switches RTL paths to `RTL_DIR`-relative).
+4. `rtl_ingest.py` walked and executed 2026-09-23 (r0-r5,
+   [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md)); every rtl.* metric unchanged except bytes.
+   Next walk: `rtl_embed.py`. It also switches RTL paths to `RTL_DIR`-relative, drops its
+   `clock` / `reset` / `content_hash` copy lines, and fixes the `test_rtl_embed.py:89` fixture
+   binding that still uses the removed `formal` / `actual_refs` keys.
 
 ## Pending consolidation (bridge / agent walk)
 
