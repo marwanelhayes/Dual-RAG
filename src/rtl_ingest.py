@@ -522,7 +522,6 @@ def _declaration_record(var, module, kind, name, located, scopes, files, parents
         "start_line": located[1],
         "end_line": located[2],
         "direction": _normal_direction(var.get("dir")) or "internal",
-        "dtype_id": var.get("dtype_id"),
         "data_type": var.get("vartype") or descriptor.get("data_type") or var.get("dtype_id"),
         "parameter_kind": ("localparam" if var.get("localparam") in {"true", "1"}
                            else "parameter" if kind == "PARAMETER" else None),
@@ -530,7 +529,6 @@ def _declaration_record(var, module, kind, name, located, scopes, files, parents
         "hierarchical_path": [module, *scopes, name],
         "parent_construct": parent_id,
         "source_text": source_text,
-        "elaborated_modules": [element.get("name")],
     }
     if descriptor.get("width") is not None:
         record["width"] = descriptor["width"]
@@ -605,9 +603,8 @@ def symbol_records(root, files):
             kind = _symbol_kind(var)
             scopes = _scope_names(var, parents, element)
             key = (module, kind, name, var.get("loc"), tuple(scopes))
+            # Parameter clones repeat a declaration; the source record is kept once.
             if key in candidates:
-                candidates[key]["elaborated_modules"] = _unique([
-                    *candidates[key]["elaborated_modules"], element.get("name")])
                 continue
             candidates[key] = _declaration_record(
                 var, module, kind, name, located, scopes, files, parents, element,
@@ -873,7 +870,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
             "actual_signals": actual_refs,
             "actual_signal_ids": actual_symbol_ids,
             "direction": _normal_direction(port.get("direction")),
-            "port_index": port.get("portIndex"),
             "expression_kind": port[0].tag if len(port) else "open",
             "file": str(citation_path),
             "file_path": str(citation_path),
@@ -898,7 +894,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
         "normalized_tokens": identifier_tokens(instance_name),
         "module_name": module,
         "target_module": target,
-        "target_elaborated_modules": [elaborated_target] if elaborated_target else [],
         "file": str(path),
         "file_path": str(path),
         "line": located[1],
@@ -1078,12 +1073,9 @@ def modules(root, files, declarations=None):
             "assignment_groups": [],
             "other_blocks": [],
             "source_code": read_lines(path, first, last),
-            "elaborated_modules": [],
             "_blocks": {},
             "_instances": {},
         })
-        entry["elaborated_modules"] = _unique([
-            *entry["elaborated_modules"], element.get("name")])
         for node in element.iter():
             if node.tag not in _BLOCK_KINDS or not _owned_by(node, element, parents):
                 continue
@@ -1104,9 +1096,6 @@ def modules(root, files, declarations=None):
                 else:
                     existing["hierarchical_paths"] = _unique([
                         *existing["hierarchical_paths"], *record["hierarchical_paths"]])
-                    existing["target_elaborated_modules"] = _unique([
-                        *existing["target_elaborated_modules"],
-                        *record["target_elaborated_modules"]])
 
     for name, entry in out.items():
         for declaration in declarations:
@@ -1169,8 +1158,6 @@ def tree(root):
                     "module": source_name(child.get("submodname")),
                     "hierarchical_path": hier.split(".") if hier else [],
                     "parent_hier": parent_hier,
-                    "elaborated_module": child.get("submodname"),
-                    "loc": child.get("loc"),
                 })
                 walk(child, depth + 1, hier, fallback_path)
             else:

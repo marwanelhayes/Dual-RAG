@@ -207,7 +207,11 @@ def test_package_enums_tolerate_a_missing_package_and_missing_member_value(
 
 
 def test_modules_are_deduplicated_normalized_and_source_complete(tmp_path, monkeypatch):
-    module = built(tmp_path, monkeypatch)["modules"]["parent"]
+    modules = built(tmp_path, monkeypatch)["modules"]
+    module = modules["parent"]
+
+    # Parameter clones parent__W8 and parent__W16 collapse into one source module.
+    assert not any(name.startswith("parent__") for name in modules)
 
     required = {
         "original_name", "normalized_name", "normalized_tokens", "file", "start_line",
@@ -215,7 +219,6 @@ def test_modules_are_deduplicated_normalized_and_source_complete(tmp_path, monke
         "assignment_groups", "source_code", "content_hash",
     }
     assert required <= set(module)
-    assert module["elaborated_modules"] == ["parent__W8", "parent__W16"]
     assert module["normalized_name"] == "parent"
     assert module["start_line"] == 1 and module["end_line"] == 24
     assert module["source_code"].startswith("module parent;")
@@ -294,8 +297,12 @@ def test_lint_warnings_remain_structured(tmp_path, monkeypatch):
 
 # Fields removed in the 2026-09-23 rtl_ingest walk, by the record that carried them.
 REMOVED_FIELDS = {
-    "binding": {"formal", "actual_refs", "formal_symbol_id", "actual_symbol_ids"},
-    "instance": {"target_elaborated_module"},
+    "binding": {"formal", "actual_refs", "formal_symbol_id", "actual_symbol_ids",
+                "port_index"},
+    "instance": {"target_elaborated_module", "target_elaborated_modules"},
+    "declaration": {"dtype_id", "elaborated_modules"},
+    "module": {"elaborated_modules"},
+    "tree": {"elaborated_module", "loc"},
 }
 
 
