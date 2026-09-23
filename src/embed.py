@@ -37,19 +37,6 @@ def available_device(requested, cuda_available=None):
     return requested if cuda_available else "cpu"
 
 
-def chunk_fingerprint(record):
-    """Fingerprint the content of a single chunk.
-
-    Args:
-        record: one chunk dict as written to chunks.jsonl.
-
-    Returns:
-        the content hash of everything that goes into the chunk's embedding.
-    """
-    # Breadcrumb changes alter embeddings, so they must invalidate the manifest.
-    return content_hash(record["context_header"], record["text"])
-
-
 def record_fingerprint(record):
     """Fingerprint embedded text and the metadata persisted beside its vector.
 
@@ -91,7 +78,6 @@ def record_to_document(record):
 
     # Keep provenance as metadata while page_content owns the embedded text.
     metadata = {k: v for k, v in record.items() if k != "text"}
-    metadata["fingerprint"] = chunk_fingerprint(record)
     return Document(page_content=page_content, metadata=metadata)
 
 
@@ -190,18 +176,8 @@ class VectorStore:
         embedder = embedder or Embedder()
         documents = [record_to_document(r) for r in records]
 
-        # Deduplicate only encoder work; the index retains every provenance-bearing chunk.
-        unique = {}
-        for doc in documents:
-            unique.setdefault(doc.metadata["fingerprint"], doc.page_content)
-        fingerprints = list(unique)
-        vectors = embedder.embed_documents([unique[fp] for fp in fingerprints])
-        by_fingerprint = dict(zip(fingerprints, vectors))
-
-        text_embeddings = [
-            (document.page_content, by_fingerprint[document.metadata["fingerprint"]])
-            for document in documents
-        ]
+        vectors = embedder.embed_documents([d.page_content for d in documents])
+        text_embeddings = [(d.page_content, v) for d, v in zip(documents, vectors)]
         metadatas = [d.metadata for d in documents]
         # Reuse stable chunk IDs so future incremental updates can address entries.
         ids = [d.metadata["chunk_id"] for d in documents]
@@ -304,8 +280,7 @@ def main():
         print(f"====  {len(records)} chunks already embedded and unchanged, nothing to do")
         return
 
-    n_unique = len(set(manifest.values()))
-    print(f"embedding {len(records)} chunks ({n_unique} unique) "
+    print(f"embedding {len(records)} chunks "
           f"on {cfg.EMBED_DEVICE} with {cfg.EMBED_MODEL}")
 
     store = VectorStore.build(records)

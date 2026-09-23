@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import build
-from embed import build_manifest, chunk_fingerprint
+from embed import build_manifest
 
 
 def test_stage_order_builds_each_domain_before_the_bridge():
@@ -75,7 +75,6 @@ def test_index_manifest_invalidates_persisted_metadata_without_reembedding_contr
              "section_id": "old"}
     second = {**first, "section_id": "new"}
 
-    assert chunk_fingerprint(first) == chunk_fingerprint(second)
     assert build_manifest([first]) != build_manifest([second])
 
 
