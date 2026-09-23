@@ -346,3 +346,18 @@ def test_windowed_table_chunks_stay_under_the_configured_character_cap():
     for _, window in ingest.table_row_windows(columns, rows):
         assert len(ingest.rows_to_markdown([columns] + window)) <= cfg.MAX_TABLE_CHUNK_CHARS
 
+
+def test_caption_titled_by_a_lowercase_register_name_is_a_caption():
+    # RISC-V captions open with CSR names, e.g. "Table 44. vtype register layout".
+    match = ingest._CAPTION.match("Table 44. vtype register layout")
+
+    assert match and match.group(2, 4) == ("44", "vtype register layout")
+
+
+def test_prose_opening_with_a_table_reference_is_not_a_caption():
+    # Backtracking once split "A2.2" into label "A2" and title "2 shows ...".
+    assert not ingest._CAPTION.match("Table A2.2 shows the VALID and READY signals.")
+
+
+def test_continued_table_banner_is_not_a_caption():
+    assert not ingest._CAPTION.match("Table A15.3 \u2013 Continued from previous page")

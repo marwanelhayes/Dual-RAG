@@ -408,24 +408,10 @@ def section_page_texts(doc, sec, furniture, next_title=None):
     return spans
 
 
-# Caption labels require a period or colon before the title.
-_CAPTION = re.compile(r"^(Table)\s+([A-Z]?\d+(?:[.-]\d+)*)\s*([.:])\s*(.*)$")
+# A caption needs whitespace after its separator, so "Table A2.2 shows" never splits.
+_CAPTION = re.compile(r"^(Table)\s+([A-Z]?\d+(?:[.-]\d+)*)\s*([.:])\s+(.+)$")
 
 _TABLE_REF = re.compile(r"\bTable\s+([A-Z]?\d+(?:[.-]\d+)*)")
-
-
-def is_caption(sep, rest):
-    """Tell a real caption apart from prose that merely opens with a reference.
-
-    Args:
-        sep: the separator captured after the label, "." or ":".
-        rest: whatever text followed that separator.
-
-    Returns:
-        True if the line leads a genuine caption.
-    """
-    # Captions have a separator and capitalized title; body references do not.
-    return bool(sep) and bool(rest) and rest[0].isupper()
 
 
 def build_caption_index(doc):
@@ -444,7 +430,7 @@ def build_caption_index(doc):
             if not body:
                 continue
             m = _CAPTION.match(body.splitlines()[0].strip())
-            if m and is_caption(m.group(3), m.group(4)) and m.group(2) not in index:
+            if m and m.group(2) not in index:
                 index[m.group(2)] = {
                     "page": i + 1,
                     "caption": " ".join(m.group(4).split()),

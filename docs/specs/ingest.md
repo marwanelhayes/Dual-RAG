@@ -82,7 +82,7 @@ consumers switch to `hierarchy_id` + `section_path`; then `section_id`, `section
 | `fallback_heading_f1` | `detect_headings` vs real outline on riscv-privileged |
 | `table_rows_total` | rises when continuation banners are followed |
 | `tables_with_zero_rows` | falls (A7.3, A7.4 leave it) |
-| `table_refs_unresolved` | 36 at baseline, about 5 after caption fix |
+| `table_refs_unresolved` | prose refs to a table label with no table chunk; 65 at `v0-baseline` |
 | `table_owner_changed` | tables whose owner differs from baseline |
 | `prose_table_overlap` | prose chunks containing a table header row; 0 |
 | `chunk_tokens_p50/p95/max` | tracked per chunk type |
