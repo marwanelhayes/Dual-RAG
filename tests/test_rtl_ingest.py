@@ -151,7 +151,7 @@ def test_build_emits_only_the_versioned_module_contract(tmp_path, monkeypatch):
 
     assert list(artifact) == ["schema_version", "top_module", "tree", "modules", "enums",
                               "warnings"]
-    assert artifact["schema_version"] == ri.SCHEMA_VERSION == 3
+    assert artifact["schema_version"] == ri.SCHEMA_VERSION == 4
     assert artifact["top_module"] == "parent"
     assert "graph" not in artifact and "symbol_records" not in artifact
     assert not hasattr(ri, "hierarchy_graph")
@@ -265,7 +265,7 @@ def test_only_useful_structural_blocks_are_retained_and_assignments_are_grouped(
 def test_instances_keep_ast_formal_actual_bindings_and_hierarchy(tmp_path, monkeypatch):
     artifact = built(tmp_path, monkeypatch)
     instance = artifact["modules"]["parent"]["instances"][0]
-    bindings = {binding["formal"]: binding for binding in instance["bindings"]}
+    bindings = {binding["formal_name"]: binding for binding in instance["bindings"]}
 
     assert instance["target_module"] == "child"
     assert instance["hierarchical_paths"] == ["chip.top.GEN[0].u_child"]
@@ -290,3 +290,37 @@ def test_lint_warnings_remain_structured(tmp_path, monkeypatch):
         "code": "WIDTH", "file": "design.sv", "line": 18,
         "message": "duplicate demo driver",
     }]
+
+
+# Fields removed in the 2026-09-23 rtl_ingest walk, by the record that carried them.
+REMOVED_FIELDS = {
+    "binding": {"formal", "actual_refs", "formal_symbol_id", "actual_symbol_ids"},
+    "instance": {"target_elaborated_module"},
+}
+
+
+def _records(artifact):
+    """Yield (kind, record) for every record type in an rtl.json payload."""
+    for node in artifact["tree"]:
+        yield "tree", node
+    for module in artifact["modules"].values():
+        yield "module", module
+        for key in ("ports", "signals", "parameters"):
+            for declaration in module[key]:
+                yield "declaration", declaration
+        for key in ("always_blocks", "functions_tasks", "assignment_groups", "other_blocks"):
+            for block in module[key]:
+                yield "block", block
+                for assignment in block.get("assignments", []):
+                    yield "block", assignment
+        for instance in module["instances"]:
+            yield "instance", instance
+            for binding in instance["bindings"]:
+                yield "binding", binding
+    for enum in artifact["enums"]:
+        yield "enum", enum
+
+
+def test_records_carry_no_removed_fields(tmp_path, monkeypatch):
+    for kind, record in _records(built(tmp_path, monkeypatch)):
+        assert not REMOVED_FIELDS.get(kind, set()) & set(record), kind

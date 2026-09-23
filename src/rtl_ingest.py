@@ -13,7 +13,7 @@ from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier, normalize_module_name
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _LOC = re.compile(r"^([a-zA-Z]+),(\d+),(\d+),(\d+),(\d+)$")
 _CLONE_SUFFIX = re.compile(r"__[A-Za-z0-9_]+$")
 _WARNING = re.compile(r"^%Warning-([A-Z]+):\s+(\S+?):(\d+):\d+:\s+(.*)$")
@@ -868,15 +868,10 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
             "target_module": target,
             "hierarchical_path": occurrence_paths[0] if occurrence_paths else None,
             "hierarchical_paths": occurrence_paths,
-            "formal": formal,
             "formal_name": formal,
             "formal_signal_id": formal_id,
-            "actual_refs": actual_refs,
             "actual_signals": actual_refs,
             "actual_signal_ids": actual_symbol_ids,
-            # Retain established aliases for downstream migration.
-            "formal_symbol_id": formal_id,
-            "actual_symbol_ids": actual_symbol_ids,
             "direction": _normal_direction(port.get("direction")),
             "port_index": port.get("portIndex"),
             "expression_kind": port[0].tag if len(port) else "open",
@@ -903,7 +898,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
         "normalized_tokens": identifier_tokens(instance_name),
         "module_name": module,
         "target_module": target,
-        "target_elaborated_module": elaborated_target,
         "target_elaborated_modules": [elaborated_target] if elaborated_target else [],
         "file": str(path),
         "file_path": str(path),
