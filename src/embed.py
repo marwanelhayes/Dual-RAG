@@ -1,7 +1,7 @@
-"""Embed ingested chunks once and persist their FAISS similarity index.
+"""Embed ingested chunks once and persist their Chroma similarity index.
 
-Run ``python src/embed.py`` to transform ``output/chunks.jsonl`` into the FAISS store
-and incremental manifest configured in ``configure.py``.
+Run ``python src/embed.py`` to transform ``output/chunks.jsonl`` into the Chroma index
+and freshness manifest configured in ``configure.py``.
 """
 
 import json
@@ -10,8 +10,9 @@ import configure as cfg
 from ingest import content_hash, load_chunks
 
 from langchain_core.documents import Document
-# Subclassing Embeddings makes FAISS dispatch queries through embed_query.
-from langchain_core.embeddings import Embeddings
+
+# One collection per index directory; the directory names the index.
+COLLECTION = "chunks"
 
 
 def available_device(requested, cuda_available=None):
@@ -68,8 +69,8 @@ def record_to_document(record):
     return Document(page_content=page_content, metadata=metadata)
 
 
-class Embedder(Embeddings):
-    """Encode passages and queries through LangChain's Embeddings protocol."""
+class Embedder:
+    """Encode passages and queries with the BGE sentence encoder."""
 
     def __init__(self, model=cfg.EMBED_MODEL, device=cfg.EMBED_DEVICE,
                  batch=cfg.EMBED_BATCH):
@@ -128,87 +129,101 @@ class Embedder(Embeddings):
         return vec.tolist()
 
 
-class VectorStore:
-    """Expose construction, persistence, and search for the corpus FAISS index."""
+def _client(index_dir):
+    """Open the persistent Chroma client rooted at one index directory.
 
-    def __init__(self, faiss, embedder):
-        """Wrap an already-constructed FAISS index.
+    Args:
+        index_dir: Directory holding the index.
+
+    Returns:
+        A ``chromadb.PersistentClient``.
+    """
+    import chromadb
+    from chromadb.config import Settings
+
+    return chromadb.PersistentClient(path=str(index_dir),
+                                     settings=Settings(anonymized_telemetry=False))
+
+
+class VectorStore:
+    """Build, persist, and search a Chroma index whose hits are hydrated from records."""
+
+    def __init__(self, documents, embedder, collection=None, vectors=None):
+        """Hold the searchable documents and either a saved collection or fresh vectors.
 
         Args:
-            faiss: a langchain_community FAISS instance.
-            embedder: the Embedder used to build it, reused for queries.
+            documents: chunk_id -> Document, the metadata source for every hit.
+            embedder: the Embedder used for queries.
+            collection: a persisted Chroma collection, or None until ``save``.
+            vectors: passage vectors in ``documents`` order, awaiting ``save``.
 
         Returns:
             None.
         """
-        self._faiss = faiss
+        self.documents = documents
         self.embedder = embedder
+        self._collection = collection
+        self._vectors = vectors
 
     @classmethod
     def build(cls, records, embedder=None):
-        """Embed the chunks once and pack them into a fresh FAISS index.
+        """Embed every chunk once; the vectors are written by ``save``.
 
         Args:
             records: the chunk dicts from load_chunks.
             embedder: an Embedder to reuse, or None to construct the default one.
 
         Returns:
-            a VectorStore holding the built index.
+            a VectorStore holding the vectors in memory.
         """
-        from langchain_community.vectorstores import FAISS
-        from langchain_community.vectorstores.utils import DistanceStrategy
-
         embedder = embedder or Embedder()
-        documents = [record_to_document(r) for r in records]
+        documents = {r["chunk_id"]: record_to_document(r) for r in records}
+        vectors = embedder.embed_documents([d.page_content for d in documents.values()])
+        return cls(documents, embedder, vectors=vectors)
 
-        vectors = embedder.embed_documents([d.page_content for d in documents])
-        text_embeddings = [(d.page_content, v) for d, v in zip(documents, vectors)]
-        metadatas = [d.metadata for d in documents]
-        # Reuse stable chunk IDs so future incremental updates can address entries.
-        ids = [d.metadata["chunk_id"] for d in documents]
-
-        # Inner product equals cosine similarity for the normalized BGE vectors.
-        faiss = FAISS.from_embeddings(
-            text_embeddings=text_embeddings,
-            embedding=embedder,
-            metadatas=metadatas,
-            ids=ids,
-            distance_strategy=DistanceStrategy.MAX_INNER_PRODUCT,
-        )
-        return cls(faiss, embedder)
-
-    def save(self, index_dir=cfg.INDEX_DIR):
-        """Write the index to disk so retrieval can load it without re-embedding.
+    def save(self, index_dir):
+        """Write ids, vectors, and embedded text into a fresh collection.
 
         Args:
-            index_dir: directory to write the FAISS files into.
+            index_dir: directory to persist the index into.
 
         Returns:
             None.
         """
-        self._faiss.save_local(str(index_dir))
+        client = _client(index_dir)
+        if COLLECTION in {c.name for c in client.list_collections()}:
+            client.delete_collection(COLLECTION)
+        # Cosine space: score = 1 - distance, the cosine similarity of the vectors.
+        collection = client.create_collection(
+            COLLECTION, configuration={"hnsw": {"space": "cosine"}}, embedding_function=None)
+        ids = list(self.documents)
+        texts = [self.documents[i].page_content for i in ids]
+        step = client.get_max_batch_size()
+        for start in range(0, len(ids), step):
+            end = start + step
+            collection.add(ids=ids[start:end], embeddings=self._vectors[start:end],
+                           documents=texts[start:end])
+        self._collection = collection
 
     @classmethod
-    def load(cls, index_dir=cfg.INDEX_DIR, embedder=None):
-        """Load a saved index back for querying.
+    def load(cls, index_dir, records, embedder=None):
+        """Open a saved index; hits are hydrated from the given records.
 
         Args:
             index_dir: directory a previous run saved the index into.
+            records: the chunk dicts the index was built from.
             embedder: an Embedder to reuse, or None to construct the default one.
 
         Returns:
             a VectorStore ready to search.
         """
-        from langchain_community.vectorstores import FAISS
-
         embedder = embedder or Embedder()
-        # Deserialization trusts only the index written into this project's output folder.
-        faiss = FAISS.load_local(
-            str(index_dir), embedder, allow_dangerous_deserialization=True)
-        return cls(faiss, embedder)
+        collection = _client(index_dir).get_collection(COLLECTION)
+        return cls({r["chunk_id"]: record_to_document(r) for r in records},
+                   embedder, collection)
 
     def search(self, query, k=5):
-        """Return the k chunks nearest a query, with their similarity scores.
+        """Return the k chunks nearest a query, with their cosine similarities.
 
         Args:
             query: the raw user question.
@@ -217,7 +232,11 @@ class VectorStore:
         Returns:
             list of (Document, score) pairs, nearest first.
         """
-        return self._faiss.similarity_search_with_score(query, k=k)
+        result = self._collection.query(
+            query_embeddings=[self.embedder.embed_query(query)],
+            n_results=min(k, self._collection.count()), include=["distances"])
+        return [(self.documents[i], 1.0 - d)
+                for i, d in zip(result["ids"][0], result["distances"][0])]
 
 
 def read_manifest(path=cfg.MANIFEST_PATH):
@@ -250,7 +269,7 @@ def write_manifest(manifest, path=cfg.MANIFEST_PATH):
 
 
 def main():
-    """Embed the corpus into FAISS and write its manifest.
+    """Embed the corpus into Chroma and write its manifest.
 
     Returns:
         None.
@@ -268,7 +287,7 @@ def main():
     write_manifest(build_manifest(records), cfg.MANIFEST_PATH)
 
     rel = cfg.INDEX_DIR.relative_to(cfg.ROOT)
-    print(f"====  wrote FAISS index ({len(records)} vectors) to {rel}")
+    print(f"====  wrote Chroma index ({len(records)} vectors) to {rel}")
 
 
 if __name__ == "__main__":

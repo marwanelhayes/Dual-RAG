@@ -22,9 +22,12 @@ Non-goals: chunk sizing and token caps (ingest steps 13-14 own them), metadata t
 2. **Encoder.** `BAAI/bge-small-en-v1.5` (512 tokens, 384 dims) on `cuda`, falling back to
    CPU (`available_device`). Passages are encoded bare; queries get `EMBED_QUERY_PREFIX`
    (BGE asymmetric convention). Vectors are always L2-normalised (no config knob).
-3. **Store: Chroma.** One persistent client at `output/chroma`; collection `spec` and
-   collection `rtl`, `space="cosine"`, embeddings supplied by `Embedder` (no Chroma embedding
-   function). Each entry holds `id` (= `chunk_id`), the embedding, and the embedded text only.
+3. **Store: Chroma.** One persistent Chroma directory per index (`output/spec_index`,
+   `output/rtl_index`), each with one collection `chunks`, `space="cosine"`, embeddings
+   supplied by `Embedder` (no Chroma embedding function, telemetry off). Each entry holds
+   `id` (= `chunk_id`), the embedding, and the embedded text only. One directory per index
+   (not one client with two collections) keeps "index dir exists" meaning "this index was
+   built" for the freshness guards.
 4. **Hits are hydrated.** `VectorStore.search` returns `(Document, score)` pairs; the
    `Document` is built from the caller's records by id, so metadata is never duplicated in
    the store. Score = `1 - distance` (cosine similarity).
@@ -56,8 +59,8 @@ earlier stages no longer import a later one).
 - `langchain_core.documents.Document` stays as the hit type until the `retrieve.py` walk.
 - The manifest stays because `agent.py:1319` (spec) and `rtl_embed.index_manifest_status`
   (RTL) refuse stale indexes; revisited at the `agent.py` / `rtl_embed.py` walks.
-- `VectorStore.load` takes the records to hydrate from (call sites: `retrieve.py:259`,
-  `rtl_embed.py`).
+- `VectorStore.load` takes the records to hydrate from; its one call site is
+  `retrieve.Retriever.load`, which both the spec and RTL paths use.
 
 ## Metrics
 

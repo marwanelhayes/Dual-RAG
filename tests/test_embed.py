@@ -1,5 +1,7 @@
 """Behaviour of the spec vector index: what is encoded and what is stored."""
 
+import pytest
+
 import embed
 
 
@@ -91,3 +93,33 @@ def test_embedder_always_normalizes_passages_and_queries(monkeypatch):
     embedder.embed_query("query")
 
     assert calls == [True, True]
+
+
+class TopicEmbedder:
+    """Stand-in encoder mapping text about alpha and beta onto orthogonal axes."""
+
+    def embed_documents(self, texts):
+        return [self.embed_query(text) for text in texts]
+
+    def embed_query(self, text):
+        return [1.0, 0.0] if "alpha" in text else [0.0, 1.0]
+
+
+def test_saved_index_holds_no_metadata_and_hits_are_hydrated_from_records(tmp_path):
+    """Metadata lives only in the chunk records; the index stores ids, vectors, and text."""
+    records = [{**_record("a", "alpha body"), "section_path": ["1 Intro"]},
+               {**_record("b", "beta body"), "section_path": ["2 Next"]}]
+    store = embed.VectorStore.build(records, embedder=TopicEmbedder())
+    store.save(tmp_path / "index")
+
+    loaded = embed.VectorStore.load(tmp_path / "index", records, embedder=TopicEmbedder())
+    (document, score), _ = loaded.search("alpha?", k=2)
+
+    assert document.metadata == {"chunk_id": "a", "context_header": "Spec > 1 Intro",
+                                 "section_path": ["1 Intro"]}
+    assert document.page_content == "Spec > 1 Intro\n\nalpha body"
+    assert score == pytest.approx(1.0)
+    stored = loaded._collection.get(include=["metadatas", "documents"])
+    assert stored["metadatas"] == [None, None]
+    assert sorted(stored["documents"]) == ["Spec > 1 Intro\n\nalpha body",
+                                           "Spec > 1 Intro\n\nbeta body"]

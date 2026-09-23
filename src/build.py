@@ -106,7 +106,7 @@ def run_pipeline(include_embeddings=True):
     """Run every selected stage as an isolated Python process.
 
     Args:
-        include_embeddings: Build FAISS indexes when true.
+        include_embeddings: Build the vector indexes when true.
 
     Returns:
         None.
@@ -131,7 +131,7 @@ def main(argv=None):
     parser.add_argument("--clean", action="store_true",
                         help="remove all generated artifacts before rebuilding")
     parser.add_argument("--no-embeddings", action="store_true",
-                        help="skip both FAISS stages for a parser/bridge-only rebuild")
+                        help="skip both vector-index stages for a parser/bridge-only rebuild")
     args = parser.parse_args(argv)
     if args.clean:
         clean_generated_data()

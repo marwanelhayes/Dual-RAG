@@ -496,7 +496,7 @@ def index_manifest_status(records, index_dir, manifest_path):
 
     Args:
         records: Current retrieval records.
-        index_dir: Directory expected to hold the RTL FAISS index.
+        index_dir: Directory expected to hold the RTL Chroma index.
         manifest_path: Path of the manifest written beside that index.
 
     Returns:
@@ -689,7 +689,7 @@ class RTLRetriever:
         self.hybrid = hybrid
 
     def _hybrid(self):
-        """Load BM25, FAISS, and cross-encoder adapters only when exact lookup is short.
+        """Load BM25, Chroma, and cross-encoder adapters only when exact lookup is short.
 
         Returns:
             The shared hybrid retriever, constructed on first use.

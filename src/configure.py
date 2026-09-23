@@ -13,7 +13,7 @@ SPEC_HIERARCHY_PATH = OUTPUT_DIR / "spec_hierarchy.json"
 SPEC_SIGNALS_PATH = OUTPUT_DIR / "spec_signals.json"
 
 # Keep index data and its content-hash manifest separate for resumable embedding.
-INDEX_DIR = OUTPUT_DIR / "faiss_index"
+INDEX_DIR = OUTPUT_DIR / "spec_index"
 MANIFEST_PATH = OUTPUT_DIR / "embed_manifest.json"
 
 # Embedding settings fit the BGE encoder within the 4 GB GPU budget.

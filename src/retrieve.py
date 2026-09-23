@@ -247,7 +247,7 @@ class Retriever:
 
         Args:
             records: Optional records; defaults to specification chunks.
-            index_dir: Directory containing the matching FAISS index.
+            index_dir: Directory containing the matching Chroma index.
             embedder: Optional shared embedding adapter.
             reranker: Optional cross-encoder adapter.
 
@@ -257,7 +257,7 @@ class Retriever:
         records = load_chunks() if records is None else records
         documents = {record["chunk_id"]: record_to_document(record) for record in records}
         embedder = embedder or Embedder()
-        store = VectorStore.load(index_dir=index_dir, embedder=embedder)
+        store = VectorStore.load(index_dir, records, embedder=embedder)
         return cls(documents, BM25Index.build(documents), store, reranker or Reranker())
 
     def candidates(self, query, n=cfg.RETRIEVE_CANDIDATES, exact_terms=None):
