@@ -64,3 +64,30 @@ def test_main_embeds_on_every_run_and_writes_only_configured_paths(monkeypatch, 
     assert len(builds) == 2
     assert saved == [tmp_path / "index"] * 2
     assert embed.read_manifest(tmp_path / "manifest.json") == embed.build_manifest(builds[0])
+
+
+def test_embedder_always_normalizes_passages_and_queries(monkeypatch):
+    """BGE is trained for cosine similarity; vectors are L2-normalised unconditionally."""
+    import sys
+    import types
+
+    import numpy as np
+
+    calls = []
+
+    class FakeModel:
+        def __init__(self, name, device):
+            pass
+
+        def encode(self, texts, **kwargs):
+            calls.append(kwargs["normalize_embeddings"])
+            return np.zeros((len(texts), 2)) if isinstance(texts, list) else np.zeros(2)
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        types.SimpleNamespace(SentenceTransformer=FakeModel))
+    embedder = embed.Embedder(device="cpu")
+
+    embedder.embed_documents(["passage"])
+    embedder.embed_query("query")
+
+    assert calls == [True, True]

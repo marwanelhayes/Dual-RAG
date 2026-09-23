@@ -72,14 +72,13 @@ class Embedder(Embeddings):
     """Encode passages and queries through LangChain's Embeddings protocol."""
 
     def __init__(self, model=cfg.EMBED_MODEL, device=cfg.EMBED_DEVICE,
-                 batch=cfg.EMBED_BATCH, normalize=cfg.EMBED_NORMALIZE):
+                 batch=cfg.EMBED_BATCH):
         """Load the encoder and move it onto the target device.
 
         Args:
             model: sentence-transformers model name.
             device: "cuda" for the GPU, "cpu" for the fallback.
             batch: chunks per forward pass.
-            normalize: whether to L2-normalise the output vectors.
 
         Returns:
             None.
@@ -88,7 +87,6 @@ class Embedder(Embeddings):
         from sentence_transformers import SentenceTransformer
 
         self.batch = batch
-        self.normalize = normalize
         # Move weights once so later batches avoid repeated host-to-device transfers.
         self.device = available_device(device)
         self.model = SentenceTransformer(model, device=self.device)
@@ -106,7 +104,7 @@ class Embedder(Embeddings):
         vecs = self.model.encode(
             texts,
             batch_size=self.batch,
-            normalize_embeddings=self.normalize,
+            normalize_embeddings=True,
             show_progress_bar=True,
             convert_to_numpy=True,
         )
@@ -124,7 +122,7 @@ class Embedder(Embeddings):
         # BGE's asymmetric convention applies the instruction prefix only to queries.
         vec = self.model.encode(
             cfg.EMBED_QUERY_PREFIX + text,
-            normalize_embeddings=self.normalize,
+            normalize_embeddings=True,
             convert_to_numpy=True,
         )
         return vec.tolist()

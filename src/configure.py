@@ -20,7 +20,6 @@ MANIFEST_PATH = OUTPUT_DIR / "embed_manifest.json"
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 EMBED_DEVICE = "cuda"
 EMBED_BATCH = 64
-EMBED_NORMALIZE = True
 
 # BGE's asymmetric training requires this prefix only on queries.
 EMBED_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
