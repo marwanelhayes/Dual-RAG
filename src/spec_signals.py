@@ -5,7 +5,7 @@ import json
 import re
 
 import configure as cfg
-from embed import load_chunks
+from ingest import load_chunks
 from naming import identifier_tokens, normalize_identifier
 
 SCHEMA_VERSION = 5

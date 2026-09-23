@@ -5,6 +5,7 @@ Run ``python src/ingest.py`` to read ``Ingest/*.pdf`` and write
 """
 
 import collections
+import hashlib
 import json
 import re
 from operator import itemgetter
@@ -15,11 +16,41 @@ import fitz  # PyMuPDF
 
 import configure as cfg
 import roles
-from embed import content_hash
 
 SCHEMA_VERSION = 2
 
 # TODO: Extract captioned figures by block gaps; captionless waveform.pdf needs vision.
+
+
+def content_hash(*parts):
+    """Fold several strings into one short, stable hex fingerprint.
+
+    Args:
+        *parts: the strings to fingerprint together, in order.
+
+    Returns:
+        a 16-character hex digest that is identical across runs and machines.
+    """
+    # NUL delimiters distinguish partitions such as ("ab", "c") and ("a", "bc").
+    h = hashlib.sha256()
+    for part in parts:
+        h.update(part.encode("utf-8"))
+        h.update(b"\x00")
+    # A readable 64-bit prefix is ample for this corpus's few thousand chunks.
+    return h.hexdigest()[:16]
+
+
+def load_chunks(path=cfg.CHUNKS_PATH):
+    """Read the chunk records the ingest stage wrote.
+
+    Args:
+        path: the JSONL file to read.
+
+    Returns:
+        list of chunk dicts, one per line.
+    """
+    with open(path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
 def slugify(name):

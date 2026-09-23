@@ -3,7 +3,8 @@
 import re
 
 import configure as cfg
-from embed import Embedder, VectorStore, available_device, load_chunks, record_to_document
+from embed import Embedder, VectorStore, available_device, record_to_document
+from ingest import load_chunks
 
 
 TOKEN_RE = re.compile(r"[a-z0-9_.]+")

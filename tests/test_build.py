@@ -77,3 +77,17 @@ def test_index_manifest_invalidates_persisted_metadata_without_reembedding_contr
 
     assert chunk_fingerprint(first) == chunk_fingerprint(second)
     assert build_manifest([first]) != build_manifest([second])
+
+
+def test_no_stage_imports_a_later_stage():
+    """Pipeline stages depend only on stages that run before them."""
+    import ast
+
+    order = [path for _, path in build.stage_scripts(include_embeddings=True)]
+    stems = [path.stem for path in order]
+    for index, path in enumerate(order):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+        imported |= {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+                     for alias in node.names}
+        assert not imported & set(stems[index + 1:]), path.name

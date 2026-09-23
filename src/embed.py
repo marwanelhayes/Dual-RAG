@@ -4,10 +4,10 @@ Run ``python src/embed.py`` to transform ``output/chunks.jsonl`` into the FAISS 
 and incremental manifest configured in ``configure.py``.
 """
 
-import hashlib
 import json
 
 import configure as cfg
+from ingest import content_hash, load_chunks
 
 from langchain_core.documents import Document
 # Subclassing Embeddings makes FAISS dispatch queries through embed_query.
@@ -37,24 +37,6 @@ def available_device(requested, cuda_available=None):
     return requested if cuda_available else "cpu"
 
 
-def content_hash(*parts):
-    """Fold several strings into one short, stable hex fingerprint.
-
-    Args:
-        *parts: the strings to fingerprint together, in order.
-
-    Returns:
-        a 16-character hex digest that is identical across runs and machines.
-    """
-    # NUL delimiters distinguish partitions such as ("ab", "c") and ("a", "bc").
-    h = hashlib.sha256()
-    for part in parts:
-        h.update(part.encode("utf-8"))
-        h.update(b"\x00")
-    # A readable 64-bit prefix is ample for this corpus's few thousand chunks.
-    return h.hexdigest()[:16]
-
-
 def chunk_fingerprint(record):
     """Fingerprint the content of a single chunk.
 
@@ -80,19 +62,6 @@ def record_fingerprint(record):
     material = json.dumps(record, ensure_ascii=False, sort_keys=True,
                           separators=(",", ":"))
     return content_hash("dual-rag-index-v2", material)
-
-
-def load_chunks(path=cfg.CHUNKS_PATH):
-    """Read the chunk records the ingest stage wrote.
-
-    Args:
-        path: the JSONL file to read.
-
-    Returns:
-        list of chunk dicts, one per line.
-    """
-    with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
 
 
 def build_manifest(records):

@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import configure as cfg
-from embed import content_hash
+from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier, normalize_module_name
 
 

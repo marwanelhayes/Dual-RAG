@@ -11,8 +11,9 @@ import re
 import sys
 
 import configure as cfg
-from embed import (Embedder, VectorStore, build_manifest, content_hash, read_manifest,
-                   record_to_document, write_manifest)
+from embed import (Embedder, VectorStore, build_manifest, read_manifest, record_to_document,
+                   write_manifest)
+from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier
 from retrieve import Retriever as HybridRetriever
 

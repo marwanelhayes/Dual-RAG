@@ -7,7 +7,8 @@ from langchain_core.documents import Document
 
 import configure as cfg
 import rtl_embed as re_
-from embed import build_manifest, content_hash, read_manifest, write_manifest
+from embed import build_manifest, read_manifest, write_manifest
+from ingest import content_hash
 
 
 def _declaration(module, name, kind="SIGNAL", direction="internal", **metadata):
