@@ -303,6 +303,7 @@ REMOVED_FIELDS = {
                  "hierarchical_paths", "parent_construct"},
     "declaration": {"dtype_id", "elaborated_modules", "parent_construct"},
     "module": {"elaborated_modules"},
+    "block": {"clock", "reset"},
     "tree": {"elaborated_module", "loc", "parent_hier"},
 }
 

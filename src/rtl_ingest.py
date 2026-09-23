@@ -897,11 +897,6 @@ def _block_record(node, module, element, files, parents):
         "signals_read": read,
         "signals_written": written,
         "sensitivity": sensitivity,
-        "clock": next((item["signal"] for item in sensitivity
-                       if item["edge"] in {"posedge", "negedge"}), None),
-        "reset": next((item["signal"] for item in sensitivity
-                       if re.search(r"(?:^|_)(?:rst|reset)(?:_|$)",
-                                    item["signal"], re.IGNORECASE)), None),
         "content_hash": content_hash(_block_type(kind, source_text), module,
                                      str(first), str(last), source_text),
     }
