@@ -372,8 +372,8 @@ DEAD_CHUNK_FIELDS = {
     "chunk_role", "chunk_role_scores", "chunk_role_source", "tables_cited"}
 
 
-def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):
-    """Fields nothing downstream reads are not emitted."""
+def _tiny_pdf(tmp_path):
+    """Write a two-page PDF with a two-level outline and return its path."""
     import fitz
 
     path = tmp_path / "tiny.pdf"
@@ -385,8 +385,12 @@ def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):
             fontsize=10)
     doc.set_toc([[1, "1 Channels", 1], [2, "1.1 Write address", 2]])
     doc.save(path)
+    return path
 
-    nodes, _, records = ingest.ingest_pdf(path)
+
+def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):
+    """Fields nothing downstream reads are not emitted."""
+    nodes, _, records = ingest.ingest_pdf(_tiny_pdf(tmp_path))
 
     assert records and not DEAD_CHUNK_FIELDS & set().union(*records)
     assert not {"parent_number", "parent_name", "prev_section", "next_section"} & set(
@@ -398,3 +402,11 @@ def test_table_references_resolve_to_table_ids_once_and_drop_unknown_labels():
 
     assert ingest.find_table_refs(
         "See Table A3.2, Table Z9, and again Table A3.2.", tables) == ["axi::table::A3.2"]
+
+
+def test_context_header_is_document_and_section_path_without_revision(tmp_path):
+    """The revision is metadata; embedding it adds the same noise to every chunk."""
+    _, _, records = ingest.ingest_pdf(_tiny_pdf(tmp_path))
+
+    assert [record["context_header"] for record in records] == [
+        "tiny.pdf > 1 Channels", "tiny.pdf > 1 Channels > 1.1 Write address"]

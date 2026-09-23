@@ -838,7 +838,7 @@ def ingest_pdf(path):
         if len(text) < cfg.MIN_SECTION_CHARS:  # front matter, contents and empty stubs
             continue
         # Breadcrumbs disambiguate otherwise context-free paragraphs for embedding.
-        header = f"{doc_name} ({revision}) > " + " > ".join(sec["path"])
+        header = f"{doc_name} > " + " > ".join(sec["path"])
         sentences = [(sentence, page) for page, page_text in page_texts
                      for sentence in split_sentences(page_text)]
         for k, chunk in enumerate(sliding_window_chunks(sentences)):
@@ -896,7 +896,7 @@ def ingest_pdf(path):
                 "section_name": table["subsection_title"] or table["section_title"],
                 "section_path": table["section_path"],
                 "context_header": (
-                    f"{doc_name} ({revision}) > Table {table['label']}: {table['caption']}"),
+                    f"{doc_name} > Table {table['label']}: {table['caption']}"),
                 "table_label": table["label"],
                 "table_id": table["table_id"],
                 "table_ids": [table["table_id"]],
