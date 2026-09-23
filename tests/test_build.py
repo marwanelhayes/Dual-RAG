@@ -70,12 +70,15 @@ def test_pipeline_invokes_isolated_stages_in_order(monkeypatch):
     assert all(cwd == build.cfg.ROOT and check for _, cwd, check in calls)
 
 
-def test_index_manifest_invalidates_persisted_metadata_without_reembedding_contract_drift():
+def test_index_manifest_changes_only_with_embedded_text():
+    """Metadata is read from the chunk file at query time, so only embedded text stales."""
     first = {"chunk_id": "c", "context_header": "Spec > Section", "text": "same",
              "section_id": "old"}
-    second = {**first, "section_id": "new"}
 
-    assert build_manifest([first]) != build_manifest([second])
+    assert build_manifest([first]) == build_manifest([{**first, "section_id": "new"}])
+    assert build_manifest([first]) != build_manifest([{**first, "text": "other"}])
+    assert build_manifest([first]) != build_manifest(
+        [{**first, "context_header": "Spec > Other"}])
 
 
 def test_no_stage_imports_a_later_stage():

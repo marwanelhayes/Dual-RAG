@@ -37,30 +37,17 @@ def available_device(requested, cuda_available=None):
     return requested if cuda_available else "cpu"
 
 
-def record_fingerprint(record):
-    """Fingerprint embedded text and the metadata persisted beside its vector.
-
-    Args:
-        record: One spec or RTL retrieval record.
-
-    Returns:
-        Stable fingerprint for index freshness and rebuild decisions.
-    """
-    material = json.dumps(record, ensure_ascii=False, sort_keys=True,
-                          separators=(",", ":"))
-    return content_hash("dual-rag-index-v2", material)
-
-
 def build_manifest(records):
-    """Map every chunk id to its content fingerprint.
+    """Map every chunk id to the fingerprint of its embedded text.
 
     Args:
         records: the chunk dicts from load_chunks.
 
     Returns:
-        dict of chunk_id -> content hash for the whole corpus.
+        dict of chunk_id -> content hash of ``context_header`` and ``text``.
     """
-    return {r["chunk_id"]: record_fingerprint(r) for r in records}
+    # Metadata is read from the chunk file at query time; only embedded text stales.
+    return {r["chunk_id"]: content_hash(r["context_header"], r["text"]) for r in records}
 
 
 def record_to_document(record):
@@ -265,7 +252,7 @@ def write_manifest(manifest, path=cfg.MANIFEST_PATH):
 
 
 def main():
-    """Embed the corpus into FAISS, skipping the whole job when nothing has changed.
+    """Embed the corpus into FAISS and write its manifest.
 
     Returns:
         None.
@@ -274,19 +261,13 @@ def main():
     if not records:
         raise SystemExit(f"no chunks in {cfg.CHUNKS_PATH}; run src/ingest.py first")
 
-    manifest = build_manifest(records)
-    # Both matching hashes and an existing index are required to skip GPU work.
-    if manifest == read_manifest() and cfg.INDEX_DIR.exists():
-        print(f"====  {len(records)} chunks already embedded and unchanged, nothing to do")
-        return
-
     print(f"embedding {len(records)} chunks "
           f"on {cfg.EMBED_DEVICE} with {cfg.EMBED_MODEL}")
 
     store = VectorStore.build(records)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    store.save()
-    write_manifest(manifest)
+    store.save(cfg.INDEX_DIR)
+    write_manifest(build_manifest(records), cfg.MANIFEST_PATH)
 
     rel = cfg.INDEX_DIR.relative_to(cfg.ROOT)
     print(f"====  wrote FAISS index ({len(records)} vectors) to {rel}")
