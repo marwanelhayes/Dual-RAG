@@ -1,0 +1,3024 @@
+[
+ {
+  "id": "SPEC_AXI_AWVALID",
+  "question": "What does AWVALID indicate on the AXI write address channel?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0042#000",
+   "axi_spec#table#A2.2#0000",
+   "axi_spec#0042#001"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0042#000",
+     "A2.2",
+     "p.30",
+     "p. 30"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "AWVALID"
+   ],
+   [
+    "valid",
+    "asserted high"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "Table A2.2 defines AWVALID as asserted high to indicate that the signals on the AW channel are valid.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0042#000",
+    "section": "axi_spec::A2.3.1",
+    "page": 30
+   },
+   {
+    "chunk_id": "axi_spec#table#A2.2#0000",
+    "section": "axi_spec::table::A2.2",
+    "page": 30
+   },
+   {
+    "chunk_id": "axi_spec#0042#001",
+    "section": "axi_spec::A2.3.1",
+    "page": 30
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_WRITE_DEPS",
+  "question": "Is a manager allowed to wait for AWREADY before it asserts AWVALID?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0044#000",
+   "axi_spec#0044#001",
+   "axi_spec#0044#002"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0044#000",
+     "A2.5",
+     "p.31",
+     "p. 31"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "must not wait",
+    "not allowed",
+    "cannot wait"
+   ],
+   [
+    "AWVALID"
+   ]
+  ],
+  "forbids": [
+   "the manager must wait for awready"
+  ],
+  "abstention_is_correct": false,
+  "truth": "Write dependency rules: the Manager must not wait for AWREADY or WREADY before asserting AWVALID or WVALID.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0044#000",
+    "section": "axi_spec::A2.3.2.1",
+    "page": 31
+   },
+   {
+    "chunk_id": "axi_spec#0044#001",
+    "section": "axi_spec::A2.3.2.1",
+    "page": 31
+   },
+   {
+    "chunk_id": "axi_spec#0044#002",
+    "section": "axi_spec::A2.3.2.1",
+    "page": 31
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_BURST_TYPES",
+  "question": "What burst types does AxBURST encode and what are their values?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0059#001",
+   "axi_spec#0059#000",
+   "axi_spec#table#A3.9"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0059#001",
+     "A3.9",
+     "p.46",
+     "p. 46"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "FIXED"
+   ],
+   [
+    "INCR"
+   ],
+   [
+    "WRAP"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "Table A3.9: 0b00 FIXED, 0b01 INCR, 0b10 WRAP, 0b11 reserved.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0059#001",
+    "section": "axi_spec::A3.1.4",
+    "page": 46
+   },
+   {
+    "chunk_id": "axi_spec#0059#000",
+    "section": "axi_spec::A3.1.4",
+    "page": 46
+   },
+   {
+    "chunk_id": "axi_spec#table#A3.9",
+    "section": "axi_spec::table::A3.9",
+    "page": 46
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_WSTRB",
+  "question": "What do the write strobes carried on WSTRB indicate?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0070#000",
+   "axi_spec#table#A3.22",
+   "axi_spec#0070#001"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0070#000",
+     "A3.22",
+     "p.54",
+     "p. 54"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "WSTRB"
+   ],
+   [
+    "byte lane",
+    "byte lanes"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "WSTRB indicates which byte lanes of WDATA hold valid data; one strobe per 8 data bits, WSTRB[n] covers WDATA[(8n)+7:8n].",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0070#000",
+    "section": "axi_spec::A3.2.1.1",
+    "page": 54
+   },
+   {
+    "chunk_id": "axi_spec#table#A3.22",
+    "section": "axi_spec::table::A3.22",
+    "page": 54
+   },
+   {
+    "chunk_id": "axi_spec#0070#001",
+    "section": "axi_spec::A3.2.1.1",
+    "page": 54
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_RRESP",
+  "question": "What are the RRESP read response encodings?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#table#A3.31#0000",
+   "axi_spec#table#A3.31#0003",
+   "axi_spec#table#A3.31#0006",
+   "axi_spec#0077#002",
+   "axi_spec#0077#000"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#table#A3.31#0000",
+     "A3.31",
+     "p.63",
+     "p. 63"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "OKAY"
+   ],
+   [
+    "EXOKAY"
+   ],
+   [
+    "SLVERR"
+   ],
+   [
+    "DECERR"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "Table A3.31: 0b000 OKAY, 0b001 EXOKAY, 0b010 SLVERR, 0b011 DECERR.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#table#A3.31#0000",
+    "section": "axi_spec::table::A3.31",
+    "page": 63
+   },
+   {
+    "chunk_id": "axi_spec#table#A3.31#0003",
+    "section": "axi_spec::table::A3.31",
+    "page": 63
+   },
+   {
+    "chunk_id": "axi_spec#table#A3.31#0006",
+    "section": "axi_spec::table::A3.31",
+    "page": 63
+   },
+   {
+    "chunk_id": "axi_spec#0077#002",
+    "section": "axi_spec::A3.3.2",
+    "page": 63
+   },
+   {
+    "chunk_id": "axi_spec#0077#000",
+    "section": "axi_spec::A3.3.2",
+    "page": 62
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_4KB",
+  "question": "What address boundary must an AXI transaction never cross?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0055#000",
+   "axi_spec#0058#000",
+   "axi_spec#0057#002"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0055#000",
+     "axi_spec#0058#000",
+     "p.43",
+     "p. 43"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "4KB",
+    "4 KB",
+    "4kb"
+   ]
+  ],
+  "forbids": [
+   "may cross a 4kb boundary"
+  ],
+  "abstention_is_correct": false,
+  "truth": "A transaction must not cross a 4KB address boundary, so it cannot span two Subordinate address regions.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0055#000",
+    "section": "axi_spec::A3.1",
+    "page": 43
+   },
+   {
+    "chunk_id": "axi_spec#0058#000",
+    "section": "axi_spec::A3.1.3",
+    "page": 45
+   },
+   {
+    "chunk_id": "axi_spec#0057#002",
+    "section": "axi_spec::A3.1.2",
+    "page": 44
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_WLAST",
+  "question": "how does the sender mark the final beat of a write burst",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_spec#0069#000",
+   "axi_spec#0069#001",
+   "axi_spec#0044#001",
+   "axi_waveform#0019#001"
+  ],
+  "relevant_spec_groups": [
+   [
+    "axi_spec#0069#000",
+    "axi_spec#0069#001",
+    "axi_spec#0044#001",
+    "axi_waveform#0019#001"
+   ]
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0069#000",
+     "A3.20",
+     "p.53",
+     "p. 53"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "WLAST"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "WLAST indicates the last write data transfer of a transaction and must be asserted while the final beat is driven.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0069#000",
+    "section": "axi_spec::A3.2.1",
+    "page": 53
+   },
+   {
+    "chunk_id": "axi_spec#0069#001",
+    "section": "axi_spec::A3.2.1",
+    "page": 53
+   },
+   {
+    "chunk_id": "axi_spec#0044#001",
+    "section": "axi_spec::A2.3.2.1",
+    "page": 31
+   },
+   {
+    "chunk_id": "axi_waveform#0019#001",
+    "section": "axi_waveform::4.5",
+    "page": 24
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI_EXCLUSIVE",
+  "question": "how does a master do an exclusive access and how does it know it worked",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_spec#0167#000",
+   "axi_spec#0167#002",
+   "axi_spec#0169#000"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0167#000",
+     "p.111",
+     "p. 111"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "EXOKAY"
+   ],
+   [
+    "exclusive read",
+    "exclusive access"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "The Manager issues an exclusive read; EXOKAY means the Subordinate is monitoring the address, OKAY means exclusive access is unsupported.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0167#000",
+    "section": "axi_spec::A6.3.2",
+    "page": 111
+   },
+   {
+    "chunk_id": "axi_spec#0167#002",
+    "section": "axi_spec::A6.3.2",
+    "page": 111
+   },
+   {
+    "chunk_id": "axi_spec#0169#000",
+    "section": "axi_spec::A6.3.4",
+    "page": 112
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI4_CHANNELS",
+  "question": "how many channels does AXI4 have and what are they called",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_waveform#0012#003",
+   "axi_waveform#0012#002",
+   "axi_waveform#0012#000"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0012#003",
+     "axi_waveform#0012#002",
+     "p.14",
+     "p. 14"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "five",
+    "5"
+   ],
+   [
+    "AW",
+    "write address"
+   ],
+   [
+    "AR",
+    "read address"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "AXI4 defines five channels: write address (AW), write data (W), write response (B), read address (AR), read data (R).",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0012#003",
+    "section": "axi_waveform::3.2",
+    "page": 14
+   },
+   {
+    "chunk_id": "axi_waveform#0012#002",
+    "section": "axi_waveform::3.2",
+    "page": 14
+   },
+   {
+    "chunk_id": "axi_waveform#0012#000",
+    "section": "axi_waveform::3.2",
+    "page": 14
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI4_VALID_STICKY",
+  "question": "does the valid signal have to stay high until the other side accepts the transfer",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_waveform#0015#001",
+   "axi_waveform#0015#000",
+   "axi_waveform#0017#003"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0015#001",
+     "axi_waveform#0015#000",
+     "p.17",
+     "p. 17"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "VALID"
+   ],
+   [
+    "READY"
+   ],
+   [
+    "remain asserted",
+    "until",
+    "sticky"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "VALID is a sticky signal: it must stay asserted until the destination accepts the transfer with READY on a rising clock edge.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0015#001",
+    "section": "axi_waveform::4.1",
+    "page": 17
+   },
+   {
+    "chunk_id": "axi_waveform#0015#000",
+    "section": "axi_waveform::4.1",
+    "page": 17
+   },
+   {
+    "chunk_id": "axi_waveform#0017#003",
+    "section": "axi_waveform::4.3",
+    "page": 21
+   }
+  ]
+ },
+ {
+  "id": "SPEC_AXI4_IDS",
+  "question": "What do the AWID, ARID, and RID signals make possible?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_waveform#0044#001",
+   "axi_waveform#0044#000",
+   "axi_waveform#0051#001"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0044#001",
+     "axi_waveform#0044#000",
+     "p.49",
+     "p. 49"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "out of order",
+    "out-of-order"
+   ],
+   [
+    "ID",
+    "AWID",
+    "ARID"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "Transfer IDs allow transactions to complete out of order; all transactions sharing an ID must stay ordered.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0044#001",
+    "section": "axi_waveform::7.2",
+    "page": 49
+   },
+   {
+    "chunk_id": "axi_waveform#0044#000",
+    "section": "axi_waveform::7.2",
+    "page": 49
+   },
+   {
+    "chunk_id": "axi_waveform#0051#001",
+    "section": "axi_waveform::8",
+    "page": 58
+   }
+  ]
+ },
+ {
+  "id": "SPEC_RV_X0",
+  "question": "What value does register x0 hold in RV32I?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0013#000",
+   "riscv_unprivileged#0013#001",
+   "riscv_unprivileged#0007#003"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0013#000",
+     "p.43",
+     "p. 43"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "x0"
+   ],
+   [
+    "zero",
+    "0"
+   ],
+   [
+    "hardwired",
+    "hard-wired"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "x0 is hardwired with all bits equal to 0; x1-x31 are general purpose.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0013#000",
+    "section": "riscv_unprivileged::2.1",
+    "page": 43
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0013#001",
+    "section": "riscv_unprivileged::2.1",
+    "page": 43
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0007#003",
+    "section": "riscv_unprivileged::1.3",
+    "page": 35
+   }
+  ]
+ },
+ {
+  "id": "SPEC_RV_LUI_AUIPC",
+  "question": "What do the LUI and AUIPC instructions do?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0017#004",
+   "riscv_unprivileged#0017#003",
+   "riscv_unprivileged#0017#005"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0017#004",
+     "riscv_unprivileged#0017#003",
+     "p.49",
+     "p. 49"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "LUI"
+   ],
+   [
+    "AUIPC"
+   ],
+   [
+    "upper immediate",
+    "U-type",
+    "U-immediate"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "LUI places the 32-bit U-immediate in rd with the low 12 bits zeroed; AUIPC adds that offset to the pc of the instruction.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0017#004",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 49
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0017#003",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 48
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0017#005",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 49
+   }
+  ]
+ },
+ {
+  "id": "SPEC_RV_CSRRS_X0",
+  "question": "what happens when a csr set instruction uses x0 as its source register",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0039#004",
+   "riscv_unprivileged#0039#008",
+   "riscv_unprivileged#0039#007"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0039#004",
+     "p.69",
+     "p. 69"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "CSRRS",
+    "CSRRC"
+   ],
+   [
+    "not write",
+    "no write",
+    "shall not write"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "With rs1=x0, CSRRS and CSRRC do not write the CSR, so no write side effects or illegal-instruction exceptions on read-only CSRs.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0039#004",
+    "section": "riscv_unprivileged::6.1",
+    "page": 69
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0039#008",
+    "section": "riscv_unprivileged::6.1",
+    "page": 70
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0039#007",
+    "section": "riscv_unprivileged::6.1",
+    "page": 70
+   }
+  ]
+ },
+ {
+  "id": "SPEC_RV_ROUND_MODES",
+  "question": "What floating-point rounding modes does RISC-V define?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0156#000",
+   "riscv_unprivileged#0156#001",
+   "riscv_unprivileged#table#25"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0156#000",
+     "Table 34",
+     "p.162",
+     "p. 162"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "RNE"
+   ],
+   [
+    "RTZ"
+   ],
+   [
+    "RDN"
+   ],
+   [
+    "RUP"
+   ],
+   [
+    "RMM"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "Five rounding modes: RNE, RTZ, RDN, RUP, RMM, selectable per instruction through rm or dynamically through frm.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0156#000",
+    "section": "riscv_unprivileged::24.3.2.5",
+    "page": 162
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0156#001",
+    "section": "riscv_unprivileged::24.3.2.5",
+    "page": 162
+   },
+   {
+    "chunk_id": "riscv_unprivileged#table#25",
+    "section": "riscv_unprivileged::table::25",
+    "page": 141
+   }
+  ]
+ },
+ {
+  "id": "SPEC_PRIV_MTVEC_MODE",
+  "question": "What do the Direct and Vectored MODE settings of mtvec do?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_privileged#0035#002",
+   "riscv_privileged#0035#000",
+   "riscv_privileged#0035#001"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0035#002",
+     "Table 13",
+     "p.46",
+     "p. 46"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "Direct"
+   ],
+   [
+    "Vectored"
+   ],
+   [
+    "BASE"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "MODE=Direct sends every trap to BASE; MODE=Vectored sends asynchronous interrupts to BASE+4*cause and exceptions to BASE.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0035#002",
+    "section": "riscv_privileged::3.1.7",
+    "page": 46
+   },
+   {
+    "chunk_id": "riscv_privileged#0035#000",
+    "section": "riscv_privileged::3.1.7",
+    "page": 46
+   },
+   {
+    "chunk_id": "riscv_privileged#0035#001",
+    "section": "riscv_privileged::3.1.7",
+    "page": 46
+   }
+  ]
+ },
+ {
+  "id": "SPEC_PRIV_MCAUSE",
+  "question": "What does the mcause register record when a trap is taken into M-mode?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_privileged#0043#000",
+   "riscv_privileged#0043#001",
+   "riscv_privileged#0043#005"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0043#000",
+     "p.54",
+     "p. 54"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "mcause"
+   ],
+   [
+    "Interrupt bit",
+    "interrupt"
+   ],
+   [
+    "exception code",
+    "Exception Code"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "mcause holds a code for the trap event: the Interrupt bit is set for interrupts and the Exception Code field identifies the cause.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0043#000",
+    "section": "riscv_privileged::3.1.15",
+    "page": 54
+   },
+   {
+    "chunk_id": "riscv_privileged#0043#001",
+    "section": "riscv_privileged::3.1.15",
+    "page": 54
+   },
+   {
+    "chunk_id": "riscv_privileged#0043#005",
+    "section": "riscv_privileged::3.1.15",
+    "page": 56
+   }
+  ]
+ },
+ {
+  "id": "SPEC_PRIV_MTIME",
+  "question": "when does the machine timer interrupt fire",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_privileged#0049#001",
+   "riscv_privileged#0049#000",
+   "riscv_privileged#0037#007"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0049#001",
+     "riscv_privileged#0049#000",
+     "p.63",
+     "p. 63"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "mtime"
+   ],
+   [
+    "mtimecmp"
+   ],
+   [
+    "greater than or equal",
+    ">=",
+    "greater or equal"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "A machine timer interrupt is pending while mtime >= mtimecmp; it is taken only when MTIE in mie is set and interrupts are enabled.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0049#001",
+    "section": "riscv_privileged::3.2.1",
+    "page": 63
+   },
+   {
+    "chunk_id": "riscv_privileged#0049#000",
+    "section": "riscv_privileged::3.2.1",
+    "page": 63
+   },
+   {
+    "chunk_id": "riscv_privileged#0037#007",
+    "section": "riscv_privileged::3.1.9",
+    "page": 49
+   }
+  ]
+ },
+ {
+  "id": "SPEC_PRIV_MRET",
+  "question": "how does a hart return from a trap in machine mode",
+  "expected_query_type": "SPEC",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_privileged#0052#000",
+   "riscv_privileged#0052#002",
+   "riscv_privileged#0219#000"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0052#000",
+     "p.65",
+     "p. 65"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "MRET"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "MRET, encoded under the PRIV minor opcode of SYSTEM, is the machine-mode trap return instruction and is always provided.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0052#000",
+    "section": "riscv_privileged::3.3.2",
+    "page": 65
+   },
+   {
+    "chunk_id": "riscv_privileged#0052#002",
+    "section": "riscv_privileged::3.3.2",
+    "page": 65
+   },
+   {
+    "chunk_id": "riscv_privileged#0219#000",
+    "section": "riscv_privileged::21.6.4",
+    "page": 200
+   }
+  ]
+ },
+ {
+  "id": "SPEC_PRIV_MINFO_CSRS",
+  "question": "Which machine information CSRs are allocated and at what addresses?",
+  "expected_query_type": "SPEC",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_privileged#table#7#0000",
+   "riscv_privileged#0010#014",
+   "riscv_privileged#0023#007"
+  ],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#table#7#0000",
+     "riscv_privileged#0010#014",
+     "0xF11",
+     "p.25",
+     "p. 25"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "mvendorid"
+   ],
+   [
+    "marchid"
+   ],
+   [
+    "mimpid"
+   ],
+   [
+    "mhartid"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "Table 7: 0xF11 mvendorid, 0xF12 marchid, 0xF13 mimpid, 0xF14 mhartid, 0xF15 mconfigptr, all MRO.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#table#7#0000",
+    "section": "riscv_privileged::table::7",
+    "page": 25
+   },
+   {
+    "chunk_id": "riscv_privileged#0010#014",
+    "section": "riscv_privileged::2.2",
+    "page": 24
+   },
+   {
+    "chunk_id": "riscv_privileged#0023#007",
+    "section": "riscv_privileged::3.1.3",
+    "page": 35
+   }
+  ]
+ },
+ {
+  "id": "RTL_STALL_FLUSH_EXACT",
+  "question": "Which module drives StallD, StallF, FlushD, and FlushE?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:hazard_unit:always:170-175",
+   "rtl:hazard_unit",
+   "rtl:construct:fetch_stage:always:144-159"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "hazard_unit.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "hazard_unit"
+   ],
+   [
+    "StallD",
+    "StallF"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "hazard_unit.sv:170-175 is the always_comb that writes StallD, StallF, FlushD and FlushE from LWStall, FPUStall, cache hits, PCSrcE and TrapIsSet.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_STALL_PLAIN",
+  "question": "where does the pipeline decide to stall the fetch and decode stages",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:hazard_unit",
+   "rtl:construct:hazard_unit:always:170-175",
+   "rtl:construct:hazard_unit:always:78-83"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "hazard_unit.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "hazard_unit",
+    "hazard unit"
+   ],
+   [
+    "stall"
+   ]
+  ],
+  "forbids": [
+   "there is no stall logic"
+  ],
+  "abstention_is_correct": false,
+  "truth": "The stall decision lives in the hazard unit; plain phrasing without the underscore must still reach hazard_unit.sv:170-175.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_FORWARD_AE_EXACT",
+  "question": "What conditions select ForwardAE in hazard_unit?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:hazard_unit:always:98-115",
+   "rtl:construct:hazard_unit:always:120-137",
+   "rtl:hazard_unit"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "hazard_unit.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "ForwardAE"
+   ],
+   [
+    "RegWriteM",
+    "RegWriteW"
+   ],
+   [
+    "Rs1E"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "hazard_unit.sv:98-115 computes ForwardAE from RegWriteM/RdM, RegWriteW/RdW, Rs1E and MoveOperationE.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_FORWARD_FP_PLAIN",
+  "question": "how does the design forward floating point operands between stages",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:hazard_unit:always:142-151",
+   "rtl:construct:hazard_unit:always:156-165",
+   "rtl:hazard_unit"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "hazard_unit.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "ForwardFloatingAE",
+    "ForwardFloatingBE",
+    "forward"
+   ],
+   [
+    "hazard_unit",
+    "hazard unit"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "hazard_unit.sv:142-151 and 156-165 build ForwardFloatingAE and ForwardFloatingBE from FPURegWriteM/RdFM and FPURegWriteW/RdFW.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_FPUVALIDD_EXACT",
+  "question": "Where is FPUValidD assigned in the RTL?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:fpu_decoder:always:207-209",
+   "rtl:fpu_decoder",
+   "rtl:construct:fpu_decoder:always:63-200"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "fpu_decoder.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "FPUValidD"
+   ],
+   [
+    "fpu_decoder"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "fpu_decoder.sv:207-209 assigns FPUValidD from FPURegWriteD and Write.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_FPU_DECODE_PLAIN",
+  "question": "which block turns floating point instructions into control signals",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:fpu_decoder:always:63-200",
+   "rtl:fpu_decoder",
+   "rtl:risc_control_unit"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "fpu_decoder.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "fpu_decoder",
+    "floating point unit decoder"
+   ],
+   [
+    "funct7",
+    "funct3",
+    "FPUControlD"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "fpu_decoder.sv:63-200 decodes funct7/funct3/Rs2 into FPUControlD, MoveOperationD and FPURegWriteD; it is instantiated by risc_control_unit.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_AXI_WRITE_PORTS_EXACT",
+  "question": "Which module drives MAWAddr, MAWLen, MAWSize, MAWBurst, and MAWValid?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:415-459",
+   "rtl:construct:cache:always:466-589"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "cache"
+   ],
+   [
+    "MAWValid",
+    "MAWBurst"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "cache.sv declares the AXI master write-address ports MAWAddr/MAWLen/MAWSize/MAWBurst/MAWValid and drives them from its refill and write-back FSM.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_MEMORY_IF_PLAIN",
+  "question": "which part of the design talks to main memory over the bus",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:memory_stage",
+   "rtl:fetch_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "cache.sv:",
+     "memory_stage.sv:",
+     "fetch_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "cache"
+   ],
+   [
+    "memory_stage",
+    "fetch_stage",
+    "memory stage"
+   ]
+  ],
+  "forbids": [
+   "there is no memory interface"
+  ],
+  "abstention_is_correct": false,
+  "truth": "cache is the AXI master; it is instantiated at fetch_stage.sv:98 for instructions and memory_stage.sv:117 for data.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_MARBURST_EXACT",
+  "question": "Where is MARBurst set to INCR?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:cache:always:466-589",
+   "rtl:construct:cache:always:660-991",
+   "rtl:cache"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "MARBurst"
+   ],
+   [
+    "INCR"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "cache.sv:502 (inside the always_comb at 466-589) sets MARBurst_next = INCR for line refills; MAWBurst_next is FIXED for single-word writes.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_CACHE_POLICY_PLAIN",
+  "question": "what write policy and replacement policy does the cache use",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:183-202",
+   "rtl:construct:cache:always:660-991"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "write-back",
+    "write back"
+   ],
+   [
+    "LRU",
+    "least recently used"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "cache.sv:21-27 documents a write-back, write-allocate data cache with LRU replacement for WAY > 1 (lru_counter/lru_way).",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_FPU_INSTANCE_EXACT",
+  "question": "Which module instantiates risc_fpu and with what PRECISION parameter?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:execute_stage",
+   "rtl:risc_fpu",
+   "rtl:construct:risc_fpu:always:350-413"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "execute_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "execute_stage",
+    "execute stage"
+   ],
+   [
+    "SINGLE"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "execute_stage.sv:142 instantiates risc_fpu with .PRECISION(SINGLE) and .STAGES(STAGES).",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_ALU_PLAIN",
+  "question": "where does the arithmetic for multiply and divide happen",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:risc_alu",
+   "rtl:construct:risc_alu:always:88-125",
+   "rtl:wallace_tree"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "risc_alu.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "risc_alu",
+    "ALU"
+   ],
+   [
+    "MUL",
+    "DIV",
+    "REM",
+    "multiply",
+    "divide"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "risc_alu.sv:88-125 selects Y for MUL/DIV/REM using wallace_tree and non_restoring_divider submodules.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_PCSRCE_EXACT",
+  "question": "What writes PCSrcE and from which inputs?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:execute_stage:always:275-277",
+   "rtl:construct:risc_alu:always:130-142",
+   "rtl:execute_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "execute_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "PCSrcE"
+   ],
+   [
+    "BranchE",
+    "JumpE",
+    "branch_true"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "execute_stage.sv:275-277 sets PCSrcE from BranchE & branch_true, or JumpE.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_PC_UPDATE_PLAIN",
+  "question": "how is the next program counter chosen each cycle",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:wb_stage:always:80-92",
+   "rtl:construct:wb_stage:always:64-75",
+   "rtl:wb_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "wb_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "wb_stage",
+    "write back",
+    "writeback"
+   ],
+   [
+    "PCF"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "wb_stage.sv:80-92 registers PCF, choosing the trap vector on TrapIsSet, holding on StallF, else the branch/sequential result from the risc_mux2 at 64-75.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_TRAP_ENTRY_EXACT",
+  "question": "Where does csr_file update CsrFile and CsrOutPC on trap entry?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:csr_file:task:130-136",
+   "rtl:construct:csr_file:func:124-127",
+   "rtl:csr_file"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "csr_file.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "csr_file"
+   ],
+   [
+    "HandleTrapEntry",
+    "trap"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "csr_file.sv:130-136 (HandleTrapEntry) writes mepc/mcause, sets TrapIsSet and drives CsrOutPC from TrapVector().",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_CSR_PLAIN",
+  "question": "which module keeps the control and status registers",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:csr_file",
+   "rtl:construct:csr_file:always:217-292",
+   "rtl:construct:csr_file:task:83-103"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "csr_file.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "csr_file",
+    "control status register file"
+   ],
+   [
+    "execute_stage",
+    "execute stage"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "csr_file holds CsrFile and is instantiated by execute_stage; its main always_ff is csr_file.sv:217-292.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_ALUCONTROLD_EXACT",
+  "question": "Which module produces ALUControlD?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:alu_decoder",
+   "rtl:construct:alu_decoder:always:37-98",
+   "rtl:risc_control_unit"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "alu_decoder.sv:",
+     "risc_control_unit.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "alu_decoder",
+    "ALU decoder"
+   ],
+   [
+    "ALUControlD",
+    "ALUControl"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "alu_decoder maps funct3/funct7 plus the opcode-decoder sub-operation onto ALUControlD and is instantiated by risc_control_unit.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_OPCODE_PLAIN",
+  "question": "where are instruction opcodes turned into control signals",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:opcode_decoder:always:40-137",
+   "rtl:opcode_decoder",
+   "rtl:risc_control_unit"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "opcode_decoder.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "opcode_decoder",
+    "opcode decoder"
+   ],
+   [
+    "RegWrite",
+    "MemWrite",
+    "control"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "opcode_decoder.sv:40-137 decodes the opcode into ALUControl, Jump, Branch, Immediate, MemWrite, Selector, ALUSrc, CsrAccess, RegWrite, Store, MMode and FPU.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_SIGNIMMD_EXACT",
+  "question": "Where is SignImmD generated?",
+  "expected_query_type": "RTL",
+  "naming": "exact",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:construct:decode_stage:always:314-324",
+   "rtl:construct:decode_stage:always:327-329",
+   "rtl:decode_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "decode_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "SignImmD"
+   ],
+   [
+    "decode_stage",
+    "decode stage"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "decode_stage.sv:314-324 builds SignImmD from InstructionD according to ImmediateD, BranchD, StoreD and JumpD.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "RTL_REGFILE_PLAIN",
+  "question": "how are the integer registers read and written",
+  "expected_query_type": "RTL",
+  "naming": "plain",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": [
+   "rtl:risc_reg_file",
+   "rtl:risc_mem",
+   "rtl:construct:risc_mem:assignment_group:44-45"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "risc_reg_file.sv:",
+     "risc_mem.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "risc_reg_file",
+    "register file"
+   ],
+   [
+    "RD1",
+    "RD2",
+    "WE"
+   ]
+  ],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "risc_reg_file splits the file into four risc_mem byte lanes with Rs1/Rs2 read ports (RD1, RD2) and a WE-gated write port.",
+  "relevant_spec_sections": []
+ },
+ {
+  "id": "CMP_AWVALID_EXACT",
+  "question": "Does the RTL implement the AWVALID/AWREADY handshake rule from the AXI specification?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0044#000",
+   "axi_spec#0042#000",
+   "axi_spec#0044#001"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:415-459",
+   "rtl:construct:cache:always:466-589"
+  ],
+  "expected_alignments": {
+   "spec::signal::axi_spec::A2.2::awvalid": [
+    "rtl::port::cache::MAWValid"
+   ]
+  },
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0044#000",
+     "axi_spec#0042#000"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "MAWValid",
+    "AWVALID"
+   ],
+   [
+    "implemented",
+    "partial",
+    "missing",
+    "insufficient",
+    "cannot"
+   ]
+  ],
+  "forbids": [
+   "the alignment proves correctness"
+  ],
+  "abstention_is_correct": true,
+  "truth": "cache.sv carries MAWValid/MAWReady, but only the FSM source, not the alignment, can support a behavioral claim about the dependency rule.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0044#000",
+    "section": "axi_spec::A2.3.2.1",
+    "page": 31
+   },
+   {
+    "chunk_id": "axi_spec#0042#000",
+    "section": "axi_spec::A2.3.1",
+    "page": 30
+   },
+   {
+    "chunk_id": "axi_spec#0044#001",
+    "section": "axi_spec::A2.3.2.1",
+    "page": 31
+   }
+  ]
+ },
+ {
+  "id": "CMP_HANDSHAKE_PLAIN",
+  "question": "does the design follow the valid ready handshake the bus spec describes",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_waveform#0015#001",
+   "axi_waveform#0015#000",
+   "axi_waveform#0017#003"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:466-589",
+   "rtl:fetch_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0015#001",
+     "axi_spec#0044#000"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "valid",
+    "ready"
+   ],
+   [
+    "cache"
+   ]
+  ],
+  "forbids": [
+   "there is no handshake"
+  ],
+  "abstention_is_correct": true,
+  "truth": "The cache FSM holds MAWValid/MARValid until the matching ready, which matches the sticky-VALID rule; timing correctness still needs simulation.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0015#001",
+    "section": "axi_waveform::4.1",
+    "page": 17
+   },
+   {
+    "chunk_id": "axi_waveform#0015#000",
+    "section": "axi_waveform::4.1",
+    "page": 17
+   },
+   {
+    "chunk_id": "axi_waveform#0017#003",
+    "section": "axi_waveform::4.3",
+    "page": 21
+   }
+  ]
+ },
+ {
+  "id": "CMP_WSTRB_EXACT",
+  "question": "Does the RTL drive WSTRB byte lanes as the specification requires?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0070#000",
+   "axi_spec#table#A3.22",
+   "axi_spec#0070#001"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:415-459",
+   "rtl:construct:cache:always:660-991"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0070#000"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "MWStrb",
+    "WSTRB"
+   ],
+   [
+    "cache"
+   ]
+  ],
+  "forbids": [
+   "there are no write strobes"
+  ],
+  "abstention_is_correct": false,
+  "truth": "cache.sv declares MWStrb with DATA_WIDTH/8 bits and drives it from MWStrb_next, so the strobe mechanism exists.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0070#000",
+    "section": "axi_spec::A3.2.1.1",
+    "page": 54
+   },
+   {
+    "chunk_id": "axi_spec#table#A3.22",
+    "section": "axi_spec::table::A3.22",
+    "page": 54
+   },
+   {
+    "chunk_id": "axi_spec#0070#001",
+    "section": "axi_spec::A3.2.1.1",
+    "page": 54
+   }
+  ]
+ },
+ {
+  "id": "CMP_BYTE_ENABLE_PLAIN",
+  "question": "can the memory interface do partial word writes with byte enables",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_spec#0070#000",
+   "axi_spec#0072#000",
+   "axi_spec#0070#001"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:660-991",
+   "rtl:memory_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0070#000"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "MWStrb",
+    "strobe",
+    "byte enable"
+   ]
+  ],
+  "forbids": [
+   "partial writes are impossible"
+  ],
+  "abstention_is_correct": false,
+  "truth": "The write strobe port MWStrb exists in cache.sv and is registered per transfer, which is the byte-enable mechanism the spec defines.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0070#000",
+    "section": "axi_spec::A3.2.1.1",
+    "page": 54
+   },
+   {
+    "chunk_id": "axi_spec#0072#000",
+    "section": "axi_spec::A3.2.3",
+    "page": 55
+   },
+   {
+    "chunk_id": "axi_spec#0070#001",
+    "section": "axi_spec::A3.2.1.1",
+    "page": 54
+   }
+  ]
+ },
+ {
+  "id": "CMP_AXI_IDS_EXACT",
+  "question": "Are AWID, ARID, and RID implemented in the RTL AXI ports?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_waveform#0044#001",
+   "axi_waveform#0044#000",
+   "axi_waveform#0044#002"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:riscv_processor",
+   "rtl:risc_data_memory"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0044#001"
+    ],
+    [
+     "cache.sv:",
+     "riscv_processor.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "AWID",
+    "ARID",
+    "RID",
+    "ID"
+   ],
+   [
+    "missing",
+    "not implemented",
+    "no ",
+    "absent"
+   ]
+  ],
+  "forbids": [
+   "out-of-order transactions are supported"
+  ],
+  "abstention_is_correct": false,
+  "truth": "No AWID/ARID/RID signal appears anywhere in rtl/*.sv, so the out-of-order capability the guide describes is not implemented.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0044#001",
+    "section": "axi_waveform::7.2",
+    "page": 49
+   },
+   {
+    "chunk_id": "axi_waveform#0044#000",
+    "section": "axi_waveform::7.2",
+    "page": 49
+   },
+   {
+    "chunk_id": "axi_waveform#0044#002",
+    "section": "axi_waveform::7.2",
+    "page": 49
+   }
+  ]
+ },
+ {
+  "id": "CMP_OUTSTANDING_PLAIN",
+  "question": "can the core have several outstanding memory transactions completing out of order",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_waveform#0044#000",
+   "axi_waveform#0013#003",
+   "axi_waveform#0045#001"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:466-589",
+   "rtl:riscv_processor"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0044#000"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "ID",
+    "out of order",
+    "out-of-order"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "the design supports out-of-order completion"
+  ],
+  "abstention_is_correct": false,
+  "truth": "The cache FSM issues one transaction at a time and no ID signals exist, so ordered single-outstanding behavior is all the RTL can do.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0044#000",
+    "section": "axi_waveform::7.2",
+    "page": 49
+   },
+   {
+    "chunk_id": "axi_waveform#0013#003",
+    "section": "axi_waveform::3.3",
+    "page": 15
+   },
+   {
+    "chunk_id": "axi_waveform#0045#001",
+    "section": "axi_waveform::7.3",
+    "page": 50
+   }
+  ]
+ },
+ {
+  "id": "CMP_EXCLUSIVE_EXACT",
+  "question": "Does the RTL support exclusive accesses and the EXOKAY response?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0167#000",
+   "axi_spec#0167#002",
+   "axi_spec#0169#000"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:risc_data_memory",
+   "rtl:construct:cache:always:466-589"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0167#000"
+    ],
+    [
+     "cache.sv:",
+     "risc_data_memory.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "EXOKAY",
+    "exclusive"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "exclusive access is supported"
+  ],
+  "abstention_is_correct": false,
+  "truth": "MBResp/MRRResp are carried but no lock or exclusive monitor logic exists, and no EXOKAY handling appears in rtl/*.sv.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0167#000",
+    "section": "axi_spec::A6.3.2",
+    "page": 111
+   },
+   {
+    "chunk_id": "axi_spec#0167#002",
+    "section": "axi_spec::A6.3.2",
+    "page": 111
+   },
+   {
+    "chunk_id": "axi_spec#0169#000",
+    "section": "axi_spec::A6.3.4",
+    "page": 112
+   }
+  ]
+ },
+ {
+  "id": "CMP_ATOMIC_PLAIN",
+  "question": "does the processor support atomic read modify write instructions",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0064#000",
+   "riscv_unprivileged#0062#000",
+   "riscv_unprivileged#0012#001"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:opcode_decoder",
+   "rtl:construct:opcode_decoder:always:40-137",
+   "rtl:risc_alu"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0012#001"
+    ],
+    [
+     "opcode_decoder.sv:",
+     "shared_pkg"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "atomic",
+    "A extension",
+    "AMO"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "atomic instructions are implemented"
+  ],
+  "abstention_is_correct": false,
+  "truth": "The opcode enum covers R_TYPE, LOAD, S_TYPE, B_TYPE, I_TYPE, JAL, JALR, CSR and FLOATING_PT only; no AMO/LR/SC opcode is decoded.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0064#000",
+    "section": "riscv_unprivileged::13.4",
+    "page": 97
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0062#000",
+    "section": "riscv_unprivileged::13.2",
+    "page": 92
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0012#001",
+    "section": "riscv_unprivileged::2",
+    "page": 43
+   }
+  ]
+ },
+ {
+  "id": "CMP_BURST_TYPES_EXACT",
+  "question": "Does the RTL use all three AxBURST types FIXED, INCR, and WRAP?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "axi_spec#0059#001",
+   "axi_spec#0061#000",
+   "axi_spec#0060#000"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:466-589",
+   "rtl:construct:cache:always:660-991"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_spec#0059#001"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "FIXED"
+   ],
+   [
+    "INCR"
+   ],
+   [
+    "WRAP"
+   ],
+   [
+    "not",
+    "no ",
+    "missing",
+    "partial"
+   ]
+  ],
+  "forbids": [
+   "all three burst types are used"
+  ],
+  "abstention_is_correct": false,
+  "truth": "cache.sv uses FIXED for single-word accesses and INCR for line refills and write-backs; WRAP is declared in the axi_burst_t enum but never driven.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_spec#0059#001",
+    "section": "axi_spec::A3.1.4",
+    "page": 46
+   },
+   {
+    "chunk_id": "axi_spec#0061#000",
+    "section": "axi_spec::Wrapping address (WRAP)",
+    "page": 47
+   },
+   {
+    "chunk_id": "axi_spec#0060#000",
+    "section": "axi_spec::Incrementing address (INCR)",
+    "page": 46
+   }
+  ]
+ },
+ {
+  "id": "CMP_BURST_PLAIN",
+  "question": "what kind of bursts does the cache use when it fills a line",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "axi_waveform#0026#001",
+   "axi_waveform#0026#002",
+   "axi_spec#0060#000"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:cache",
+   "rtl:construct:cache:always:466-589",
+   "rtl:fetch_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "axi_waveform#0026#001",
+     "axi_spec#0059#001"
+    ],
+    [
+     "cache.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "INCR",
+    "incrementing"
+   ]
+  ],
+  "forbids": [
+   "wrapping bursts are used for refill"
+  ],
+  "abstention_is_correct": false,
+  "truth": "Line refills use incrementing bursts (MARBurst_next = INCR at cache.sv:502), matching the INCR usage note in the AXI4 guide.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "axi_waveform#0026#001",
+    "section": "axi_waveform::5.3",
+    "page": 32
+   },
+   {
+    "chunk_id": "axi_waveform#0026#002",
+    "section": "axi_waveform::5.3",
+    "page": 32
+   },
+   {
+    "chunk_id": "axi_spec#0060#000",
+    "section": "axi_spec::Incrementing address (INCR)",
+    "page": 46
+   }
+  ]
+ },
+ {
+  "id": "CMP_FMA_EXACT",
+  "question": "Are FMADD.S, FMSUB.S, FNMADD.S, and FNMSUB.S implemented in the FPU decoder?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0121#003",
+   "riscv_unprivileged#0121#004",
+   "riscv_unprivileged#0121#007"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:fpu_decoder",
+   "rtl:construct:fpu_decoder:always:63-200",
+   "rtl:risc_fpu"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0121#003"
+    ],
+    [
+     "fpu_decoder.sv:",
+     "risc_fpu.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "FMADD"
+   ],
+   [
+    "FMSUB"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "fused multiply-add is implemented"
+  ],
+  "abstention_is_correct": false,
+  "truth": "fpu_operation_t lists FADD_S through FMV_S_X with no fused multiply-add entry, and no R4-type decode exists in fpu_decoder.sv.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0121#003",
+    "section": "riscv_unprivileged::20.6",
+    "page": 144
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0121#004",
+    "section": "riscv_unprivileged::20.6",
+    "page": 144
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0121#007",
+    "section": "riscv_unprivileged::20.6",
+    "page": 144
+   }
+  ]
+ },
+ {
+  "id": "CMP_FMA_PLAIN",
+  "question": "what floating point operations from the standard are missing in this design",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0121#003",
+   "riscv_unprivileged#0121#005",
+   "riscv_unprivileged#0121#007"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:risc_fpu",
+   "rtl:fpu_decoder",
+   "rtl:construct:risc_fpu:always:418-642"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0121#003"
+    ],
+    [
+     "fpu_decoder.sv:",
+     "risc_fpu.sv:",
+     "flp_"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "FMADD",
+    "fused multiply-add",
+    "fused multiply add",
+    "FMA"
+   ]
+  ],
+  "forbids": [
+   "there is no floating point unit"
+  ],
+  "abstention_is_correct": false,
+  "truth": "risc_fpu covers add/sub, mul, div, sqrt, compare, convert, sign-inject and classify; the fused multiply-add family is absent.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0121#003",
+    "section": "riscv_unprivileged::20.6",
+    "page": 144
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0121#005",
+    "section": "riscv_unprivileged::20.6",
+    "page": 144
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0121#007",
+    "section": "riscv_unprivileged::20.6",
+    "page": 144
+   }
+  ]
+ },
+ {
+  "id": "CMP_ROUNDING_EXACT",
+  "question": "Does the RTL implement RNE, RTZ, RDN, RUP, and RMM rounding modes?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0156#000",
+   "riscv_unprivileged#0156#001",
+   "riscv_unprivileged#table#25"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:csr_file",
+   "rtl:construct:csr_file:assignment_group:297-297",
+   "rtl:risc_fpu"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0156#000"
+    ],
+    [
+     "csr_file.sv:",
+     "risc_fpu.sv:",
+     "shared_pkg"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "RNE"
+   ],
+   [
+    "RMM"
+   ],
+   [
+    "implemented",
+    "present",
+    "supported"
+   ]
+  ],
+  "forbids": [
+   "rounding modes are missing"
+  ],
+  "abstention_is_correct": false,
+  "truth": "round_mode_t defines RNE, RTZ, RDN, RUP, RMM and DYN, and csr_file.sv:297 drives RoundingMode from the frm CSR.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0156#000",
+    "section": "riscv_unprivileged::24.3.2.5",
+    "page": 162
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0156#001",
+    "section": "riscv_unprivileged::24.3.2.5",
+    "page": 162
+   },
+   {
+    "chunk_id": "riscv_unprivileged#table#25",
+    "section": "riscv_unprivileged::table::25",
+    "page": 141
+   }
+  ]
+ },
+ {
+  "id": "CMP_DYN_ROUNDING_PLAIN",
+  "question": "does the design honour the dynamic rounding mode from the fp control register",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0117#004",
+   "riscv_unprivileged#0117#005",
+   "riscv_unprivileged#table#25"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:construct:execute_stage:always:336-341",
+   "rtl:construct:csr_file:assignment_group:297-297",
+   "rtl:csr_file"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0117#004"
+    ],
+    [
+     "csr_file.sv:",
+     "execute_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "frm",
+    "dynamic",
+    "DYN"
+   ],
+   [
+    "csr_file",
+    "execute_stage"
+   ]
+  ],
+  "forbids": [
+   "dynamic rounding is not supported"
+  ],
+  "abstention_is_correct": false,
+  "truth": "csr_file.sv:297 exports RoundingMode from frm and execute_stage.sv:336-341 substitutes it when RoundModeE is DYN.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0117#004",
+    "section": "riscv_unprivileged::20.2",
+    "page": 141
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0117#005",
+    "section": "riscv_unprivileged::20.2",
+    "page": 141
+   },
+   {
+    "chunk_id": "riscv_unprivileged#table#25",
+    "section": "riscv_unprivileged::table::25",
+    "page": 141
+   }
+  ]
+ },
+ {
+  "id": "CMP_LUI_AUIPC_EXACT",
+  "question": "Does the opcode decoder implement LUI and AUIPC?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0017#004",
+   "riscv_unprivileged#0017#003",
+   "riscv_unprivileged#0017#005"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:opcode_decoder",
+   "rtl:construct:opcode_decoder:always:40-137",
+   "rtl:risc_control_unit"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0017#004"
+    ],
+    [
+     "opcode_decoder.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "LUI"
+   ],
+   [
+    "AUIPC"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "LUI and AUIPC are implemented"
+  ],
+  "abstention_is_correct": false,
+  "truth": "Neither opcode 0110111 (LUI) nor 0010111 (AUIPC) appears in the opcode enum or the opcode_decoder case, so both are unimplemented.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0017#004",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 49
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0017#003",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 48
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0017#005",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 49
+   }
+  ]
+ },
+ {
+  "id": "CMP_CONSTANTS_PLAIN",
+  "question": "can the core build 32-bit constants the way the isa manual describes",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_unprivileged#0017#003",
+   "riscv_unprivileged#0017#004",
+   "riscv_unprivileged#0014#004"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:opcode_decoder",
+   "rtl:construct:decode_stage:always:314-324",
+   "rtl:decode_stage"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_unprivileged#0017#003"
+    ],
+    [
+     "opcode_decoder.sv:",
+     "decode_stage.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "LUI",
+    "upper immediate"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "the core implements the full RV32I base"
+  ],
+  "abstention_is_correct": false,
+  "truth": "Building 32-bit constants needs LUI/AUIPC, which the decoder never matches; only the I/S/B/J immediates are formed in decode_stage.sv:314-324.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_unprivileged#0017#003",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 48
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0017#004",
+    "section": "riscv_unprivileged::2.4.1",
+    "page": 49
+   },
+   {
+    "chunk_id": "riscv_unprivileged#0014#004",
+    "section": "riscv_unprivileged::2.2",
+    "page": 46
+   }
+  ]
+ },
+ {
+  "id": "CMP_MINFO_CSR_EXACT",
+  "question": "Are mimpid and marchid implemented in csr_file?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_privileged#table#7#0000",
+   "riscv_privileged#0010#014",
+   "riscv_privileged#0023#007"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:csr_file",
+   "rtl:construct:csr_file:task:83-103",
+   "rtl:construct:csr_file:task:170-200"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#table#7#0000"
+    ],
+    [
+     "csr_file.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "mimpid"
+   ],
+   [
+    "marchid"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "all machine information registers are implemented"
+  ],
+  "abstention_is_correct": false,
+  "truth": "csr_index_t implements mvendorid and mhartid only; marchid, mimpid and mconfigptr are absent from the CSR file.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#table#7#0000",
+    "section": "riscv_privileged::table::7",
+    "page": 25
+   },
+   {
+    "chunk_id": "riscv_privileged#0010#014",
+    "section": "riscv_privileged::2.2",
+    "page": 24
+   },
+   {
+    "chunk_id": "riscv_privileged#0023#007",
+    "section": "riscv_privileged::3.1.3",
+    "page": 35
+   }
+  ]
+ },
+ {
+  "id": "CMP_MEMORY_PROTECTION_PLAIN",
+  "question": "is physical memory protection implemented in the csr module",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_privileged#0068#000",
+   "riscv_privileged#0067#000",
+   "riscv_privileged#0010#016"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:csr_file",
+   "rtl:construct:csr_file:task:170-200",
+   "rtl:cache"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0068#002"
+    ],
+    [
+     "csr_file.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "PMP",
+    "pmpcfg",
+    "pmpaddr",
+    "memory protection"
+   ],
+   [
+    "not",
+    "no ",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "memory protection is implemented"
+  ],
+  "abstention_is_correct": false,
+  "truth": "No pmpcfg or pmpaddr entry exists in csr_index_t or csr_file.sv, so PMP is not implemented.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0068#000",
+    "section": "riscv_privileged::3.7.1",
+    "page": 74
+   },
+   {
+    "chunk_id": "riscv_privileged#0067#000",
+    "section": "riscv_privileged::3.7",
+    "page": 73
+   },
+   {
+    "chunk_id": "riscv_privileged#0010#016",
+    "section": "riscv_privileged::2.2",
+    "page": 25
+   }
+  ]
+ },
+ {
+  "id": "CMP_MTVEC_VECTORED_EXACT",
+  "question": "Does the RTL support the mtvec Vectored MODE the privileged specification defines?",
+  "expected_query_type": "COMPARISON",
+  "naming": "exact",
+  "relevant_spec_ids": [
+   "riscv_privileged#0035#002",
+   "riscv_privileged#0035#000",
+   "riscv_privileged#0035#001"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:construct:csr_file:func:124-127",
+   "rtl:csr_file",
+   "rtl:construct:csr_file:task:130-136"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0035#002"
+    ],
+    [
+     "csr_file.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "vectored",
+    "MTVEC_VECTORED"
+   ],
+   [
+    "implemented",
+    "supported",
+    "present"
+   ]
+  ],
+  "forbids": [
+   "vectored mode is not supported"
+  ],
+  "abstention_is_correct": false,
+  "truth": "csr_file.sv:124-127 (TrapVector) adds cause<<2 to BASE when mtvec[1:0] equals MTVEC_VECTORED, so both Direct and Vectored modes exist.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0035#002",
+    "section": "riscv_privileged::3.1.7",
+    "page": 46
+   },
+   {
+    "chunk_id": "riscv_privileged#0035#000",
+    "section": "riscv_privileged::3.1.7",
+    "page": 46
+   },
+   {
+    "chunk_id": "riscv_privileged#0035#001",
+    "section": "riscv_privileged::3.1.7",
+    "page": 46
+   }
+  ]
+ },
+ {
+  "id": "CMP_TIMER_PLAIN",
+  "question": "does the timer interrupt work the way the privileged spec describes",
+  "expected_query_type": "COMPARISON",
+  "naming": "plain",
+  "relevant_spec_ids": [
+   "riscv_privileged#0049#001",
+   "riscv_privileged#0049#000",
+   "riscv_privileged#0037#007"
+  ],
+  "relevant_rtl_ids": [
+   "rtl:csr_file",
+   "rtl:construct:csr_file:assignment_group:74-76",
+   "rtl:construct:csr_file:task:154-156"
+  ],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    [
+     "riscv_privileged#0049#001"
+    ],
+    [
+     "csr_file.sv:"
+    ]
+   ]
+  },
+  "requires": [
+   [
+    "mtime",
+    "mtimecmp",
+    "timer"
+   ],
+   [
+    "partial",
+    "not",
+    "no ",
+    "external",
+    "missing"
+   ]
+  ],
+  "forbids": [
+   "mtime and mtimecmp are implemented in the csr file"
+  ],
+  "abstention_is_correct": false,
+  "truth": "csr_file takes TimerInterrupt as an input and sets the MTIP bit, but mtime and mtimecmp are memory-mapped in the spec and exist nowhere in rtl/*.sv.",
+  "relevant_spec_sections": [
+   {
+    "chunk_id": "riscv_privileged#0049#001",
+    "section": "riscv_privileged::3.2.1",
+    "page": 63
+   },
+   {
+    "chunk_id": "riscv_privileged#0049#000",
+    "section": "riscv_privileged::3.2.1",
+    "page": 63
+   },
+   {
+    "chunk_id": "riscv_privileged#0037#007",
+    "section": "riscv_privileged::3.1.9",
+    "page": 49
+   }
+  ]
+ }
+]

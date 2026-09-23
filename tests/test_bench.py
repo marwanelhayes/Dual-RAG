@@ -296,3 +296,38 @@ def test_paired_recovery_benchmark_disables_answers_and_alternates_order(monkeyp
                      (False, "one"), (True, "one"), (True, "two"), (False, "two")]
     assert all(option["answer_model"] is bench._skip_answer for option in options)
     assert report["baseline"]["metrics"]["overall"]["questions"] == 2
+
+
+def test_section_key_uses_outline_number_name_or_table_label():
+    prose = {"document_id": "axi", "chunk_type": "prose", "section_number": "A2.3.1",
+             "section_name": "Valid-Ready signals"}
+    unnumbered = {"document_id": "isa", "chunk_type": "prose", "section_number": "",
+                  "section_name": "Preface"}
+    table = {"document_id": "axi", "chunk_type": "table", "section_number": "A2.3.1",
+             "section_name": "Valid-Ready signals", "table_label": "A2.2"}
+
+    assert bench.section_key(prose) == "axi::A2.3.1"
+    assert bench.section_key(unnumbered) == "isa::Preface"
+    assert bench.section_key(table) == "axi::table::A2.2"
+
+
+def test_section_recall_survives_chunk_renumbering():
+    """Gold labels match by section, so re-split chunk IDs still count."""
+    labels = [{"chunk_id": "axi#0042#000", "section": "axi::A2.3.1", "page": 30},
+              {"chunk_id": "axi#table#A2.2#0000", "section": "axi::table::A2.2", "page": 30}]
+    sections = {"axi#0051#003": "axi::A2.3.1", "axi#0099#000": "axi::B1"}
+
+    assert bench.section_recall(["axi#0099#000", "axi#0051#003"], labels, sections, k=2) == 0.5
+    assert bench.section_recall(["axi#0051#003"], [], sections, k=2) is None
+
+
+def test_retrieval_row_and_summary_carry_section_recall():
+    question = {"id": "q", "question": "?", "relevant_spec_ids": ["axi#0042#000"],
+                "relevant_spec_sections": [
+                    {"chunk_id": "axi#0042#000", "section": "axi::A2.3.1", "page": 30}]}
+    state = {"query_type": "SPEC", "spec_evidence": [{"id": "axi#0051#003"}]}
+
+    row = bench.retrieval_row(question, state, 5, sections={"axi#0051#003": "axi::A2.3.1"})
+
+    assert row["spec"]["section_recall_at_k"] == 1.0
+    assert bench._lane_summary([row], "spec")["section_recall_at_k"] == 1.0

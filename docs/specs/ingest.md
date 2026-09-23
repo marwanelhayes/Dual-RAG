@@ -94,11 +94,16 @@ consumers switch to `hierarchy_id` + `section_path`; then `section_id`, `section
 | `header_leaks` | chunks matching `\| Page \d+` or `Chapter A\d+\.`; 0 |
 | `chunks_bytes` | size of `chunks.jsonl` |
 
-Retrieval guardrail (`bench.py --retrieval`): every current retrieval metric, including
-`fact_coverage_at_k`, is scored on chunk IDs and breaks when chunking renumbers them. Until
-step 0b adds section + page gold labels, the decision metric is `family_recall_at_k`
-(chunk ID with its chunk suffix stripped, i.e. the outline section, which position-based
-boundaries do not renumber). Exact-ID metrics are logged but never used for decisions.
+Retrieval guardrail (`bench.py --retrieval`): the decision metric is
+`section_recall_at_k` (step 0b). Each gold spec chunk carries a
+`relevant_spec_sections` label `{chunk_id, section, page}` where `section` is
+`bench.section_key`: `doc::section_number` (or section name) for prose,
+`doc::table::label` for tables. Retrieved chunks are mapped through the current
+`chunks.jsonl`, so re-chunking and renumbering do not break it; page is informational.
+Every other retrieval metric is scored on chunk IDs and is logged but never used for
+decisions. `family_recall_at_k` is also inflated: an unwindowed table ID
+(`doc#table#25`) loses its label to the suffix strip, so any table in the document
+matches (seen on `SPEC_RV_ROUND_MODES`: 0.615 section vs 0.623 family at step 1).
 
 ## Execution queue
 

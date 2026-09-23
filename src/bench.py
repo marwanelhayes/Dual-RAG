@@ -349,6 +349,38 @@ def _chunk_family(chunk_id, lane):
     return chunk_id
 
 
+def section_key(chunk):
+    """Return the outline anchor a spec chunk belongs to, stable across re-chunking.
+
+    Args:
+        chunk: Spec chunk record from ``chunks.jsonl``.
+
+    Returns:
+        ``doc::table::label`` for tables, else ``doc::section_number`` (or section name).
+    """
+    if chunk["chunk_type"] == "table":
+        return f"{chunk['document_id']}::table::{chunk['table_label']}"
+    return f"{chunk['document_id']}::{chunk['section_number'] or chunk['section_name']}"
+
+
+def section_recall(ranked, labels, sections, k):
+    """Score retrieval by the gold sections reached, not by exact chunk IDs.
+
+    Args:
+        ranked: Retrieved spec chunk IDs in rank order.
+        labels: Gold ``{"chunk_id", "section", "page"}`` labels for one question.
+        sections: Current chunk ID to ``section_key``.
+        k: Rank cutoff.
+
+    Returns:
+        Fraction of labels whose section appears in the top k, or None without labels.
+    """
+    if not labels:
+        return None
+    top = {sections.get(item) for item in ranked[:k]}
+    return _mean(label["section"] in top for label in labels)
+
+
 def lane_result(ranked, relevant, k, groups=None, lane=None):
     """Score one evidence lane against its expected chunks.
 
@@ -389,20 +421,21 @@ def lane_result(ranked, relevant, k, groups=None, lane=None):
     }
 
 
-def retrieval_row(question, state, k):
+def retrieval_row(question, state, k, sections=None):
     """Project one question's retrieval behavior into a scored row.
 
     Args:
         question: Gold case record.
         state: Final graph state for that question.
         k: Rank cutoff for recall.
+        sections: Optional chunk ID to ``section_key`` map for section recall.
 
     Returns:
         Row with route outcome and per-lane retrieval results.
     """
     spec_ids, rtl_ids = retrieved_ids(state)
     predicted = state.get("query_type")
-    return {
+    row = {
         "id": question["id"], "question": question["question"],
         "naming": question.get("naming"),
         "expected_query_type": question.get("expected_query_type"),
@@ -419,6 +452,10 @@ def retrieval_row(question, state, k):
         "query_errors": [event["error"] for event in state.get("trace", [])
                          if event.get("event") == "query_recovery" and event.get("error")],
     }
+    if row["spec"] and sections is not None:
+        row["spec"]["section_recall_at_k"] = section_recall(
+            spec_ids, question.get("relevant_spec_sections", []), sections, k)
+    return row
 
 
 def run_retrieval(questions, app=None, k=5):
@@ -435,11 +472,14 @@ def run_retrieval(questions, app=None, k=5):
     import agent
 
     app = agent.build_graph(answer_model=_skip_answer) if app is None else app
+    with open(cfg.CHUNKS_PATH, encoding="utf-8") as handle:
+        sections = {chunk["chunk_id"]: section_key(chunk)
+                    for chunk in map(json.loads, handle)}
     rows = []
     for question in questions:
         started = time.perf_counter()
         state = agent.run(app, question["question"])
-        row = retrieval_row(question, state, k)
+        row = retrieval_row(question, state, k, sections)
         row["seconds"] = round(time.perf_counter() - started, 3)
         rows.append(row)
     return rows
@@ -469,6 +509,8 @@ def _lane_summary(rows, lane):
         "exact_id_recall_at_k": exact_recall, "recall_at_k": exact_recall,
         "family_recall_at_k": _mean(item["family_recall_at_k"] for item in scored),
         "fact_coverage_at_k": _mean(item["fact_coverage_at_k"] for item in scored),
+        "section_recall_at_k": _mean(item["section_recall_at_k"] for item in scored
+                                     if item.get("section_recall_at_k") is not None),
         "mean_recall": exact_recall,
         "mrr_at_k": reciprocal_rank, "mrr": reciprocal_rank,
         "hit_at_k": _mean(item["hit_at_k"] for item in scored),

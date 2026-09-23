@@ -28,18 +28,13 @@ git commit ...                                             # one step per commit
 .venv/bin/mlflow ui --backend-store-uri sqlite:///mlflow.db  # compare runs
 ```
 
-Decision metric until step 0b lands: `retrieval.spec.family_recall_at_k`.
+Decision metric: `retrieval.spec.section_recall_at_k` (step 0b).
 
 ## Immediate next steps
 
-1. **spec_signals s0 `signals/metrics`** and **s1 `signals/drop-dead-fields`** (zero-diff,
-   run now; see the spec's queue).
-2. **Open question:** un-ignore the gold set (`!eval/question_set.json` in `.gitignore`).
-   Recommended; include it in step 0b.
-3. **Ingest step 0b `eval/gold-sections`:** section + page labels for gold spec chunk IDs;
-   section-level recall in `bench.py`. Must run before ingest step 9.
-4. **Ingest steps 2-15** (including new 12b `ingest/wrapped-cells`), in order.
-5. **spec_signals s2-s7**, after the ingest queue, so row deltas are attributable.
+1. Done 2026-09-23: spec_signals s0, s1; ingest 0b (`eval/question_set.json` now versioned).
+2. **Ingest steps 2-15** (including new 12b `ingest/wrapped-cells`), in order.
+3. **spec_signals s2-s7**, after the ingest queue, so row deltas are attributable.
 
 ## After spec_signals
 
