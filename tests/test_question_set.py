@@ -1,10 +1,11 @@
-"""Keep the 60-question benchmark set pointing at chunks that still exist."""
+"""Keep the 60-question benchmark set pointing at sections and chunks that still exist."""
 
 import json
 
 import pytest
 
 import agent
+import bench
 import configure as cfg
 
 
@@ -68,10 +69,13 @@ def test_every_case_names_alternative_chunks_for_each_scored_domain(questions):
 
 @pytest.mark.skipif(not (cfg.OUTPUT_DIR / "chunks.jsonl").exists(),
                     reason="ingested chunk stores are not built")
-def test_expected_chunk_ids_exist_in_the_ingested_stores(questions):
-    spec_ids = _chunk_ids(cfg.OUTPUT_DIR / "chunks.jsonl")
+def test_expected_evidence_exists_in_the_ingested_stores(questions):
+    """Spec gold is checked by section, which re-chunking does not renumber."""
+    with open(cfg.OUTPUT_DIR / "chunks.jsonl", encoding="utf-8") as handle:
+        spec_sections = {bench.section_key(json.loads(line)) for line in handle if line.strip()}
     rtl_ids = _chunk_ids(cfg.OUTPUT_DIR / "rtl_chunks.jsonl")
 
     for case in questions:
-        assert set(case["relevant_spec_ids"]) <= spec_ids, case["id"]
+        assert {label["section"] for label in case["relevant_spec_sections"]} <= \
+            spec_sections, case["id"]
         assert set(case["relevant_rtl_ids"]) <= rtl_ids, case["id"]
