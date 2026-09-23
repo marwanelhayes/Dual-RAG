@@ -131,3 +131,28 @@ Why not now: extraction does not need the split; only a consumer would. `bridge.
 `row_kind` today, so the field is removed at the bridge walk (pending consolidation).
 
 Reopen when: the bridge walk shows linking needs port vs register.
+
+## DF-08: Metadata filters in Chroma
+
+Decided 2026-09-23. Current choice: Chroma entries hold `id`, embedding, and embedded text
+only; hits are hydrated from `chunks.jsonl` / `rtl_chunks.jsonl` by id.
+
+Deferred option: store filterable metadata (`document_id`, `chunk_type`, `section_path`) in
+Chroma and query with `where=`. Four fields cannot be stored as-is (`document_role_scores`,
+`rows`, `sensitivity`, `signal_metadata`: dicts or nested lists) and would need encoding.
+
+Why not now: no caller filters; storing metadata duplicates the jsonl truth.
+
+Reopen when: a retrieval path needs to restrict search by document, type, or section.
+
+## DF-09: Multi-vector embedding of over-limit chunks
+
+Decided 2026-09-23. Current choice: `embed.py` encodes each chunk once; text past 512 bge
+tokens is truncated (52 chunks, 12,068 tokens at step 9b, mostly Sail code / hex tables).
+
+Deferred option: split an over-limit chunk into several vectors that share its `chunk_id`.
+
+Why not now: chunk size is ingest's job (steps 13 code-line split, 14 token caps); ids stay
+1:1 with chunks.
+
+Reopen when: ingest step 14 lands and `ingest.chunks_over_limit` is still above 0.

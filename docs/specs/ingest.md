@@ -25,7 +25,9 @@ per-chunk semantic roles.
    recur on at least 60% of pages are headers and footers, whatever their text. This catches
    running headers whose text changes per page (AXI y=69, RISC-V y=12).
 4. **Section text by position.** A section's text is every body block from its heading's
-   `(page, y)` to the next outline entry's `(page, y)`. No title string search. Sections are
+   `(page, y)` to the next outline entry's `(page, y)`. No title string search. The first
+   block at the start point is dropped when it equals the outline title (the breadcrumb
+   already names the section). Sections are
    skipped only when empty or titled contents / index / bibliography.
 5. **Tables.** A caption is the first line of a block matching
    `Table <label><sep> <title>` where the separator is `.` or `:` followed by whitespace.
@@ -124,6 +126,7 @@ Every step: failing test first, full suite green, commit, `build.py --clean`,
 | 7b | `ingest/drop-text-furniture` | delete `repeated_lines` if the metric is 0 | zero text diff |
 | 8 | `ingest/fallback-validation` | log `fallback_heading_f1` | metrics only |
 | 9 | `ingest/position-sections` | `(page, y)` boundaries; drop `MIN_SECTION_CHARS`; keep newlines | chunk IDs shift |
+| 9b | `ingest/drop-heading-block` | first block on the start page dropped when it equals the outline title | headings leave text |
 | 10 | `ingest/prose-excludes-tables` | table regions out of prose | overlap to 0 |
 | 11 | `ingest/table-owner-position` | owner by `(page, y)`; section path in table header | owners move |
 | 12 | `ingest/table-continuations` | follow continuation banners | rows rise |
