@@ -188,47 +188,6 @@ def _scope_names(node, parents, stop):
     return list(reversed(names))
 
 
-def _generate_node(node, parents, stop):
-    """Return a node's nearest named non-procedural generate scope.
-
-    Args:
-        node: AST node to walk up from.
-        parents: Child-to-parent map from ``_parent_map``.
-        stop: Ancestor element at which to stop, normally the module.
-
-    Returns:
-        The generate-scope element, or None inside procedural code.
-    """
-    chain = []
-    current = parents.get(node)
-    while current is not None and current is not stop:
-        chain.append(current)
-        current = parents.get(current)
-    if any(item.tag in {"always", "initial", "func", "task"} for item in chain):
-        return None
-    for item in chain:
-        if (item.tag in {"begin", "genfor", "genif", "generate"}
-                and (item.get("name") or item.get("origName"))):
-            return item
-    return None
-
-
-def _generate_id(module, node):
-    """Build a stable identifier for a compiler-named generate scope.
-
-    Args:
-        module: Owning source module name.
-        node: Generate-scope element.
-
-    Returns:
-        An ``rtl::gen::`` identifier fixed by module, name, and line.
-    """
-    located = parse_loc(node.get("loc"))
-    line = located[1] if located else 0
-    name = node.get("name") or node.get("origName") or "generate"
-    return f"rtl::gen::{module}::{name}::{line}"
-
-
 def _symbol_kind(var):
     """Classify a declaration as a port, parameter, or internal signal.
 
@@ -481,8 +440,7 @@ def enum_usage(enums, module_records):
     return annotated
 
 
-def _declaration_record(var, module, kind, name, located, scopes, files, parents,
-                        element, order, dtypes):
+def _declaration_record(var, module, kind, name, located, scopes, files, order, dtypes):
     """Project one compiler-owned declaration before stable-id assignment.
 
     Args:
@@ -493,8 +451,6 @@ def _declaration_record(var, module, kind, name, located, scopes, files, parents
         located: Parsed ``(file id, first line, last line)`` for the declaration.
         scopes: Named enclosing scopes inside the module.
         files: Verilator file id to source path.
-        parents: Child-to-parent map from ``_parent_map``.
-        element: Elaborated module element the declaration was found in.
         order: Compiler discovery position, used to restore source order.
         dtypes: Dtype descriptors from ``type_descriptors``.
 
@@ -503,9 +459,6 @@ def _declaration_record(var, module, kind, name, located, scopes, files, parents
     """
     path = files[located[0]]
     source_text = read_lines(path, located[1], located[2])
-    generate = _generate_node(var, parents, element)
-    parent_id = (_generate_id(module, generate) if generate is not None
-                 else f"rtl::mod::{module}")
     value_node = next(var.iter("const"), None)
     descriptor = dtypes.get(var.get("dtype_id"), {})
     record = {
@@ -527,7 +480,6 @@ def _declaration_record(var, module, kind, name, located, scopes, files, parents
                            else "parameter" if kind == "PARAMETER" else None),
         "value": value_node.get("name") if value_node is not None else None,
         "hierarchical_path": [module, *scopes, name],
-        "parent_construct": parent_id,
         "source_text": source_text,
     }
     if descriptor.get("width") is not None:
@@ -607,8 +559,7 @@ def symbol_records(root, files):
             if key in candidates:
                 continue
             candidates[key] = _declaration_record(
-                var, module, kind, name, located, scopes, files, parents, element,
-                order, dtypes)
+                var, module, kind, name, located, scopes, files, order, dtypes)
             order += 1
     return _assign_symbol_ids(candidates)
 
@@ -627,8 +578,10 @@ def _symbol_lookup(records):
         grouped.setdefault((record["module_name"], record["symbol_name"]), []).append(record)
     out = {}
     for key, matches in grouped.items():
+        # The direct declaration is the one that received the unscoped identifier.
         direct = [record for record in matches
-                  if record["parent_construct"] == f"rtl::mod::{record['module_name']}"]
+                  if record["signal_id"] == _symbol_base_id(
+                      record["construct_type"], record["module_name"], record["symbol_name"])]
         if len(matches) == 1:
             out[key] = matches[0]
         elif len(direct) == 1:
@@ -797,25 +750,7 @@ def driver_reader_sites(root, files):
     return collapse_sites(driven), collapse_sites(read)
 
 
-def _cell_paths(root):
-    """Index elaborated occurrence paths by source instance declaration.
-
-    Args:
-        root: Parsed Verilator XML root element.
-
-    Returns:
-        ``(loc, name, target)`` to its unique elaborated hierarchy paths.
-    """
-    found = {}
-    for cell in root.iter("cell"):
-        hier = cell.get("hier")
-        target = source_name(cell.get("submodname"))
-        if hier:
-            found.setdefault((cell.get("loc"), cell.get("name"), target), []).append(hier)
-    return {key: _unique(paths) for key, paths in found.items()}
-
-
-def _instance_record(node, element, module, files, symbols, cell_paths, parents):
+def _instance_record(node, element, module, files, symbols, parents):
     """Project an instance and its compiler-resolved formal/actual bindings.
 
     Args:
@@ -824,7 +759,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
         module: Owning source module name.
         files: Verilator file id to source path.
         symbols: Unambiguous declaration lookup from ``_symbol_lookup``.
-        cell_paths: Elaborated occurrence paths from ``_cell_paths``.
         parents: Child-to-parent map from ``_parent_map``.
 
     Returns:
@@ -841,7 +775,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
     column = raw_match.group(3) if raw_match else "0"
     instance_id = f"rtl::instdef::{module}::{instance_name}::{located[1]}:{column}"
     scopes = _scope_names(node, parents, element)
-    occurrence_paths = cell_paths.get((node.get("loc"), node.get("name"), target), [])
     bindings = []
     for port in node.findall("port"):
         port_loc = parse_loc(port.get("loc"))
@@ -856,15 +789,9 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
                      else _symbol_base_id("PORT", target, formal))
         citation_path = files[port_loc[0]]
         citation = read_lines(citation_path, port_loc[1], port_loc[2])
-        binding_id = f"rtl::binding::{instance_id}::{formal}"
         bindings.append({
-            "binding_id": binding_id,
-            "instance_id": instance_id,
-            "instance": instance_name,
             "parent_module": module,
             "target_module": target,
-            "hierarchical_path": occurrence_paths[0] if occurrence_paths else None,
-            "hierarchical_paths": occurrence_paths,
             "formal_name": formal,
             "formal_signal_id": formal_id,
             "actual_signals": actual_refs,
@@ -880,9 +807,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
             "content_hash": content_hash(module, instance_name, formal,
                                          str(port_loc[1]), citation),
         })
-    generate = _generate_node(node, parents, element)
-    parent_id = (_generate_id(module, generate) if generate is not None
-                 else f"rtl::mod::{module}")
     source_text = read_lines(path, located[1], located[2])
     return {
         "instance_id": instance_id,
@@ -900,8 +824,6 @@ def _instance_record(node, element, module, files, symbols, cell_paths, parents)
         "start_line": located[1],
         "end_line": located[2],
         "hierarchical_path": [module, *scopes, instance_name],
-        "hierarchical_paths": occurrence_paths,
-        "parent_construct": parent_id,
         "source_text": source_text,
         "content_hash": content_hash("INSTANCE", module, instance_name,
                                      target, str(located[1]), source_text),
@@ -1046,7 +968,6 @@ def modules(root, files, declarations=None):
     symbol_lookup = _symbol_lookup(declarations)
     writers, readers = driver_reader_sites(root, files)
     parents = _parent_map(root)
-    cell_paths = _cell_paths(root)
     extents = _module_extents(root, files)
     out = {}
     for element in root.iter("module"):
@@ -1086,16 +1007,11 @@ def modules(root, files, declarations=None):
         for node in element.iter("instance"):
             if not _owned_by(node, element, parents):
                 continue
-            record = _instance_record(node, element, name, files, symbol_lookup,
-                                      cell_paths, parents)
+            record = _instance_record(node, element, name, files, symbol_lookup, parents)
             if record:
+                # Parameter clones repeat an instance; the source record is kept once.
                 key = (node.get("loc"), record["original_name"], record["target_module"])
-                existing = entry["_instances"].get(key)
-                if existing is None:
-                    entry["_instances"][key] = record
-                else:
-                    existing["hierarchical_paths"] = _unique([
-                        *existing["hierarchical_paths"], *record["hierarchical_paths"]])
+                entry["_instances"].setdefault(key, record)
 
     for name, entry in out.items():
         for declaration in declarations:
@@ -1136,13 +1052,12 @@ def tree(root):
     """
     nodes = []
 
-    def walk(element, depth, parent_hier=None, fallback=()):
+    def walk(element, depth, fallback=()):
         """Append cell descendants in Verilator's authoritative pre-order.
 
         Args:
             element: Element whose children are visited.
             depth: Instance depth of ``element``.
-            parent_hier: Elaborated hierarchy path of the enclosing instance.
             fallback: Instance names used when the compiler states no hierarchy.
 
         Returns:
@@ -1157,11 +1072,10 @@ def tree(root):
                     "instance": child.get("name"),
                     "module": source_name(child.get("submodname")),
                     "hierarchical_path": hier.split(".") if hier else [],
-                    "parent_hier": parent_hier,
                 })
-                walk(child, depth + 1, hier, fallback_path)
+                walk(child, depth + 1, fallback_path)
             else:
-                walk(child, depth, parent_hier, fallback)
+                walk(child, depth, fallback)
 
     cells = root.find("cells")
     if cells is not None:

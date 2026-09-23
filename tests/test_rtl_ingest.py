@@ -271,7 +271,6 @@ def test_instances_keep_ast_formal_actual_bindings_and_hierarchy(tmp_path, monke
     bindings = {binding["formal_name"]: binding for binding in instance["bindings"]}
 
     assert instance["target_module"] == "child"
-    assert instance["hierarchical_paths"] == ["chip.top.GEN[0].u_child"]
     assert bindings["din"]["formal_signal_id"] == "rtl::port::child::din"
     assert bindings["din"]["actual_signal_ids"] == ["rtl::sig::parent::tmp"]
     assert bindings["din"]["direction"] == "input"
@@ -298,11 +297,13 @@ def test_lint_warnings_remain_structured(tmp_path, monkeypatch):
 # Fields removed in the 2026-09-23 rtl_ingest walk, by the record that carried them.
 REMOVED_FIELDS = {
     "binding": {"formal", "actual_refs", "formal_symbol_id", "actual_symbol_ids",
-                "port_index"},
-    "instance": {"target_elaborated_module", "target_elaborated_modules"},
-    "declaration": {"dtype_id", "elaborated_modules"},
+                "port_index", "hierarchical_path", "hierarchical_paths", "instance_id",
+                "instance", "binding_id"},
+    "instance": {"target_elaborated_module", "target_elaborated_modules",
+                 "hierarchical_paths", "parent_construct"},
+    "declaration": {"dtype_id", "elaborated_modules", "parent_construct"},
     "module": {"elaborated_modules"},
-    "tree": {"elaborated_module", "loc"},
+    "tree": {"elaborated_module", "loc", "parent_hier"},
 }
 
 
