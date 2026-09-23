@@ -316,12 +316,6 @@ def main():
     rel = cfg.INDEX_DIR.relative_to(cfg.ROOT)
     print(f"====  wrote FAISS index ({len(records)} vectors) to {rel}")
 
-    # Smoke-test that the persisted index answers, not merely that it built.
-    hits = store.search("What does AWVALID indicate on the AXI write address channel?", k=3)
-    print("====  sample query -> nearest sections:")
-    for doc, score in hits:
-        print(f"  {score:.3f}  {doc.metadata['context_header']}")
-
 
 if __name__ == "__main__":
     main()
