@@ -746,17 +746,11 @@ def enrich_spec_record(record):
         *([own_table_id] if own_table_id else []),
     ]))
     section_title = record.get("section_title") or record.get("section_name")
-    chunk_scores = roles.chunk_role_scores(text, chunk_type)
-    chunk_role = roles.leading_role(chunk_scores)
     record.update({
         "record_id": f"spec::chunk::{record['chunk_id']}",
         "source_id": (own_table_id if is_table else
                       record.get("hierarchy_id") or record.get("subsection_id")
                       or record.get("section_id")),
-        "chunk_role": chunk_role,
-        "chunk_role_scores": chunk_scores,
-        # No wording matched, so no role is claimed rather than one being invented.
-        "chunk_role_source": "rules" if any(chunk_scores.values()) else "unresolved",
         "document_id": document_id,
         "section_id": record.get("section_id"),
         "section_title": section_title,

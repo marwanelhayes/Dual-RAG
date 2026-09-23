@@ -82,21 +82,7 @@ def test_spec_chunk_contract_contains_every_required_provenance_field():
     assert record["source_file"] == "AXI spec.pdf"
     assert "spec_entities" not in record and "requirement_ids" not in record
     assert "source_type" not in record and "domain" not in record
-    assert record["chunk_role_source"] == "rules"
-    assert round(sum(record["chunk_role_scores"].values()), 4) == 1.0
-
-
-def test_unmatched_chunk_reports_no_role_rather_than_inventing_one():
-    record = ingest.enrich_spec_record({
-        "chunk_id": "axi_spec#0002#000", "chunk_type": "prose",
-        "document_id": "axi_spec", "doc_name": "AXI spec.pdf",
-        "context_header": "AXI > Mnemonics", "start_page": 3, "end_page": 3,
-        "tables_cited": [], "text": "RV32 RV64 Mnemonic cbo.zero base",
-    })
-
-    assert record["chunk_role"] is None
-    assert record["chunk_role_source"] == "unresolved"
-    assert set(record["chunk_role_scores"].values()) == {0.0}
+    assert not {"chunk_role", "chunk_role_scores", "chunk_role_source"} & set(record)
 
 
 def test_tables_persist_raw_columns_and_rows_but_are_not_hierarchy_nodes(monkeypatch):
@@ -385,7 +371,8 @@ def test_ingest_does_not_load_langchain_text_splitters():
 DEAD_CHUNK_FIELDS = {
     "document_role", "sentence_sources", "prev_section", "next_section", "parent_name",
     "n_sentences", "parent_number", "level", "own_start_page", "own_end_page",
-    "section_start_page", "section_end_page", "n_chars"}
+    "section_start_page", "section_end_page", "n_chars",
+    "chunk_role", "chunk_role_scores", "chunk_role_source"}
 
 
 def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):

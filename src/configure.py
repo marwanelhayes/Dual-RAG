@@ -76,26 +76,7 @@ ROLE_DOCUMENT_VOCABULARY = {
                     "for instance", "walkthrough", "suppose", r"shows?", r"diagrams?",
                     "in this case", "you"],
 }
-# Specification prose is overwhelmingly participial, so every verb needs its inflections.
-ROLE_CHUNK_VOCABULARY = {
-    "requirement": ["shall", "must", r"require\w*"],
-    "definition": ["defined as", r"means?", "is defined", "refers to", r"denote\w*",
-                   r"definition\w*"],
-    "behavior": [r"assert\w*", r"driv\w*", r"transition\w*", r"sets?", "setting",
-                 r"clear\w*", r"occur\w*", r"sampl\w*", r"return\w*"],
-    "relationship": [r"depend\w*", r"connect\w*", r"contain\w*", "consists of",
-                     r"instantiat\w+", "belongs to"],
-    "property": [r"widths?", r"resets?", r"address\w*", r"encod\w*", "default value"],
-    "example": [r"examples?", r"figures?", "suppose", "for instance"],
-}
-# Damp the two widest vocabularies so their reach does not outvote sharper evidence.
-ROLE_CHUNK_WEIGHTS = {"requirement": 1.0, "definition": 1.2, "behavior": 0.7,
-                      "relationship": 1.0, "property": 0.7, "example": 0.9}
 ROLE_DOCUMENT_WEIGHTS = {"normative": 1.0, "architecture": 1.0, "explanatory": 1.0}
-# A whole table is a property listing even when its cells carry no role wording.
-ROLE_TABLE_PROPERTY_BOOST = 2.0
-# Name a role only when its lead is decisive; report scores alone otherwise.
-ROLE_MARGIN = 0.15
 
 # Fuse broad lexical and dense candidate sets before the expensive precision pass.
 RETRIEVE_CANDIDATES = 30
