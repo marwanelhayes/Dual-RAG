@@ -3,8 +3,8 @@
 Handoff from the 2026-09-21/23 simplification sessions. Method and session prompt:
 [`docs/SIMPLIFICATION_METHOD.md`](SIMPLIFICATION_METHOD.md). Decided specs and queues:
 [`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md),
-[`docs/specs/embed.md`](specs/embed.md).
-Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-09).
+[`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md).
+Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-11).
 
 ## Where we are
 
@@ -72,7 +72,9 @@ test PDFs have points but no printed heading, and it would delete body text.
    sweep). Step 13 uses the newlines step 9 now keeps.
 2. spec_signals s2-s7 after the ingest queue (row deltas attributable).
 3. `embed.py` walked and executed 2026-09-23 (e0-e5, [`docs/specs/embed.md`](specs/embed.md)):
-   spec and RTL indexes are Chroma. Next walk: `rtl_ingest.py`.
+   spec and RTL indexes are Chroma.
+4. `rtl_ingest.py` walked 2026-09-23: queue r0-r5 in [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md).
+   Next walk: `rtl_embed.py` (it also switches RTL paths to `RTL_DIR`-relative).
 
 ## Pending consolidation (bridge / agent walk)
 
@@ -83,6 +85,10 @@ duplicate: `doc_name` and `source_file` hold the same filename. Document authori
 is revisited at the `retrieve.py` walk.
 
 ## Known issues noted, not fixed
+
+- `naming._raw_tokens` splits `ARESETn` as `arese` + `tn` (acronym boundary), so AXI-style
+  `…n` resets cannot link spec to RTL. Fix at the `bridge.py` walk, failing test first.
+- `rtl_ingest.enum_usage`: 13 of 326 usage sites match an enum member only inside comments.
 
 - `bench._chunk_family` treats an unwindowed table's label as a window suffix, so
   `family_recall_at_k` counts any table of the document as a hit (superseded as a decision

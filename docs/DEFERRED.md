@@ -156,3 +156,30 @@ Why not now: chunk size is ingest's job (steps 13 code-line split, 14 token caps
 1:1 with chunks.
 
 Reopen when: ingest step 14 lands and `ingest.chunks_over_limit` is still above 0.
+
+## DF-10: Elaborated (parameter-specialised) module variants
+
+Decided 2026-09-23. Current choice: `rtl.json` names modules by source name only; Verilator
+clone names (`fetch_stage__A8_CDz1`) are dropped with `elaborated_modules`,
+`target_elaborated_modules`, and the tree's `elaborated_module`.
+
+Deferred option: keep one record per elaborated variant with its resolved parameters.
+
+Why not now: the variants are compiler bookkeeping; no question distinguishes two
+parameterisations of one module in this corpus.
+
+Reopen when: a design instantiates one module with different parameters and questions ask
+about a specific variant (widths per instance).
+
+## DF-11: Clock and reset roles for blocks
+
+Decided 2026-09-23. Current choice: blocks keep only `sensitivity` (signal + edge as
+stated). The removed `reset` matched names against `(^|_)(rst|reset)(_|$)`, which misses
+AXI `ARESETn`.
+
+Deferred option: derive the clock as the edge signal not tested in the block, and the reset
+as the edge signal tested by the block's first `if`, from the AST.
+
+Why not now: no consumer reads the roles.
+
+Reopen when: a query needs "which clock / reset drives X".
