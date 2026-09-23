@@ -51,3 +51,30 @@ def test_chunk_metrics_count_tokens_tables_and_leaks():
     assert metrics["ingest.header_leaks"] == 1
     assert metrics["ingest.prose.chunk_tokens_max"] == 8
     assert metrics["ingest.chunks_over_limit"] == 0
+
+
+def _signal(doc, table, name, width=None, source=None, description=None):
+    return {"document_id": doc, "table_id": f"{doc}::table::{table}",
+            "normalized_name": name, "width": width, "source_role_source": source,
+            "description": description}
+
+
+def test_signal_metrics_count_mentions_names_fills_and_gold_recall():
+    signals = [
+        _signal("axi", "B1.1", "awvalid", width=1, source="Manager", description="valid"),
+        _signal("axi", "A2.2", "awvalid"),
+        _signal("axi", "B1.1", "awready", width=1),
+        _signal("riscv", "7", "mstatus", description="status"),
+    ]
+
+    metrics = track.signal_metrics(signals, gold_names=["awvalid", "awready", "wvalid", "bready"])
+
+    assert metrics["signals.rows"] == 4
+    assert metrics["signals.unique_names"] == 3
+    assert metrics["signals.axi.rows"] == 3
+    assert metrics["signals.axi.unique_names"] == 2
+    assert metrics["signals.tables_admitted"] == 3
+    assert metrics["signals.with_width"] == 2
+    assert metrics["signals.with_source"] == 1
+    assert metrics["signals.with_description"] == 2
+    assert metrics["signals.axi_channel_recall"] == 0.5

@@ -17,6 +17,8 @@ TRACKING_URI = f"sqlite:///{cfg.ROOT / 'mlflow.db'}"
 EXPERIMENT = "chipver"
 TOKEN_LIMIT = 512
 CHUNK_SAMPLE_LINES = 200
+# AXI Tables B1.1-B1.7 read from the PDF, independent of ingest.
+AXI_CHANNEL_GOLD = cfg.ROOT / "eval" / "axi_channel_signals.json"
 
 _TABLE_REF = re.compile(r"\bTable\s+([A-Z]?\d+(?:[.-]\d+)*)")
 _HEADER_LEAK = re.compile(r"\| Page \d+|Chapter [A-Z]\d+\.")
@@ -111,6 +113,36 @@ def chunk_metrics(records, count_tokens, limit=TOKEN_LIMIT):
     return dict(metrics)
 
 
+def signal_metrics(signals, gold_names):
+    """Measure the spec signal inventory intrinsically, without linking.
+
+    Args:
+        signals: Records from ``spec_signals.json``; one record is one table-row mention.
+        gold_names: Frozen normalized names every run must still extract.
+
+    Returns:
+        Metric name to value, prefixed ``signals.``.
+    """
+    metrics = collections.Counter({"signals.rows": len(signals)})
+    names = collections.defaultdict(set)
+    for signal in signals:
+        doc = signal["document_id"]
+        metrics[f"signals.{doc}.rows"] += 1
+        names[doc].add(signal["normalized_name"])
+    for doc, found in names.items():
+        metrics[f"signals.{doc}.unique_names"] = len(found)
+    metrics["signals.unique_names"] = sum(len(found) for found in names.values())
+    metrics["signals.tables_admitted"] = len({signal["table_id"] for signal in signals})
+    # source_role_source is the raw Source cell until consolidation renames it source.
+    for metric, key in (("with_width", "width"), ("with_source", "source_role_source"),
+                        ("with_description", "description")):
+        metrics[f"signals.{metric}"] = sum(signal.get(key) is not None for signal in signals)
+    extracted = set().union(*names.values())
+    metrics["signals.axi_channel_recall"] = (
+        sum(name in extracted for name in gold_names) / len(gold_names))
+    return dict(metrics)
+
+
 def _git(*args):
     """Return one git command's trimmed stdout, run from the project root.
 
@@ -151,7 +183,9 @@ def pipeline_metrics():
         for document in json.load(handle)["documents"]:
             metrics[f"ingest.{document['document_id']}.sections"] = len(document["sections"])
     with open(cfg.SPEC_SIGNALS_PATH, encoding="utf-8") as handle:
-        metrics["signals.count"] = len(json.load(handle)["signals"])
+        signals = json.load(handle)["signals"]
+    with open(AXI_CHANNEL_GOLD, encoding="utf-8") as handle:
+        metrics.update(signal_metrics(signals, json.load(handle)["names"]))
     with open(cfg.RTL_CHUNKS_PATH, encoding="utf-8") as handle:
         metrics["rtl.chunks"] = sum(1 for _ in handle)
     with open(cfg.BRIDGE_PATH, encoding="utf-8") as handle:
