@@ -143,6 +143,56 @@ def signal_metrics(signals, gold_names):
     return dict(metrics)
 
 
+def rtl_metrics(rtl):
+    """Measure the RTL artifact intrinsically: record counts and resolution rates.
+
+    Args:
+        rtl: Parsed ``rtl.json`` payload.
+
+    Returns:
+        Metric name to value, prefixed ``rtl.``; a falling rate means lost structure.
+    """
+    modules = list(rtl["modules"].values())
+    declarations = [item for module in modules
+                    for key in ("ports", "signals", "parameters") for item in module[key]]
+    ports = {item["signal_id"] for module in modules for item in module["ports"]}
+    declared = {item["signal_id"] for item in declarations}
+    bindings = [binding for module in modules for instance in module["instances"]
+                for binding in instance["bindings"]]
+    signals = [item for module in modules for item in module["signals"]]
+    items = [item for enum in rtl["enums"] for item in enum["items"]]
+    metrics = collections.Counter({
+        "rtl.modules": len(modules),
+        "rtl.ports": len(ports),
+        "rtl.signals": len(signals),
+        "rtl.parameters": sum(len(module["parameters"]) for module in modules),
+        "rtl.instances": sum(len(module["instances"]) for module in modules),
+        "rtl.bindings": len(bindings),
+        "rtl.enums": len(rtl["enums"]),
+        "rtl.enum_items": len(items),
+        "rtl.enum_usage_sites": sum(len(item.get("usage_sites", [])) for item in items),
+        "rtl.tree_nodes": len(rtl["tree"]),
+    })
+    for module in modules:
+        for key in ("always_blocks", "functions_tasks", "assignment_groups", "other_blocks"):
+            for block in module[key]:
+                metrics[f"rtl.blocks.{block['construct_type']}"] += 1
+    for warning in rtl["warnings"]:
+        metrics[f"rtl.warnings.{warning['code']}"] += 1
+    rate = lambda hits, total: hits / total if total else 0.0
+    metrics["rtl.declarations_with_width_rate"] = rate(
+        sum(item.get("width") is not None for item in declarations), len(declarations))
+    metrics["rtl.bindings_formal_resolved_rate"] = rate(
+        sum(binding["formal_signal_id"] in ports for binding in bindings), len(bindings))
+    metrics["rtl.bindings_actuals_resolved_rate"] = rate(
+        sum(len(binding["actual_signal_ids"]) == len(binding["actual_signals"])
+            and set(binding["actual_signal_ids"]) <= declared for binding in bindings),
+        len(bindings))
+    metrics["rtl.signals_with_writer_rate"] = rate(
+        sum(bool(item["writer_sites"]) for item in signals), len(signals))
+    return dict(metrics)
+
+
 def _git(*args):
     """Return one git command's trimmed stdout, run from the project root.
 
@@ -191,6 +241,9 @@ def pipeline_metrics():
         signals = json.load(handle)["signals"]
     with open(AXI_CHANNEL_GOLD, encoding="utf-8") as handle:
         metrics.update(signal_metrics(signals, json.load(handle)["names"]))
+    with open(cfg.RTL_PATH, encoding="utf-8") as handle:
+        metrics.update(rtl_metrics(json.load(handle)))
+    metrics["rtl.rtl_bytes"] = cfg.RTL_PATH.stat().st_size
     with open(cfg.RTL_CHUNKS_PATH, encoding="utf-8") as handle:
         metrics["rtl.chunks"] = sum(1 for _ in handle)
     with open(cfg.BRIDGE_PATH, encoding="utf-8") as handle:

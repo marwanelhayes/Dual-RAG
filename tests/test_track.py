@@ -78,3 +78,50 @@ def test_signal_metrics_count_mentions_names_fills_and_gold_recall():
     assert metrics["signals.with_source"] == 1
     assert metrics["signals.with_description"] == 2
     assert metrics["signals.axi_channel_recall"] == 0.5
+
+
+def _declaration(kind, module, name, width=None, writers=()):
+    prefix = {"PORT": "port", "SIGNAL": "sig", "PARAMETER": "param"}[kind]
+    return {"signal_id": f"rtl::{prefix}::{module}::{name}", "construct_type": kind,
+            "width": width, "writer_sites": list(writers)}
+
+
+def test_rtl_metrics_count_records_and_rate_resolution():
+    child = {"ports": [_declaration("PORT", "child", "a", 1), _declaration("PORT", "child", "b")],
+             "signals": [], "parameters": [_declaration("PARAMETER", "child", "N", 32)],
+             "instances": [], "always_blocks": [], "functions_tasks": [],
+             "assignment_groups": [], "other_blocks": []}
+    top = {"ports": [_declaration("PORT", "top", "x", 1)],
+           "signals": [_declaration("SIGNAL", "top", "s", 1, writers=[{}]),
+                       _declaration("SIGNAL", "top", "t", 1)],
+           "parameters": [],
+           "instances": [{"bindings": [
+               {"formal_signal_id": "rtl::port::child::a", "actual_signals": ["s"],
+                "actual_signal_ids": ["rtl::sig::top::s"]},
+               {"formal_signal_id": "rtl::port::child::zz", "actual_signals": ["t", "u"],
+                "actual_signal_ids": ["rtl::sig::top::t"]}]}],
+           "always_blocks": [{"construct_type": "ALWAYS_FF"}], "functions_tasks": [],
+           "assignment_groups": [{"construct_type": "ASSIGNMENT_GROUP"}], "other_blocks": []}
+    rtl = {"modules": {"child": child, "top": top}, "tree": [{}, {}],
+           "enums": [{"items": [{"usage_sites": [{}, {}]}, {"usage_sites": []}]}],
+           "warnings": [{"code": "WIDTHEXPAND"}, {"code": "WIDTHEXPAND"}]}
+
+    metrics = track.rtl_metrics(rtl)
+
+    assert metrics["rtl.modules"] == 2
+    assert metrics["rtl.ports"] == 3
+    assert metrics["rtl.signals"] == 2
+    assert metrics["rtl.parameters"] == 1
+    assert metrics["rtl.instances"] == 1
+    assert metrics["rtl.bindings"] == 2
+    assert metrics["rtl.blocks.ALWAYS_FF"] == 1
+    assert metrics["rtl.blocks.ASSIGNMENT_GROUP"] == 1
+    assert metrics["rtl.enums"] == 1
+    assert metrics["rtl.enum_items"] == 2
+    assert metrics["rtl.enum_usage_sites"] == 2
+    assert metrics["rtl.tree_nodes"] == 2
+    assert metrics["rtl.warnings.WIDTHEXPAND"] == 2
+    assert metrics["rtl.declarations_with_width_rate"] == 5 / 6
+    assert metrics["rtl.bindings_formal_resolved_rate"] == 0.5
+    assert metrics["rtl.bindings_actuals_resolved_rate"] == 0.5
+    assert metrics["rtl.signals_with_writer_rate"] == 0.5
