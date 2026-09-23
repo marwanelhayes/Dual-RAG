@@ -20,14 +20,15 @@ class OutlineDocument:
 
     page_count = 20
 
-    def get_toc(self):
-        """Return a deterministic two-level outline."""
-        return [
+    def get_toc(self, simple=True):
+        """Return a deterministic two-level outline, with empty destinations if asked."""
+        toc = [
             (1, "1 Floating Point Unit", 2),
             (2, "1.1 Interface signals", 3),
             (2, "1.2 Rounding", 5),
             (1, "2 Exceptions", 8),
         ]
+        return toc if simple else [(*entry, {}) for entry in toc]
 
 
 def test_outline_builds_inline_document_section_subsection_hierarchy_only():
@@ -238,7 +239,7 @@ class UnoutlinedDocument:
         """Return one page by zero-based index."""
         return self._pages[index]
 
-    def get_toc(self):
+    def get_toc(self, simple=True):
         """Report an absent outline."""
         return []
 
@@ -467,3 +468,26 @@ def test_fallback_heading_scores_match_outline_by_title_and_page():
         "fallback_heading_precision": 0.5, "fallback_heading_recall": 0.5,
         "fallback_heading_f1": 0.5}
     assert ingest.fallback_heading_scores([], toc)["fallback_heading_f1"] == 0.0
+
+
+def test_sections_are_cut_at_outline_points_not_by_title_text(tmp_path):
+    """The printed heading differs from the outline title; the short section survives."""
+    import fitz
+
+    path = tmp_path / "points.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "1 Alpha", fontsize=12)
+    page.insert_text((72, 130), "Alpha body says AWVALID stays high until AWREADY.", fontsize=10)
+    page.insert_text((72, 400), "2. Beta", fontsize=12)
+    page.insert_text((72, 430), "Beta is short.", fontsize=10)
+    doc.set_toc([
+        [1, "1 Alpha", 1, {"kind": fitz.LINK_GOTO, "to": fitz.Point(0, 85)}],
+        [1, "2 Beta Section", 1, {"kind": fitz.LINK_GOTO, "to": fitz.Point(0, 385)}]])
+    doc.save(path)
+
+    _, _, records = ingest.ingest_pdf(path)
+    by_section = {record["section_name"]: record["text"] for record in records}
+
+    assert "Alpha body" in by_section["Alpha"] and "Beta" not in by_section["Alpha"]
+    assert "Beta is short." in by_section["Beta Section"]

@@ -30,7 +30,6 @@ MAX_CHUNK_CHARS = 800
 # Row windows stay under the encoder's 512 tokens at the densest observed table.
 MAX_TABLE_CHUNK_CHARS = 640
 OVERLAP_SENTENCES = 2
-MIN_SECTION_CHARS = 80
 REVISION_SCAN_PAGES = 4
 
 # Sample enough pages to detect recurring PDF headers and footers cheaply.
@@ -38,6 +37,8 @@ FURNITURE_SAMPLE_PAGES = 40
 FURNITURE_THRESHOLD = 0.6
 # Header and footer blocks sit within this many points of their recurring band edge.
 FURNITURE_BAND_TOLERANCE = 2
+# A heading block may start this many points above its outline destination point.
+HEADING_POINT_SLACK = 2
 
 # Table geometry is measured in PDF points.
 COLUMN_GAP = 25

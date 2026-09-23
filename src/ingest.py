@@ -271,6 +271,26 @@ def _subtree_end_page(toc, index, level, page_count):
     return page_count
 
 
+def _outline_y(doc, page, dest):
+    """Return an outline entry's destination height in top-down page coordinates.
+
+    Args:
+        doc: an open fitz.Document.
+        page: One-based destination page.
+        dest: ``get_toc(simple=False)`` destination dict.
+
+    Returns:
+        The destination y, 0.0 (page top) when the entry carries no point.
+    """
+    point = dest.get("to")
+    if point is None or not 1 <= page <= doc.page_count:
+        return 0.0
+    # Named destinations keep PDF's bottom-up coordinates; GOTO ones arrive flipped.
+    if dest.get("kind") == fitz.LINK_NAMED:
+        point = point * doc[page - 1].transformation_matrix
+    return max(point.y, 0.0)
+
+
 def build_sections(doc, doc_id, doc_name):
     """Turn the PDF outline into inline-linked section and subsection records.
 
@@ -284,12 +304,16 @@ def build_sections(doc, doc_id, doc_name):
         children, and true siblings.
     """
     # Some PDFs ship no outline at all, so recover one from the page typography.
-    toc = doc.get_toc() or detect_headings(doc)
+    points = ([(level, title, page, _outline_y(doc, page, dest))
+               for level, title, page, dest in doc.get_toc(simple=False)]
+              or [(level, title, page, 0.0) for level, title, page in detect_headings(doc)])
+    toc = [(level, title, page) for level, title, page, _ in points]
     nodes = []
-    for i, (level, title, page) in enumerate(toc):
+    for i, (level, title, page, y) in enumerate(points):
         number, name = parse_section_number(title)
-        # Own prose ends at any next heading; the subtree ends at a peer or ancestor.
-        own_end = toc[i + 1][2] if i + 1 < len(toc) else doc.page_count
+        # Own prose ends at the next heading's point; the subtree ends at a peer or ancestor.
+        own_end, own_end_y = (points[i + 1][2], points[i + 1][3]) if i + 1 < len(points) \
+            else (doc.page_count, None)
         end_page = _subtree_end_page(toc, i, level, doc.page_count)
         nodes.append({
             "node_id": f"{doc_id}::sec::{i:04d}",
@@ -304,6 +328,8 @@ def build_sections(doc, doc_id, doc_name):
             "end_page": max(end_page, page),
             "own_start_page": max(page, 1),
             "own_end_page": max(own_end, page),
+            "start_y": y,
+            "own_end_y": own_end_y,
         })
 
     # Rebuild the hierarchy in one pass by remembering the latest node at each depth.
@@ -359,7 +385,8 @@ def repeated_lines(doc, sample=cfg.FURNITURE_SAMPLE_PAGES):
             if line:
                 counts[line] = counts.get(line, 0) + 1
     threshold = len(pages) * cfg.FURNITURE_THRESHOLD
-    return {line for line, c in counts.items() if c >= threshold}
+    # Recurring means on two pages at least; one page cannot show a pattern.
+    return {line for line, c in counts.items() if c >= max(threshold, 2)}
 
 
 def furniture_bands(doc):
@@ -383,7 +410,8 @@ def furniture_bands(doc):
     edges = []
     for counts in (tops, bottoms):
         edge, count = counts.most_common(1)[0] if counts else (None, 0)
-        edges.append(edge if count >= threshold else None)
+        # Recurring means on two pages at least; one page cannot show a pattern.
+        edges.append(edge if count >= max(threshold, 2) else None)
     return tuple(edges)
 
 
@@ -444,7 +472,7 @@ def _clean_pdf_text(raw, furniture):
         furniture: Repeated header and footer lines to remove.
 
     Returns:
-        Cleaned single-line text with layout artefacts removed.
+        Cleaned text with layout artefacts removed and line breaks kept.
     """
     kept = []
     for line in raw.splitlines():
@@ -457,39 +485,37 @@ def _clean_pdf_text(raw, furniture):
     text = "\n".join(kept)
     text = re.sub(r"(?:\.\s*){4,}", " ", text)
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
-    text = re.sub(r"\n+", " ", text)
-    return re.sub(r"\s{2,}", " ", text).strip()
+    # Newlines survive until sentence splitting.
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
-def section_page_texts(doc, sec, furniture, next_title=None, bands=(None, None)):
-    """Extract a section as ``(page, text)`` spans without erasing provenance.
+def section_page_texts(doc, sec, furniture, bands=(None, None)):
+    """Extract a section as ``(page, text)`` spans cut at outline destination points.
 
     Args:
         doc: Open PDF document containing the section.
-        sec: Section node whose own page range should be read.
+        sec: Section node carrying its start and own-end ``(page, y)`` points.
         furniture: Repeated header and footer lines to remove.
-        next_title: Following outline title used to stop shared-page extraction.
         bands: Header and footer band edges from ``furniture_bands``.
 
     Returns:
         Non-empty ``(one-based page, cleaned text)`` spans in page order.
     """
+    start = (sec["own_start_page"], sec["start_y"])
+    end = (sec["own_end_page"], sec["own_end_y"])
     spans = []
-    pages = range(sec["own_start_page"] - 1, min(sec["own_end_page"], doc.page_count))
-    for page_index in pages:
-        text = _clean_pdf_text(page_text(doc[page_index], bands), furniture)
-        if page_index == pages.start:
-            start = text.find(sec["raw_title"])
-            if start != -1:
-                text = text[start + len(sec["raw_title"]):].strip()
-            # Keep first-page text when the PDF does not reproduce its outline title.
-        stop = text.find(next_title) if next_title else -1
-        if stop != -1:
-            text = text[:stop].strip()
+    for number in range(sec["own_start_page"], min(sec["own_end_page"], doc.page_count) + 1):
+        kept = []
+        for block in doc[number - 1].get_text("blocks"):
+            if block[6] != 0 or _is_furniture(block, bands):
+                continue
+            # A block belongs to the section whose point sits at or just above its top.
+            at = (number, block[1] + cfg.HEADING_POINT_SLACK)
+            if at >= start and (end[1] is None or at < end):
+                kept.append(block[4])
+        text = _clean_pdf_text("".join(kept), furniture)
         if text:
-            spans.append((page_index + 1, text))
-        if stop != -1:
-            break
+            spans.append((number, text))
     return spans
 
 
@@ -859,7 +885,7 @@ def split_sentences(text):
     parts = _SENTENCE_END.split(text)
     sentences = []
     for part in parts:
-        part = part.strip()
+        part = " ".join(part.split())
         if not part:
             continue
         # Abbreviations and bare initials/digits are false sentence endings.
@@ -925,13 +951,11 @@ def ingest_pdf(path):
     tables = build_tables(doc, doc_id, doc_name, nodes)
 
     records = []
-    for i, sec in enumerate(nodes):
+    for sec in nodes:
         if sec["section_name"].strip().lower() in cfg.SKIP_TITLES:
             continue
-        next_title = nodes[i + 1]["raw_title"] if i + 1 < len(nodes) else None
-        page_texts = section_page_texts(doc, sec, furniture, next_title, bands)
-        text = " ".join(page_text for _, page_text in page_texts)
-        if len(text) < cfg.MIN_SECTION_CHARS:  # front matter, contents and empty stubs
+        page_texts = section_page_texts(doc, sec, furniture, bands)
+        if not page_texts:
             continue
         # Breadcrumbs disambiguate otherwise context-free paragraphs for embedding.
         header = f"{doc_name} > " + " > ".join(sec["path"])
