@@ -9,7 +9,6 @@ sentence-transformers>=3.0
 faiss-cpu>=1.8            # the index runs on CPU; only the encoder uses the GPU
 langchain-core>=0.3      # Document, the Embeddings protocol
 langchain-community>=0.3 # the FAISS vector-store wrapper
-langchain-text-splitters>=0.3 # sentence splitting and the windowing splitter base
 
 # Local LLM client and tests
 httpx>=0.27              # one bounded local reasoning call after deterministic retrieval

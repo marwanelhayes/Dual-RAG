@@ -6,14 +6,12 @@ Run ``python src/ingest.py`` to read ``Ingest/*.pdf`` and write
 
 import collections
 import json
-import logging
 import re
 from operator import itemgetter
 from pathlib import Path
 from string import ascii_uppercase
 
 import fitz  # PyMuPDF
-from langchain_text_splitters import CharacterTextSplitter, TextSplitter
 
 import configure as cfg
 import roles
@@ -780,10 +778,7 @@ def enrich_spec_record(record):
     return record
 
 
-# A cap below any sentence forces one sentence per split; mute the resulting per-chunk notice.
-logging.getLogger("langchain_text_splitters.base").setLevel(logging.ERROR)
-_SENTENCE_SPLITTER = CharacterTextSplitter(
-    separator=r"(?<=[.!?])\s+", is_separator_regex=True, chunk_size=1, chunk_overlap=0)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
 def split_sentences(text):
@@ -796,7 +791,7 @@ def split_sentences(text):
         list of sentence strings, whitespace-normalised, empties dropped.
     """
     # Keep this stage offline; overlap absorbs occasional regex miscuts of spec tokens.
-    parts = _SENTENCE_SPLITTER.split_text(text)
+    parts = _SENTENCE_END.split(text)
     sentences = []
     for part in parts:
         part = part.strip()
@@ -811,49 +806,6 @@ def split_sentences(text):
                 continue
         sentences.append(part)
     return sentences
-
-
-class SentenceWindowSplitter(TextSplitter):
-    """LangChain splitter packing sentences into character-capped windows.
-
-    The overlap is counted in whole sentences rather than characters, so a chunk
-    boundary never lands mid-sentence and citations stay quotable.
-    """
-
-    def __init__(self, chunk_size=cfg.MAX_CHUNK_CHARS, overlap_sentences=cfg.OVERLAP_SENTENCES):
-        """Configure the character cap and the sentence-counted overlap.
-
-        Args:
-            chunk_size: soft character cap per chunk.
-            overlap_sentences: trailing sentences of chunk N that open chunk N+1.
-
-        Returns:
-            None.
-        """
-        super().__init__(chunk_size=chunk_size, chunk_overlap=0)
-        self.overlap_sentences = overlap_sentences
-
-    def split_units(self, sentences):
-        """Window pre-split sentences, keeping any per-sentence payload intact.
-
-        Args:
-            sentences: sentence strings, or ``(sentence, page)`` pairs.
-
-        Returns:
-            list of chunks, each a list of the input units.
-        """
-        return sliding_window_chunks(sentences, self._chunk_size, self.overlap_sentences)
-
-    def split_text(self, text):
-        """Split raw text into windowed chunks, as the LangChain API expects.
-
-        Args:
-            text: cleaned section text.
-
-        Returns:
-            list of chunk strings.
-        """
-        return [" ".join(chunk) for chunk in self.split_units(split_sentences(text))]
 
 
 def sliding_window_chunks(sentences, max_chars=cfg.MAX_CHUNK_CHARS, overlap=cfg.OVERLAP_SENTENCES):
@@ -885,9 +837,6 @@ def sliding_window_chunks(sentences, max_chars=cfg.MAX_CHUNK_CHARS, overlap=cfg.
         # Reopen the next chunk with the configured trailing overlap.
         i = max(j - overlap, i + 1)
     return chunks
-
-
-_WINDOW_SPLITTER = SentenceWindowSplitter()
 
 
 def ingest_pdf(path):
@@ -922,7 +871,7 @@ def ingest_pdf(path):
         header = f"{doc_name} ({revision}) > " + " > ".join(sec["path"])
         sentences = [(sentence, page) for page, page_text in page_texts
                      for sentence in split_sentences(page_text)]
-        for k, chunk in enumerate(_WINDOW_SPLITTER.split_units(sentences)):
+        for k, chunk in enumerate(sliding_window_chunks(sentences)):
             body = " ".join(sentence for sentence, _ in chunk)
             chunk_pages = [page for _, page in chunk]
             # Deterministic IDs support stable vector-store updates.

@@ -361,3 +361,22 @@ def test_prose_opening_with_a_table_reference_is_not_a_caption():
 
 def test_continued_table_banner_is_not_a_caption():
     assert not ingest._CAPTION.match("Table A15.3 \u2013 Continued from previous page")
+
+
+def test_split_sentences_splits_on_terminal_punctuation_and_rejoins_false_endings():
+    text = "Hello world.  Next one!\nThird? See e.g. the table. Bit A. Done.   "
+
+    assert ingest.split_sentences(text) == [
+        "Hello world.", "Next one!", "Third?", "See e.g. the table.", "Bit A. Done."]
+    assert ingest.split_sentences("   ") == []
+
+
+def test_ingest_does_not_load_langchain_text_splitters():
+    import subprocess
+    import sys
+
+    probe = "import ingest, sys; print('langchain_text_splitters' in sys.modules)"
+    result = subprocess.run([sys.executable, "-c", probe], cwd=Path(ingest.__file__).parent,
+                            capture_output=True, text=True, check=True)
+
+    assert result.stdout.strip() == "False"
