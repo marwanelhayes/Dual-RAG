@@ -221,6 +221,26 @@ def detect_headings(doc):
             for depth, size, text, page in candidates]
 
 
+def fallback_heading_scores(detected, toc):
+    """Score typographic heading detection against a real outline.
+
+    Args:
+        detected: ``detect_headings`` output as ``(level, title, page)`` triples.
+        toc: The PDF's own outline in the same shape.
+
+    Returns:
+        Precision, recall, and F1 of ``(normalized title, page)`` matches.
+    """
+    found = {(_normalized_heading(title), page) for _, title, page in detected}
+    truth = {(_normalized_heading(title), page) for _, title, page in toc}
+    hits = len(found & truth)
+    precision = hits / len(found) if found else 0.0
+    recall = hits / len(truth) if truth else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if hits else 0.0
+    return {"fallback_heading_precision": precision, "fallback_heading_recall": recall,
+            "fallback_heading_f1": f1}
+
+
 def _normalized_heading(text):
     """Return a heading's comparison form, ignoring spacing and part labels.
 
@@ -1006,7 +1026,7 @@ def hierarchy_document(path, revision, page_count, sections, furniture=None):
         revision: Deterministically extracted document revision.
         page_count: Number of pages in the source PDF.
         sections: Inline-linked outline records belonging to the document.
-        furniture: Optional ``furniture_counts`` report for the document.
+        furniture: Optional ingest report (furniture counts, fallback heading scores).
 
     Returns:
         A document record with its complete section list nested inline.
@@ -1049,8 +1069,12 @@ def main():
         revision = records[0]["revision"] if records else "unknown"
         all_records.extend(records)
         with fitz.open(path) as document:
+            report = furniture_counts(document)
+            if document.get_toc():  # validate the no-outline fallback where truth exists
+                report.update(fallback_heading_scores(
+                    detect_headings(document), document.get_toc()))
             documents.append(hierarchy_document(path, revision, document.page_count, nodes,
-                                                furniture_counts(document)))
+                                                report))
         prose = [r for r in records if r["chunk_type"] == "prose"]
         avg = sum(len(r["text"]) for r in prose) // max(len(prose), 1)
         n_tab = len(records) - len(prose)

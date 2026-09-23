@@ -457,3 +457,13 @@ def test_hierarchy_document_records_furniture_counts():
 
     assert document["furniture_blocks_stripped"] == 9
     assert document["furniture_text_only_hits"] == 0
+
+
+def test_fallback_heading_scores_match_outline_by_title_and_page():
+    toc = [(1, "1 Intro", 1), (2, "1.1 Scope", 2)]
+    detected = [(1, "1  intro", 1), (1, "Signal Width", 3)]
+
+    assert ingest.fallback_heading_scores(detected, toc) == {
+        "fallback_heading_precision": 0.5, "fallback_heading_recall": 0.5,
+        "fallback_heading_f1": 0.5}
+    assert ingest.fallback_heading_scores([], toc)["fallback_heading_f1"] == 0.0
