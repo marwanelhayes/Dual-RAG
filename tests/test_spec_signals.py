@@ -2,7 +2,8 @@
 
 import json
 
-import naming
+import pytest
+
 import spec_signals
 
 
@@ -45,9 +46,7 @@ def test_unknown_width_and_non_direction_are_preserved_without_inference():
         [["result", "DATA_WIDTH", "Manager", "result bus"]])])
 
     assert signals[0]["width"] == "DATA_WIDTH"
-    assert signals[0]["width_source"] == "DATA_WIDTH"
     assert signals[0]["direction"] is None
-    assert signals[0]["direction_source"] == "Manager"
     assert signals[0]["description"] == "result bus"
 
 
@@ -111,16 +110,8 @@ def test_build_and_save_are_idempotent(tmp_path):
     assert first == second
     assert path.read_bytes() == first_bytes
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == spec_signals.SCHEMA_VERSION
+    assert payload["schema_version"] == spec_signals.SCHEMA_VERSION == 5
     assert payload["signals"] == first
-
-
-def test_neutral_module_normalization_expands_configured_abbreviations():
-    assert naming.normalize_identifier("fpuTopWrapper") == "fpu_top_wrapper"
-    assert naming.identifier_tokens("fpu_top_wrapper") == [
-        "floating", "point", "unit", "top", "wrapper"]
-    assert naming.normalize_module_name("FPU_top_wrapper") == \
-        "floating point unit top wrapper"
 
 
 def test_register_address_listings_yield_register_field_rows():
@@ -146,3 +137,21 @@ def test_name_only_property_tables_stay_out_without_an_address_column():
     properties["caption"] = "Resource plane properties"
 
     assert spec_signals.build_spec_signals([properties]) == []
+
+
+def test_signal_records_carry_no_unread_fields():
+    """Keep only fields some reader uses; these four had none."""
+    signals = spec_signals.build_spec_signals([table_chunk(
+        ["Signal", "Width", "Direction"], [["rm_i", "3", "input"]])])
+
+    assert not {"signal_name", "content_hash", "width_source",
+                "direction_source"} & set(signals[0])
+
+
+def test_table_chunk_missing_a_contract_field_fails_loudly():
+    """Ingest guarantees document_id on every chunk; a gap is an ingest bug."""
+    record = table_chunk(["Signal"], [["rm_i"]])
+    del record["document_id"]
+
+    with pytest.raises(KeyError):
+        spec_signals.build_spec_signals([record])

@@ -22,3 +22,11 @@ def test_project_vocabulary_reaches_the_neutral_normalizer_through_config():
         "program", "counter", "source", "e"]
     assert naming.identifier_tokens("csr_file") == [
         "control", "status", "register", "file"]
+
+
+def test_neutral_module_normalization_expands_configured_abbreviations():
+    assert naming.normalize_identifier("fpuTopWrapper") == "fpu_top_wrapper"
+    assert naming.identifier_tokens("fpu_top_wrapper") == [
+        "floating", "point", "unit", "top", "wrapper"]
+    assert naming.normalize_module_name("FPU_top_wrapper") == \
+        "floating point unit top wrapper"

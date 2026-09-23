@@ -5,10 +5,10 @@ import json
 import re
 
 import configure as cfg
-from embed import content_hash, load_chunks
+from embed import load_chunks
 from naming import identifier_tokens, normalize_identifier
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 EXPLICIT_NAME_HEADERS = frozenset({"signal", "signal name", "port", "port name"})
@@ -201,24 +201,20 @@ def _signal_record(record, signal_id, name, row_kind, row_index, **stated):
     Returns:
         A signal record whose keys are in stable serialization order.
     """
-    document_id = record.get("document_id") or str(record.get("chunk_id", "")).split("#", 1)[0]
     signal = {
         "signal_id": signal_id,
         "id": signal_id,
-        "signal_name": name,
         "name": name,
         "original_name": name,
         "normalized_name": normalize_identifier(name),
         "normalized_tokens": identifier_tokens(name),
         "width": None,
-        "width_source": None,
         "direction": None,
-        "direction_source": None,
         "source_role": None,
         "source_role_source": None,
         "row_kind": row_kind,
         "description": None,
-        "document_id": document_id,
+        "document_id": record["document_id"],
         "section_id": record.get("section_id"),
         "section_title": record.get("section_title"),
         "subsection_id": record.get("subsection_id"),
@@ -227,9 +223,9 @@ def _signal_record(record, signal_id, name, row_kind, row_index, **stated):
         "table_label": None,
         "table_caption": None,
         "row_index": row_index,
-        "page": record.get("page", record.get("start_page")),
-        "source_file": record.get("source_file") or record.get("doc_name"),
-        "chunk_id": record.get("chunk_id"),
+        "page": record["page"],
+        "source_file": record["source_file"],
+        "chunk_id": record["chunk_id"],
     }
     # Updating in place keeps the key order above, which the artifact diff depends on.
     signal.update(stated)
@@ -247,8 +243,8 @@ def signals_from_table(record):
     """
     if record.get("chunk_type") != "table":
         return []
-    columns = record.get("columns") or []
-    rows = record.get("rows") or []
+    columns = record["columns"]
+    rows = record["rows"]
     explicit_index = _column_index(columns, EXPLICIT_NAME_HEADERS)
     instruction_index = _column_index(columns, INSTRUCTION_HEADERS)
     name_index = next((index for index in (explicit_index, instruction_index,
@@ -273,9 +269,9 @@ def signals_from_table(record):
     else:
         row_kind = PORT_ROW if caption_is_signal_table else REGISTER_FIELD_ROW
     description_index = _column_index(columns, DESCRIPTION_HEADERS)
-    document_id = record.get("document_id") or record["chunk_id"].split("#", 1)[0]
-    table_id = record.get("table_id") or next(iter(record.get("table_ids", [])), None)
-    table_label = record.get("table_label")
+    document_id = record["document_id"]
+    table_id = record["table_id"]
+    table_label = record["table_label"]
     signals = []
     occurrences = {}
     for row_index, row in enumerate(rows, start=1):
@@ -297,14 +293,10 @@ def signals_from_table(record):
                      or parse_direction(_cell(row, source_index)))
         signal = _signal_record(
             record, signal_id, original_name, row_kind, row_index,
-            width=parse_width(width_source), width_source=width_source,
-            direction=direction, direction_source=direction_source,
+            width=parse_width(width_source), direction=direction,
             source_role=source_role, source_role_source=source_role_source,
-            description=_cell(row, description_index), document_id=document_id,
-            table_id=table_id, table_label=table_label, table_caption=record.get("caption"))
-        signal["content_hash"] = content_hash(
-            signal_id, json.dumps(row, ensure_ascii=False),
-            str(signal.get("section_id") or ""), str(signal.get("page") or ""))
+            description=_cell(row, description_index),
+            table_id=table_id, table_label=table_label, table_caption=record["caption"])
         signals.append(signal)
     return signals
 
@@ -333,11 +325,7 @@ def instructions_from_prose(record):
             continue
         seen.add(normalized_name)
         signal_id = f"spec::instruction::{document_id}::{normalized_name}"
-        signal = _signal_record(record, signal_id, name, INSTRUCTION_ROW, len(found) + 1,
-                                document_id=document_id)
-        signal["content_hash"] = content_hash(
-            signal_id, name, str(signal.get("section_id") or ""), str(signal.get("page") or ""))
-        found.append(signal)
+        found.append(_signal_record(record, signal_id, name, INSTRUCTION_ROW, len(found) + 1))
     return found
 
 
@@ -361,7 +349,6 @@ def build_spec_signals(records):
             seen.add(signal["signal_id"])
             if signal["width"] is None and signal["normalized_name"] in stated:
                 signal["width"] = stated[signal["normalized_name"]]
-                signal["width_source"] = "prose bit range"
             signals.append(signal)
     for record in records:
         for signal in instructions_from_prose(record):
