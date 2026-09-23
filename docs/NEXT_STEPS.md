@@ -8,7 +8,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-11).
 
 ## Where we are
 
-Branch `simplify`, head `71e2a3a` (+ docs). Decision metric: `retrieval.spec.section_recall_at_k`.
+Branch `simplify`, head `9a1b46e`. Tests: 249 passed. Decision metric: `retrieval.spec.section_recall_at_k`.
 
 | Step | Commit | MLflow run | section recall | Notes |
 |---|---|---|---|---|
@@ -73,17 +73,26 @@ test PDFs have points but no printed heading, and it would delete body text.
 
 ## Then
 
-1. Ingest steps 10-15 in `docs/specs/ingest.md` (10 prose excludes tables, 11 table owner by
+Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
+ending "... going for rtl_embed.py".
+
+1. **Walk `rtl_embed.py`** (next in `build.py` stage order). Carry-overs from the
+   `rtl_ingest` walk, done in the same steps as their readers:
+   - RTL file paths become POSIX paths relative to `RTL_DIR` (`rtl_ingest` writes them;
+     `rtl_embed.py:309` and `:488` open them).
+   - Drop the lines copying `clock`, `reset`, `content_hash` into chunk metadata
+     (`rtl_embed.py:177`, `:366`, `:457-459`); `rtl.json` no longer has them.
+   - Fix the fixture binding at `tests/test_rtl_embed.py:89` (still `formal` / `actual_refs`).
+2. Ingest steps 10-15 in `docs/specs/ingest.md` (10 prose excludes tables, 11 table owner by
    position, 12 continuations, 12b wrapped cells, 13 code-line split, 14 token caps, 15
-   sweep). Step 13 uses the newlines step 9 now keeps.
-2. spec_signals s2-s7 after the ingest queue (row deltas attributable).
-3. `embed.py` walked and executed 2026-09-23 (e0-e5, [`docs/specs/embed.md`](specs/embed.md)):
-   spec and RTL indexes are Chroma.
-4. `rtl_ingest.py` walked and executed 2026-09-23 (r0-r5,
-   [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md)); every rtl.* metric unchanged except bytes.
-   Next walk: `rtl_embed.py`. It also switches RTL paths to `RTL_DIR`-relative, drops its
-   `clock` / `reset` / `content_hash` copy lines, and fixes the `test_rtl_embed.py:89` fixture
-   binding that still uses the removed `formal` / `actual_refs` keys.
+   sweep). Step 13 uses the newlines step 9 keeps; step 14 also closes DF-09 (52 chunks over
+   512 tokens).
+3. spec_signals s2-s7 after the ingest queue (row deltas attributable).
+4. Then `bridge.py`, `retrieve.py` / `agent.py` walks.
+
+Done this session (2026-09-23): step 9b, `embed.py` walk + e0-e5 (Chroma),
+`rtl_ingest.py` walk + r0-r5. Specs: [`embed.md`](specs/embed.md),
+[`rtl_ingest.md`](specs/rtl_ingest.md).
 
 ## Pending consolidation (bridge / agent walk)
 
@@ -92,6 +101,15 @@ drop `section_id`, `section_title`, `subsection_id`, `subsection_title`, `id`,
 `original_name`, `row_kind`, `direction`, `source_role`, `source_role_source`. Open
 duplicate: `doc_name` and `source_file` hold the same filename. Document authority (kept)
 is revisited at the `retrieve.py` walk.
+
+## Pending consolidation (embed / rtl, by consumer walk)
+
+- `rtl_embed`: RTL paths relative to `RTL_DIR`; drop `clock` / `reset` / `content_hash`
+  copies; alias pairs `file` / `file_path`, `line` / `start_line`, `symbol_name` /
+  `original_name`, `instance_id` / `construct_id` (also bridge, agent).
+- `bridge`: `enum_usage` moves here or is dropped; `naming.py` judged here.
+- `retrieve`: `langchain_core.documents.Document` as hit type; `VectorStore.load(records)`.
+- `agent`: the embed manifest (freshness guard) is revisited.
 
 ## Known issues noted, not fixed
 
@@ -102,5 +120,8 @@ is revisited at the `retrieve.py` walk.
 - `bench._chunk_family` treats an unwindowed table's label as a window suffix, so
   `family_recall_at_k` counts any table of the document as a hit (superseded as a decision
   metric by section recall).
+- `SPEC_AXI_WLAST` is 0 since step 9: waveform 7.6 outranks spec A3.2.1.
+- `faiss-cpu` and `langchain-community` left `requirements.txt` but are still installed in
+  `.venv`; `pip uninstall` them when convenient.
 - `.gitignore` is itself ignored, so un-ignore lines are local only; tracked eval files were
   added with `git add -f`.
