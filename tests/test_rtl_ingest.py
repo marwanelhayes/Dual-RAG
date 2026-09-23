@@ -216,14 +216,13 @@ def test_modules_are_deduplicated_normalized_and_source_complete(tmp_path, monke
     required = {
         "original_name", "normalized_name", "normalized_tokens", "file", "start_line",
         "end_line", "ports", "signals", "instances", "functions_tasks", "always_blocks",
-        "assignment_groups", "source_code", "content_hash",
+        "assignment_groups", "source_code",
     }
     assert required <= set(module)
     assert module["normalized_name"] == "parent"
     assert module["start_line"] == 1 and module["end_line"] == 24
     assert module["source_code"].startswith("module parent;")
     assert module["source_code"].rstrip().endswith("endmodule")
-    assert module["content_hash"]
 
 
 def test_signal_metadata_has_compiler_type_width_and_deterministic_sites(tmp_path, monkeypatch):
@@ -332,4 +331,13 @@ def _records(artifact):
 
 def test_records_carry_no_removed_fields(tmp_path, monkeypatch):
     for kind, record in _records(built(tmp_path, monkeypatch)):
-        assert not REMOVED_FIELDS.get(kind, set()) & set(record), kind
+        assert not (REMOVED_FIELDS.get(kind, set()) | {"content_hash"}) & set(record), kind
+
+
+def test_rtl_ingest_does_not_import_the_spec_stage():
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(ri.__file__).read_text(encoding="utf-8"))
+    assert "ingest" not in {node.module for node in ast.walk(tree)
+                            if isinstance(node, ast.ImportFrom)}

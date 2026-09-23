@@ -9,7 +9,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import configure as cfg
-from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier, normalize_module_name
 
 
@@ -374,9 +373,6 @@ def enum_types(root, files):
             "normalized_name": normalize_identifier(name),
             "normalized_tokens": identifier_tokens(name),
             "items": items,
-            "content_hash": content_hash(
-                enum_id, *(f"{item['original_name']}={item['value_source']}"
-                           for item in items)),
         }
     return [records[enum_id] for enum_id in sorted(records)]
 
@@ -516,9 +512,6 @@ def _assign_symbol_ids(candidates):
                 scope = "::".join([*record["_scopes"], position])
                 symbol_id = f"{base}::{scope}"
             record["signal_id"] = symbol_id
-            record["content_hash"] = content_hash(
-                record["construct_type"], record["module_name"], record["symbol_name"],
-                str(record["start_line"]), record["source_text"])
             record.pop("_scopes")
             record.pop("_raw_loc")
             records.append(record)
@@ -804,8 +797,6 @@ def _instance_record(node, element, module, files, symbols, parents):
             "start_line": port_loc[1],
             "end_line": port_loc[2],
             "source_text": citation,
-            "content_hash": content_hash(module, instance_name, formal,
-                                         str(port_loc[1]), citation),
         })
     source_text = read_lines(path, located[1], located[2])
     return {
@@ -825,8 +816,6 @@ def _instance_record(node, element, module, files, symbols, parents):
         "end_line": located[2],
         "hierarchical_path": [module, *scopes, instance_name],
         "source_text": source_text,
-        "content_hash": content_hash("INSTANCE", module, instance_name,
-                                     target, str(located[1]), source_text),
         "bindings": bindings,
     }
 
@@ -897,8 +886,6 @@ def _block_record(node, module, element, files, parents):
         "signals_read": read,
         "signals_written": written,
         "sensitivity": sensitivity,
-        "content_hash": content_hash(_block_type(kind, source_text), module,
-                                     str(first), str(last), source_text),
     }
 
 
@@ -942,9 +929,6 @@ def _assignment_groups(module, records):
     for group in groups:
         group["block_id"] = (f"rtl::assign_group::{module}::"
                              f"{group['start_line']}-{group['end_line']}")
-        group["content_hash"] = content_hash(
-            "ASSIGNMENT_GROUP", module, str(group["start_line"]),
-            str(group["end_line"]), group["source_code"])
     return groups
 
 
@@ -1030,9 +1014,6 @@ def modules(root, files, declarations=None):
         entry["other_blocks"] = [block for block in blocks if block["kind"] == "initial"]
         entry["instances"] = sorted(entry.pop("_instances").values(),
                                     key=lambda item: (item["start_line"], item["original_name"]))
-        entry["content_hash"] = content_hash(
-            "MODULE", name, str(entry["start_line"]), str(entry["end_line"]),
-            entry["source_code"])
     return dict(sorted(out.items()))
 
 
