@@ -64,10 +64,7 @@ def test_spec_chunk_contract_contains_every_required_provenance_field():
         "subsection_title": "Write address",
         "start_page": 12,
         "end_page": 12,
-        "tables_cited": [{
-            "label": "A3.2", "table_id": "axi_spec::table::A3.2",
-            "resolved": True,
-        }],
+        "table_ids": ["axi_spec::table::A3.2"],
         "text": "AWVALID remains asserted until AWREADY.",
     })
 
@@ -112,7 +109,7 @@ def test_table_chunk_lists_itself_in_table_ids():
         "table_id": "fpu_spec::table::2.1", "section_id": "fpu_spec::sec::0000",
         "section_title": "Floating Point Unit", "subsection_id": None,
         "subsection_title": None, "start_page": 4, "end_page": 4,
-        "tables_cited": [], "text": "| Signal | Width |\n|---|---|\n| rm_i | 3 |",
+        "text": "| Signal | Width |\n|---|---|\n| rm_i | 3 |",
     })
 
     assert record["source_id"] == "fpu_spec::table::2.1"
@@ -372,7 +369,7 @@ DEAD_CHUNK_FIELDS = {
     "document_role", "sentence_sources", "prev_section", "next_section", "parent_name",
     "n_sentences", "parent_number", "level", "own_start_page", "own_end_page",
     "section_start_page", "section_end_page", "n_chars",
-    "chunk_role", "chunk_role_scores", "chunk_role_source"}
+    "chunk_role", "chunk_role_scores", "chunk_role_source", "tables_cited"}
 
 
 def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):
@@ -394,3 +391,10 @@ def test_chunks_and_hierarchy_carry_no_unread_fields(tmp_path):
     assert records and not DEAD_CHUNK_FIELDS & set().union(*records)
     assert not {"parent_number", "parent_name", "prev_section", "next_section"} & set(
         ).union(*nodes)
+
+
+def test_table_references_resolve_to_table_ids_once_and_drop_unknown_labels():
+    tables = {"A3.2": {"table_id": "axi::table::A3.2", "caption": "c", "page": 1}}
+
+    assert ingest.find_table_refs(
+        "See Table A3.2, Table Z9, and again Table A3.2.", tables) == ["axi::table::A3.2"]

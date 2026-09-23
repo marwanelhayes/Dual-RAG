@@ -698,30 +698,17 @@ def build_tables(doc, doc_id, doc_name, nodes):
 
 
 def find_table_refs(text, tables):
-    """Resolve every "see Table X" mention in a piece of text.
+    """Resolve every "see Table X" mention in a piece of text to its table id.
 
     Args:
         text: the chunk body to scan.
         tables: The document's structured table metadata, keyed by label.
 
     Returns:
-        list of reference dicts, resolved ones carrying the table's id and caption.
+        Table ids in first-mention order; labels with no table in this document are dropped.
     """
-    # Preserve unresolved references so external deferrals remain visible.
-    refs = []
-    for label in dict.fromkeys(_TABLE_REF.findall(text)):
-        table = tables.get(label)
-        if table:
-            refs.append({
-                "label": label,
-                "table_id": table["table_id"],
-                "caption": table["caption"],
-                "page": table["page"],
-                "resolved": True,
-            })
-        else:
-            refs.append({"label": label, "resolved": False})
-    return refs
+    return [tables[label]["table_id"] for label in dict.fromkeys(_TABLE_REF.findall(text))
+            if label in tables]
 
 
 def enrich_spec_record(record):
@@ -737,12 +724,9 @@ def enrich_spec_record(record):
     chunk_type = record.get("chunk_type")
     is_table = chunk_type == "table"
     document_id = record.get("document_id") or record["chunk_id"].split("#", 1)[0]
-    cited_table_ids = [reference.get("table_id")
-                       for reference in record.get("tables_cited", [])
-                       if reference.get("resolved") and reference.get("table_id")]
     own_table_id = record.get("table_id") if is_table else None
     table_ids = list(dict.fromkeys([
-        *record.get("table_ids", []), *cited_table_ids,
+        *record.get("table_ids", []),
         *([own_table_id] if own_table_id else []),
     ]))
     section_title = record.get("section_title") or record.get("section_name")
@@ -883,7 +867,7 @@ def ingest_pdf(path):
                 "end_page": max(chunk_pages),
                 "page": min(chunk_pages),
                 "chunk_index": k,
-                "tables_cited": find_table_refs(body, tables),
+                "table_ids": find_table_refs(body, tables),
                 "text": body,
             }))
 
@@ -926,7 +910,6 @@ def ingest_pdf(path):
                 "row_start": start,
                 "table_rows": table["n_rows"],
                 "extraction": table["extraction"],
-                "tables_cited": [],
                 "text": markdown,
             }))
 
