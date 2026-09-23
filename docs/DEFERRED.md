@@ -73,3 +73,61 @@ Known corpus-tuned pieces the holdout would test:
 Reopen when: a spec from another vendor is added to `Ingest/`. Fix only the pieces whose
 holdout metrics (heading anchor rate, tables found, unresolved table refs, furniture
 stripped) show breakage.
+
+## DF-04: Signal direction in `spec_signals`
+
+Decided 2026-09-23. Current choice: `spec_signals` records no direction. No table in the
+AXI or RISC-V corpus has a Direction, Dir, or I/O column; the field was null on all 1100
+signals at `ingest/caption-regex`, and the `Source` column holds interface roles
+(`Manager`, `Tx`), not directions.
+
+Deferred option: one `direction` field holding the raw cell, read from a column headed
+`direction`, `dir`, `signal direction`, `port direction`, or `i/o`. No normalization map.
+
+Why not now: no corpus document exercises it, so it cannot be tested on real data.
+
+Reopen when: a spec with a direction column is ingested (Xilinx/AMD `I/O`, Intel
+`Direction`), typically at the DF-03 holdout.
+
+## DF-05: Instruction mnemonics in `spec_signals`
+
+Decided 2026-09-23. Current choice: `spec_signals` extracts ports and CSRs only. Instruction
+mnemonics (`FADD.S`, `RNE`) came from mnemonic tables and a regex over all prose: 441 of 1088
+rows at `v0-baseline`.
+
+Deferred option: an instruction inventory, as its own artifact, not as signals.
+
+Why not now: a mnemonic is not a signal or a module and never appears as an RTL identifier;
+justifying it needs a later stage (agent ISA questions), which remove-first forbids.
+
+Reopen when: a walked consumer shows a measured loss (retrieval or agent eval) from its
+absence.
+
+## DF-06: Register field layouts in `spec_signals`
+
+Decided 2026-09-23. Current choice: whole CSRs come from address tables; sub-register fields
+are not extracted. Dropped: `Bits | Name | Description` tables (riscv-unprivileged 23, 44,
+48, 49: `CBIE`, `vma`, `vta`, `vill`) and suffixed names (`vsew[2:0]`, `vlmul[2:0]`,
+`vxrm[1:0]`).
+
+Deferred option: a register-field record with the parent register and the bit position read
+from the `Bits` cell (never as a width), and `name[hi:lo]` split into name + range.
+
+Why not now: fields are slices of a register, the same category as rejected bit slices
+(`ACADDR[51]`); only field-level linking would need them.
+
+Reopen when: RTL linking needs field-level matches (CSR field decode in RTL).
+
+## DF-07: `row_kind` (port vs register) in `spec_signals`
+
+Decided 2026-09-23. Current choice: no port/register classification; provenance
+(`table_label`, `table_caption`) says where a row came from. The heuristic misfiled
+`BROADCASTATOMIC` (a tie-off input) and the DVM message fields as registers.
+
+Deferred option: classify from table evidence (Source column → port; address column →
+register).
+
+Why not now: extraction does not need the split; only a consumer would. `bridge.py` reads
+`row_kind` today, so the field is removed at the bridge walk (pending consolidation).
+
+Reopen when: the bridge walk shows linking needs port vs register.

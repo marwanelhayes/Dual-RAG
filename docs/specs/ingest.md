@@ -122,6 +122,7 @@ Every step: failing test first, full suite green, commit, `build.py --clean`,
 | 10 | `ingest/prose-excludes-tables` | table regions out of prose | overlap to 0 |
 | 11 | `ingest/table-owner-position` | owner by `(page, y)`; section path in table header | owners move |
 | 12 | `ingest/table-continuations` | follow continuation banners | rows rise |
+| 12b | `ingest/wrapped-cells` | a wrapped description line joins its row instead of becoming a new row that repeats the name (riscv-unprivileged Table 23: `CBIE` ×7) | rows fall |
 | 13 | `ingest/code-line-split` | oversize units split at line breaks | no chunk over cap |
 | 14 | `ingest/token-caps` | `MAX_CHUNK_TOKENS`, `MAX_TABLE_CHUNK_TOKENS`, 512 hard limit, env override | sizes change |
 | 15 | `sweep/chunk_tokens` | grid 128 / 256 / 384 prose; 1-row / 128 / 256 tables | pick by metrics |

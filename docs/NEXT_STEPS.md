@@ -1,19 +1,21 @@
 # Next steps
 
-Handoff from the 2026-09-21/22 simplification session. The decided ingest spec and full
-execution queue live in [`docs/specs/ingest.md`](specs/ingest.md); deferred options in
-[`docs/DEFERRED.md`](DEFERRED.md).
+Handoff from the 2026-09-21/23 simplification sessions. Decided specs and execution queues:
+[`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md).
+Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-07).
 
 ## Where we are
 
-- Branch `simplify`, baseline commit `f1a2982` (pre-simplification tree + `src/track.py`).
-- MLflow run `v0-baseline` logged (`a6154dc25d0242d38b72111e04802599`, `git_dirty=False`):
-  5559 chunks, 56 over 512 tokens, prose p50/p95/max 201/330/2597 tokens, 1507 prose
-  chunks with running-header leaks, 2358 table rows, 65 unresolved table refs, 1088
-  signals, spec `family_recall_at_k` 0.623, routing accuracy 1.0.
-- **Uncommitted in the working tree:** the caption regex fix (step 1) in `src/ingest.py` and
-  its 3 tests in `tests/test_spec_ingest.py`, plus a metric-note edit in
-  `docs/specs/ingest.md`. Full suite: 227 passed.
+- Branch `simplify`. Baseline commit `f1a2982`; step 1 committed as `d02e583`.
+- MLflow runs:
+  - `v0-baseline` (`a6154dc25d0242d38b72111e04802599`, `git_dirty=False`): 5559 chunks,
+    2358 table rows, 65 unresolved table refs, 1088 signals, spec `family_recall_at_k` 0.623,
+    routing accuracy 1.0.
+  - `ingest/caption-regex` (`4bdb9fbc50e240ed8126669afea769d2`): 5575 chunks, 2471 table
+    rows, 37 unresolved table refs, 1100 signals, `family_recall_at_k` 0.623 (unchanged),
+    routing 1.0. Tagged `git_dirty=True` only because `NEXT_STEPS.md` was untracked; code
+    was at `d02e583`.
+- `spec_signals.py` walked (2026-09-23): spec written, nothing executed yet.
 
 ## Rhythm for every step
 
@@ -26,31 +28,26 @@ git commit ...                                             # one step per commit
 .venv/bin/mlflow ui --backend-store-uri sqlite:///mlflow.db  # compare runs
 ```
 
-Decision metric until step 0b lands: `retrieval.spec.family_recall_at_k`. Every other
-retrieval metric is scored on chunk IDs and breaks when chunking renumbers them.
+Decision metric until step 0b lands: `retrieval.spec.family_recall_at_k`.
 
 ## Immediate next steps
 
-1. **Open question:** un-ignore the gold set (`!eval/question_set.json` in `.gitignore`) so
-   the labels behind every run's numbers are versioned. Recommended; include it in step 0b.
-2. **Step 0b `eval/gold-sections`:** from the baseline `output/chunks.jsonl`, add a
-   `(document_id, section_number or section name, page)` label for every expected spec chunk
-   ID in `eval/question_set.json`; add section-level recall to `bench.py`. Must run before
-   step 9, which renumbers chunk IDs.
-3. **Step 1 `ingest/caption-regex`:** commit the working-tree fix, rebuild, track. Expect
-   +16 RISC-V tables (priv 51-53; unpriv 42, 44, 45, 47-49, 51-54, 57-59), 0 AXI change,
-   fewer unresolved table refs, more signals.
-4. **Steps 2-15:** follow the queue in `docs/specs/ingest.md`, in order: zero-diff removals
-   (2-6), fixes (7-13), token caps (14), then the `sweep/chunk_tokens` grid (15).
+1. **spec_signals s0 `signals/metrics`** and **s1 `signals/drop-dead-fields`** (zero-diff,
+   run now; see the spec's queue).
+2. **Open question:** un-ignore the gold set (`!eval/question_set.json` in `.gitignore`).
+   Recommended; include it in step 0b.
+3. **Ingest step 0b `eval/gold-sections`:** section + page labels for gold spec chunk IDs;
+   section-level recall in `bench.py`. Must run before ingest step 9.
+4. **Ingest steps 2-15** (including new 12b `ingest/wrapped-cells`), in order.
+5. **spec_signals s2-s7**, after the ingest queue, so row deltas are attributable.
 
-## After ingest
+## After spec_signals
 
-- Walk `src/spec_signals.py` next (pipeline order), same method: spec first, remove-first,
-  every decision measured as an MLflow run. Write `docs/specs/spec_signals.md`.
-- Pending consolidation when `spec_signals`, `agent`, `bridge` are walked: consumers move
-  to `hierarchy_id` + `section_path`; then drop `section_id`, `section_title`,
-  `subsection_id`, `subsection_title`.
+- Walk the next file in pipeline order (`build.py` stages: `embed.py`), same method.
+- Pending consolidation at the `bridge` / `agent` walk: consumers move to `hierarchy_id` +
+  `section_path`, `name`, raw `source` and `width`; then drop `section_id`,
+  `section_title`, `subsection_id`, `subsection_title`, `id`, `original_name`, `row_kind`,
+  `direction`, `source_role`, `source_role_source`.
 - Open duplicate to decide at consumer walk: `doc_name` and `source_file` hold the same
   filename.
-- Document authority (kept by decision): revisit form when `retrieve.py` is walked; four
-  documents may not need a regex classifier.
+- Document authority (kept by decision): revisit form when `retrieve.py` is walked.
