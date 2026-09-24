@@ -155,3 +155,17 @@ def test_a_signal_caption_alone_does_not_admit_a_name_only_table():
     listing["caption"] = "Interface signals"
 
     assert spec_signals.build_spec_signals([listing]) == []
+
+
+def test_width_comes_only_from_the_row_that_states_it():
+    table = table_chunk(["Signal", "Description"], [["AWID", "Write id"]])
+    prose = {"chunk_id": "p", "chunk_type": "prose", "document_id": "fpu_spec",
+             "text": "The AWID[3:0] bus carries the id."}
+
+    assert spec_signals.build_spec_signals([table, prose])[0]["width"] is None
+
+
+def test_a_bits_column_is_a_position_not_a_width():
+    fields = table_chunk(["Bits", "Name", "Description"], [["[5:4]", "CBIE", "Enable."]])
+
+    assert spec_signals.build_spec_signals([fields]) == []
