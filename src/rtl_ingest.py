@@ -36,6 +36,19 @@ def parse_loc(loc):
     return match.group(1), int(match.group(2)), int(match.group(4))
 
 
+def cited_path(path):
+    """Return a source path as cited in ``rtl.json``: POSIX, relative to ``RTL_DIR``.
+
+    Args:
+        path: Absolute path under ``cfg.RTL_DIR``, or a path already relative to it.
+
+    Returns:
+        The POSIX path relative to the RTL directory.
+    """
+    path = Path(path)
+    return (path.relative_to(cfg.RTL_DIR) if path.is_absolute() else path).as_posix()
+
+
 def file_table(root, rtl_dir):
     """Map Verilator file ids to project SystemVerilog paths.
 
@@ -342,7 +355,7 @@ def _enum_item(node, files):
         "normalized_name": normalize_identifier(name),
         "value": _integer(constant.get("name")) if constant is not None else None,
         "value_source": constant.get("name") if constant is not None else None,
-        "file": str(path) if path else None,
+        "file": cited_path(path) if path else None,
         "line": located[1] if located else None,
     }
 
@@ -467,7 +480,7 @@ def _declaration_record(var, module, kind, name, located, scopes, files, order, 
         "normalized_name": normalize_identifier(name),
         "normalized_tokens": identifier_tokens(name),
         "module_name": module,
-        "file_path": str(path),
+        "file_path": cited_path(path),
         "start_line": located[1],
         "end_line": located[2],
         "direction": _normal_direction(var.get("dir")) or "internal",
@@ -688,7 +701,7 @@ def statement_site(node, module, files):
     located = parse_loc(node.get("loc"))
     if not located or located[0] not in files:
         return None
-    return {"module": module, "file": str(files[located[0]]), "line": located[1]}
+    return {"module": module, "file": cited_path(files[located[0]]), "line": located[1]}
 
 
 def collapse_sites(found):
@@ -791,8 +804,8 @@ def _instance_record(node, element, module, files, symbols, parents):
             "actual_signal_ids": actual_symbol_ids,
             "direction": _normal_direction(port.get("direction")),
             "expression_kind": port[0].tag if len(port) else "open",
-            "file": str(citation_path),
-            "file_path": str(citation_path),
+            "file": cited_path(citation_path),
+            "file_path": cited_path(citation_path),
             "line": port_loc[1],
             "start_line": port_loc[1],
             "end_line": port_loc[2],
@@ -809,8 +822,8 @@ def _instance_record(node, element, module, files, symbols, parents):
         "normalized_tokens": identifier_tokens(instance_name),
         "module_name": module,
         "target_module": target,
-        "file": str(path),
-        "file_path": str(path),
+        "file": cited_path(path),
+        "file_path": cited_path(path),
         "line": located[1],
         "start_line": located[1],
         "end_line": located[2],
@@ -878,7 +891,7 @@ def _block_record(node, module, element, files, parents):
         "kind": kind,
         "construct_type": _block_type(kind, source_text),
         "original_name": node.get("origName") or node.get("name") or f"{kind}@{first}",
-        "file": str(files[letter]),
+        "file": cited_path(files[letter]),
         "start_line": first,
         "end_line": last,
         "hierarchical_path": [module, *_scope_names(node, parents, element)],
@@ -961,7 +974,7 @@ def modules(root, files, declarations=None):
             "original_name": name,
             "normalized_name": normalize_module_name(name),
             "normalized_tokens": identifier_tokens(name),
-            "file": str(path),
+            "file": cited_path(path),
             "start_line": first,
             "end_line": last,
             "ports": [],
@@ -1072,7 +1085,7 @@ def parse_warnings(text):
     for line in text.splitlines():
         match = _WARNING.match(line)
         if match:
-            out.append({"code": match.group(1), "file": match.group(2),
+            out.append({"code": match.group(1), "file": cited_path(match.group(2)),
                         "line": int(match.group(3)), "message": match.group(4).strip()})
     return out
 

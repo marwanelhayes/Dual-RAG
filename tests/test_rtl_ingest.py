@@ -178,7 +178,7 @@ def test_enum_members_record_the_blocks_that_mention_them(tmp_path, monkeypatch)
 
     assert items["IDLE"]["usage_sites"] == [{
         "module": "parent", "construct_type": "ALWAYS_FF",
-        "file": str(tmp_path / "design.sv"), "line": 12,
+        "file": "design.sv", "line": 12,
     }]
 
 
@@ -236,14 +236,14 @@ def test_signal_metadata_has_compiler_type_width_and_deterministic_sites(tmp_pat
     assert ports["DataI"]["width_expression"] == "[7:0]"
     assert ports["DataI"]["normalized_name"] == "data_i"
     assert ports["DataI"]["reader_sites"] == [
-        {"module": "parent", "file": str(tmp_path / "design.sv"), "line": 14},
-        {"module": "parent", "file": str(tmp_path / "design.sv"), "line": 18},
+        {"module": "parent", "file": "design.sv", "line": 14},
+        {"module": "parent", "file": "design.sv", "line": 18},
     ]
     assert signals["tmp"]["writer_sites"] == [
-        {"module": "parent", "file": str(tmp_path / "design.sv"), "line": 14}
+        {"module": "parent", "file": "design.sv", "line": 14}
     ]
     assert signals["tmp"]["reader_sites"] == [
-        {"module": "parent", "file": str(tmp_path / "design.sv"), "line": 17}
+        {"module": "parent", "file": "design.sv", "line": 17}
     ]
 
 
@@ -341,3 +341,26 @@ def test_rtl_ingest_does_not_import_the_spec_stage():
     tree = ast.parse(Path(ri.__file__).read_text(encoding="utf-8"))
     assert "ingest" not in {node.module for node in ast.walk(tree)
                             if isinstance(node, ast.ImportFrom)}
+
+
+def _values(node, keys):
+    """Yield every value stored under one of ``keys`` anywhere in a JSON tree."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in keys:
+                yield value
+            yield from _values(value, keys)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _values(item, keys)
+
+
+def test_source_paths_are_posix_relative_to_the_rtl_dir(tmp_path, monkeypatch):
+    artifact = built(tmp_path, monkeypatch)
+    xml_path = tmp_path / "design.xml"
+    absolute = ri.build(xml_path, f"%Warning-WIDTH: {tmp_path}/design.sv:18:2: demo\n")
+
+    paths = set(_values(artifact, {"file", "file_path"}))
+
+    assert paths == {"design.sv"}
+    assert absolute["warnings"][0]["file"] == "design.sv"
