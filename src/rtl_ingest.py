@@ -863,6 +863,24 @@ def _module_extents(root, files):
     return extents
 
 
+def module_preamble(extents, name, path):
+    """Return the source lines above a module, back to the previous module in its file.
+
+    Args:
+        extents: Module name to ``(file id, first line, last line)``.
+        name: Module whose preamble is wanted.
+        path: Source file holding the module.
+
+    Returns:
+        The lines before the module's first line and after the previous module's last
+        line in the same file, as written; empty when the two touch.
+    """
+    letter, first, _ = extents[name]
+    start = 1 + max((last for other, (other_letter, _, last) in extents.items()
+                     if other_letter == letter and last < first), default=0)
+    return read_lines(path, start, first - 1) if first > start else ""
+
+
 def _block_record(node, module, element, files, parents):
     """Project one useful compiler-bounded structural block.
 
@@ -986,6 +1004,7 @@ def modules(root, files, declarations=None):
             "assignment_groups": [],
             "other_blocks": [],
             "source_code": read_lines(path, first, last),
+            "preamble": module_preamble(extents, name, path),
             "_blocks": {},
             "_instances": {},
         })

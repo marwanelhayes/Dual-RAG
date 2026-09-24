@@ -364,3 +364,16 @@ def test_source_paths_are_posix_relative_to_the_rtl_dir(tmp_path, monkeypatch):
 
     assert paths == {"design.sv"}
     assert absolute["warnings"][0]["file"] == "design.sv"
+
+
+def test_a_module_cites_the_header_above_it_back_to_the_previous_module(tmp_path, monkeypatch):
+    source = tmp_path / "pair.sv"
+    source.write_text("// Pair of stages.\n// First stage adds.\nmodule first;\nendmodule\n"
+                      "// Second stage subtracts.\nmodule second;\nendmodule\n")
+    extents = {"first": ("a", 3, 5), "second": ("a", 6, 7)}
+
+    assert ri.module_preamble(extents, "first", source) == (
+        "// Pair of stages.\n// First stage adds.\n")
+    # The previous module's extent already runs up to this one's start line.
+    assert ri.module_preamble(extents, "second", source) == ""
+    assert built(tmp_path, monkeypatch)["modules"]["parent"]["preamble"] == ""
