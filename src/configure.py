@@ -104,8 +104,6 @@ RTL_CHUNKS_PATH = OUTPUT_DIR / "rtl_chunks.jsonl"
 RTL_INDEX_DIR = OUTPUT_DIR / "rtl_index"
 # Validate the RTL index manifest before allowing dense lookup against compiler artifacts.
 RTL_MANIFEST_PATH = OUTPUT_DIR / "rtl_embed_manifest.json"
-# Cap comment prose so large modules do not dominate the RTL index.
-RTL_CHUNK_COMMENT_CHARS = 1200
 # Largest surface that keeps every measured RTL chunk inside the encoder's 512 tokens.
 RTL_CHUNK_CHARS = 1200
 RTL_CHUNK_MIN_SOURCE_CHARS = 320

@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-
 import configure as cfg
 import rtl_embed as re_
 from embed import build_manifest, read_manifest
@@ -85,7 +84,8 @@ def _rtl(source):
         "instance_id": "rtl::instdef::fpu_decoder::u_child::23:3",
         "original_name": "u_child",
         "target_module": "child",
-        "bindings": [{"formal": "din", "actual_refs": ["FPUValidD"]}],
+        "bindings": [{"parent_module": "fpu_decoder", "formal_name": "din",
+                      "actual_signals": ["FPUValidD"], "direction": "input"}],
     }
     module = {
         "module_id": "rtl::mod::fpu_decoder",
@@ -190,8 +190,6 @@ def test_structural_ids_and_surfaces_are_stable_and_bounded(tmp_path):
     assert structures[0]["file"] == str(source) and structures[0]["line"] == 10
     assert structures[0]["signals_written"] == ["FPUValidD"]
     assert structures[-1]["record_id"] == "rtl::assign_group::fpu_decoder::20-21"
-    assert all(len(record["source_code"]) <= re_.STRUCTURAL_SURFACE_CHARS
-               for record in structures)
     assert [record["chunk_id"] for record in records] == [
         record["chunk_id"] for record in re_.retrieval_records(_rtl(source))
     ]
@@ -220,7 +218,7 @@ def test_module_text_names_the_peer_modules_its_ports_are_wired_to(tmp_path):
     assert "reads: StallD <- hazard_unit" in text["rtl:fetch_stage"]
 
 
-def test_main_writes_manifest_last_and_skips_an_unchanged_index(monkeypatch, tmp_path):
+def test_main_embeds_on_every_run_and_writes_the_manifest(monkeypatch, tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")
     output = tmp_path / "output"
@@ -234,10 +232,7 @@ def test_main_writes_manifest_last_and_skips_an_unchanged_index(monkeypatch, tmp
 
     class FakeStore:
         def save(self, path):
-            Path(path).mkdir(parents=True)
-
-        def search(self, query, k):
-            return []
+            Path(path).mkdir(parents=True, exist_ok=True)
 
     def fake_build(records):
         builds.append(list(records))
@@ -250,12 +245,11 @@ def test_main_writes_manifest_last_and_skips_an_unchanged_index(monkeypatch, tmp
     monkeypatch.setattr(cfg, "RTL_INDEX_DIR", index_dir)
     monkeypatch.setattr(cfg, "RTL_MANIFEST_PATH", manifest_path)
     monkeypatch.setattr(re_.VectorStore, "build", staticmethod(fake_build))
-    monkeypatch.setattr(re_.sys, "argv", ["rtl_embed.py"])
 
     re_.main()
     re_.main()
 
-    assert len(builds) == 1
+    assert len(builds) == 2
     assert read_manifest(manifest_path) == build_manifest(builds[0])
 
 

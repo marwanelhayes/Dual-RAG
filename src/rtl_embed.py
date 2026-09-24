@@ -8,15 +8,13 @@ thousands of tiny semantic documents.
 import json
 from pathlib import Path
 import re
-import sys
 
 import configure as cfg
-from embed import VectorStore, build_manifest, index_manifest_status, write_manifest
+from embed import VectorStore, build_manifest, write_manifest
 from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier
 
 
-STRUCTURAL_SURFACE_CHARS = 1200
 _MODULE_STRUCTURES = 24
 _MODULE_LINKS = 24
 # Rendered signal lists are bounded; the full lists stay in metadata, unembedded.
@@ -220,29 +218,6 @@ def port_connections(rtl):
             links.setdefault(target, {}).setdefault(side, []).extend(
                 (formal, peer) for peer in peers)
     return links
-
-
-def _comment_parts(prose, max_chars):
-    """Pack comment bodies into parts that each fit one window.
-
-    Args:
-        prose: Comment bodies in source order.
-        max_chars: Character budget available to one part.
-
-    Returns:
-        Joined comment strings, each within the budget where a single body allows it.
-    """
-    parts, current = [], ""
-    for body in prose:
-        candidate = f"{current}; {body}" if current else body
-        if current and len(candidate) > max_chars:
-            parts.append(current)
-            current = body
-        else:
-            current = candidate
-    if current:
-        parts.append(current)
-    return parts
 
 
 def _budgeted_facets(parts, max_chars=cfg.RTL_CHUNK_CHARS):
@@ -465,7 +440,7 @@ def retrieval_records(rtl, child_modules=None):
 
 
 def main():
-    """Write retrieval records, rebuild the index if stale, and smoke-test it.
+    """Write retrieval records, embed them, and write the index manifest.
 
     Returns:
         None.
@@ -475,7 +450,6 @@ def main():
     with open(cfg.RTL_PATH, encoding="utf-8") as source:
         rtl = json.load(source)
     records = retrieval_records(rtl)
-    manifest = build_manifest(records)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg.RTL_CHUNKS_PATH, "w", encoding="utf-8") as output:
         for record in records:
@@ -484,20 +458,10 @@ def main():
     structures = len(records) - modules
     print(f"{len(records)} RTL records ({modules} modules, {structures} structures) "
           f"-> {cfg.RTL_CHUNKS_PATH.relative_to(cfg.ROOT)}")
-    status = index_manifest_status(records, cfg.RTL_INDEX_DIR, cfg.RTL_MANIFEST_PATH)
-    if status["fresh"]:
-        print(f"{len(records)} RTL records already embedded and unchanged, nothing to do")
-        return
     store = VectorStore.build(records)
     store.save(cfg.RTL_INDEX_DIR)
-    write_manifest(manifest, cfg.RTL_MANIFEST_PATH)
+    write_manifest(build_manifest(records), cfg.RTL_MANIFEST_PATH)
     print(f"indexed -> {cfg.RTL_INDEX_DIR.relative_to(cfg.ROOT)}")
-    query = " ".join(sys.argv[1:]) or "floating point multiply and divide"
-    print(f"\n{query!r} ->")
-    for document, score in store.search(query, k=cfg.AGENT_SEARCH_K):
-        print(f"  {score:.3f}  {document.metadata['module']}  "
-              f"({document.metadata['file']}:{document.metadata['line']})")
-
 
 if __name__ == "__main__":
     main()
