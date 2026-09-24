@@ -657,15 +657,15 @@ def test_near_duplicate_filter_keeps_distinct_chunks_from_one_section():
     assert [item["id"] for item in kept] == ["a", "b"]
 
 
-def test_alignment_rows_label_the_score_as_identity_not_as_a_verdict():
-    """Name the number after what it measures so it cannot read as a behavioural verdict."""
+def test_alignment_rows_state_how_the_identity_was_found_not_a_verdict():
+    """Name the link's method so it cannot read as a behavioural verdict."""
     matches = [{"spec_original_name": "AWVALID", "rtl_original_name": "MAWValid",
-                "confidence_level": "WEAK", "confidence": 0.695039}]
+                "confidence_level": "MEDIUM", "method": "interface_prefix"}]
 
     rendered = agent._bridge_context(matches, [])
 
-    assert "identity_match=WEAK" in rendered
-    assert "identity_score=0.695039" in rendered
+    assert "identity_match=MEDIUM" in rendered
+    assert "method=interface_prefix" in rendered
     assert "confidence=" not in rendered
 
 

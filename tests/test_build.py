@@ -21,12 +21,10 @@ def test_parser_only_order_skips_both_indexes():
     assert names == ["ingest.py", "spec_signals.py", "rtl_ingest.py", "bridge.py"]
 
 
-def test_full_build_enables_bridge_semantic_reranking_only_after_indexes_exist():
+def test_every_stage_runs_as_a_plain_script_without_flags():
     scripts = build.stage_scripts(include_embeddings=True)
-    commands = [build.stage_command(path, include_embeddings=True) for _, path in scripts]
 
-    assert commands[-1][-2:] == [str(scripts[-1][1]), "--rerank"]
-    assert all("--rerank" not in command for command in commands[:-1])
+    assert all(build.stage_command(path)[-1] == str(path) for _, path in scripts)
 
 
 def test_obsolete_cleanup_is_exact_and_preserves_current_artifacts(tmp_path, monkeypatch):

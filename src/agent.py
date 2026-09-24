@@ -615,8 +615,7 @@ def bridge_targets(signal_matches, module_matches):
     for mapping in signal_matches:
         if mapping.get("confidence_level") == "UNRESOLVED":
             candidates = [candidate for candidate in mapping.get("candidates", [])
-                          if candidate.get("survived_structural")
-                          and candidate.get("score", 0)
+                          if candidate.get("score", 0)
                           >= getattr(cfg, "BRIDGE_QUERY_CANDIDATE_MIN", 0.45)]
             for candidate in candidates[:getattr(cfg, "BRIDGE_QUERY_CANDIDATES", 3)]:
                 signals.extend(_mapping_values(
@@ -886,7 +885,7 @@ def _bridge_context(signal_matches, module_matches):
         rows.append(
             f"signal {spec_name} -> {', '.join(rtl_names) or 'UNRESOLVED'} "
             f"identity_match={item.get('confidence_level', item.get('status', 'UNRESOLVED'))} "
-            f"identity_score={item.get('confidence', 0)}{_alignment_site(item)}"
+            f"method={item.get('method', 'none')}{_alignment_site(item)}"
             f"{_evidence_detail(item)}{reason_suffix}{candidate_suffix}")
     for item in module_matches:
         spec_title = item.get("spec_section_title") or item.get("spec_section") \

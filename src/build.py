@@ -86,20 +86,16 @@ def stage_scripts(include_embeddings=True):
             if include_embeddings or name not in ("embed.py", "rtl_embed.py")]
 
 
-def stage_command(script, include_embeddings=True):
-    """Return one isolated stage command with architecture-required options.
+def stage_command(script):
+    """Return one isolated stage command.
 
     Args:
         script: Stage script path.
-        include_embeddings: Whether the full semantic-index pipeline is active.
 
     Returns:
         Python subprocess argument list.
     """
-    command = [sys.executable, "-B", str(script)]
-    if include_embeddings and script.name == "bridge.py":
-        command.append("--rerank")
-    return command
+    return [sys.executable, "-B", str(script)]
 
 
 def run_pipeline(include_embeddings=True):
@@ -114,8 +110,7 @@ def run_pipeline(include_embeddings=True):
     remove_obsolete_artifacts()
     for label, script in stage_scripts(include_embeddings=include_embeddings):
         print(f"====  {label}: {script.name}", flush=True)
-        subprocess.run(stage_command(script, include_embeddings=include_embeddings),
-                       cwd=cfg.ROOT, check=True)
+        subprocess.run(stage_command(script), cwd=cfg.ROOT, check=True)
 
 
 def main(argv=None):

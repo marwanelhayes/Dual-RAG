@@ -84,128 +84,28 @@ def _hierarchy():
     }
 
 
-def test_layer_one_keeps_multiple_candidates_and_exposes_abbreviation_evidence():
-    spec = bridge.spec_signals(_spec())[0]
-    rtl = _rtl(
-        ("fpu", _module("fpu", "rtl::module::fpu", [
-            _rtl_signal("rm_i", "rtl::signal::rm"),
-            _rtl_signal("round_select_i", "rtl::signal::round_select"),
-            _rtl_signal("operation_i", "rtl::signal::operation"),
-        ])),
-    )
-
-    candidates = bridge.generate_signal_candidates(spec, bridge.rtl_signals(rtl))
-
-    assert len(candidates) == 3
-    rm = next(item for item in candidates if item["rtl"]["original_name"] == "rm_i")
-    assert rm["cheap"]["abbreviation_expansion"] is True
-    assert "abbreviation_expansion" in rm["cheap"]["methods"]
+def _links(spec, rtl):
+    """Return ``(spec name, rtl name, module, method, prefix)`` for every link."""
+    artifact = bridge.build_bridge(spec, rtl, _hierarchy())
+    return sorted((row["spec_original_name"], row["rtl_original_name"], row["rtl_module_name"],
+                   row["method"], row["prefix"]) for row in artifact["signal_alignments"])
 
 
-def test_layer_one_recognizes_known_namespace_prefix_without_suffix_false_positive():
-    spec = bridge.spec_signals(_spec(
-        "result", width=32, direction="output", description="calculated result"))[0]
+def _specs(*names, widths=None):
+    """Return a spec artifact with one port row per name."""
+    rows = _spec()["signals"][0]
+    return {"signals": [{**rows, "signal_id": f"spec::signal::axi::A1::{name.lower()}",
+                         "original_name": name, "normalized_name": None,
+                         "width": (widths or {}).get(name)} for name in names]}
+
+
+def test_a_spec_signal_links_to_the_rtl_signal_with_the_same_flat_name():
     rtl = _rtl(("fpu", _module("fpu", "rtl::module::fpu", [
-        _rtl_signal("fp_result_o", "rtl::signal::result", 32, "output"),
-        _rtl_signal("invalid_o", "rtl::signal::invalid", 1, "output"),
-    ])))
+        _rtl_signal("rm_i", "rtl::signal::rm"), _rtl_signal("opcode_i", "rtl::signal::op")])))
 
-    candidates = bridge.generate_signal_candidates(spec, bridge.rtl_signals(rtl))
-    by_name = {candidate["rtl"]["original_name"]: candidate for candidate in candidates}
+    links = _links(_spec(), rtl)
 
-    assert by_name["fp_result_o"]["cheap"]["namespace_prefix"] is True
-    assert by_name["invalid_o"]["cheap"]["namespace_prefix"] is False
-
-
-def test_structural_width_chooses_the_compatible_signal():
-    spec = bridge.spec_signals(_spec("result", 32, "output", "calculated result"))[0]
-    rtl = _rtl(
-        ("fpu", _module("fpu", "rtl::module::fpu", [
-            _rtl_signal("result_i", "rtl::signal::wrong", 16, "input", "input result"),
-            _rtl_signal("result_o", "rtl::signal::right", 32, "output", "calculated result"),
-            _rtl_signal("status_o", "rtl::signal::status", 1, "output", "status"),
-        ])),
-    )
-
-    ranked = bridge.rerank_signal_candidates(
-        spec, bridge.generate_signal_candidates(spec, bridge.rtl_signals(rtl)))
-
-    assert ranked[0]["rtl"]["signal_id"] == "rtl::signal::right"
-    assert ranked[0]["component_evidence"]["width"]["score"] == 1.0
-    assert "direction" not in ranked[0]["component_evidence"]
-    assert ranked[1]["component_evidence"]["width"]["score"] == 0.0
-
-
-def test_semantic_scorer_sees_only_structural_survivors():
-    spec = bridge.spec_signals(_spec())[0]
-    rtl = _rtl(
-        ("fpu", _module("fpu", "rtl::module::fpu", [
-            _rtl_signal("rounding_mode", "rtl::signal::right"),
-            _rtl_signal("unrelated_alpha", "rtl::signal::alpha", 8, "output", "other"),
-            _rtl_signal("unrelated_beta", "rtl::signal::beta", 16, "output", "other"),
-        ])),
-    )
-    seen = []
-
-    def scorer(pairs):
-        seen.extend(pairs)
-        return [0.9] * len(pairs)
-
-    ranked = bridge.rerank_signal_candidates(
-        spec, bridge.generate_signal_candidates(spec, bridge.rtl_signals(rtl)), scorer=scorer)
-
-    survivors = [item for item in ranked if item["survived_structural"]]
-    assert len(seen) == len(survivors) == 1
-    assert all(item["semantic_score"] is None for item in ranked if item not in survivors)
-
-
-def test_close_top_candidates_remain_unresolved_without_tiny_model():
-    spec = bridge.spec_signals(_spec())[0]
-    rtl = _rtl(
-        ("a", _module("a", "rtl::module::a", [
-            _rtl_signal("rounding_mode", "rtl::signal::a")], original_name="fpu")),
-        ("b", _module("b", "rtl::module::b", [
-            _rtl_signal("rounding_mode", "rtl::signal::b")], original_name="fpu")),
-    )
-
-    outcome, record = bridge.align_signal(spec, bridge.rtl_signals(rtl))
-
-    assert outcome == "unresolved"
-    assert record["confidence_level"] == bridge.UNRESOLVED
-    assert record["ambiguous"] is True
-    assert [item["candidate_rank"] for item in record["candidates"][:2]] == [1, 2]
-
-
-def test_low_quality_candidates_are_retained_but_not_linked():
-    spec = bridge.spec_signals(_spec("architectural_flag", 1, "input", "architectural flag"))[0]
-    rtl = _rtl(
-        ("decoder", _module("decoder", "rtl::module::decoder", [
-            _rtl_signal("writeback_data", "rtl::signal::writeback", 64, "output", "bus data"),
-            _rtl_signal("opcode", "rtl::signal::opcode", 7, "internal", "decoded opcode"),
-            _rtl_signal("clock_i", "rtl::signal::clock", 1, "input", "clock"),
-        ])),
-    )
-
-    outcome, record = bridge.align_signal(spec, bridge.rtl_signals(rtl))
-
-    assert outcome == "unresolved"
-    assert record["confidence"] == 0.0
-    assert record["candidates"]
-
-
-def test_persisted_candidate_provenance_is_bounded():
-    spec = bridge.spec_signals(_spec())[0]
-    signal = _rtl_signal("rounding_mode", "rtl::signal::many-sites")
-    signal["reader_sites"] = [
-        {"file": "rtl/fpu.sv", "line": line} for line in range(10, 20)
-    ]
-    rtl = _rtl(("fpu", _module("fpu", "rtl::module::fpu", [signal])))
-
-    _, record = bridge.align_signal(spec, bridge.rtl_signals(rtl))
-    provenance = record["candidates"][0]["provenance"]
-
-    assert provenance["reader_site_count"] == 10
-    assert len(provenance["reader_sites"]) == cfg.BRIDGE_PROVENANCE_SITES
+    assert links == [("rounding_mode", "rm_i", "fpu", "identity", None)]
 
 
 def test_full_artifact_maps_sections_from_title_context_and_child_signals():
@@ -293,27 +193,6 @@ def test_nested_ingest_hierarchy_keeps_each_subsection_identity_and_own_title():
     ]
 
 
-def test_observed_usage_separates_a_driver_from_identically_named_passthrough_ports():
-    """Prefer the module the compiler shows driving a signal over an idle duplicate."""
-    spec = bridge.spec_signals(_spec())[0]
-    site = {"file": "rtl/fpu.sv", "line": 19}
-    driver = _rtl_signal("rounding_mode", "rtl::signal::driver")
-    driver["reader_sites"] = [site, site, site]
-    driver["writer_sites"] = [site]
-    idle = _rtl_signal("rounding_mode", "rtl::signal::idle")
-    idle["reader_sites"] = [site]
-    rtl = _rtl(
-        ("idle", _module("idle", "rtl::module::idle", [idle], original_name="fpu")),
-        ("driver", _module("driver", "rtl::module::driver", [driver],
-                           original_name="fpu")),
-    )
-
-    outcome, record = bridge.align_signal(spec, bridge.rtl_signals(rtl))
-
-    assert outcome == "aligned"
-    assert record["rtl_signal_id"] == "rtl::signal::driver"
-
-
 def _threaded_rtl():
     """Return an artifact where one port is threaded through two hierarchy levels."""
     port = {"original_name": "MAWBurst", "direction": "output", "width": 2}
@@ -347,35 +226,9 @@ def test_an_unbound_port_belongs_to_no_shared_net():
     assert ("cache", "PrivateState") not in bridge.port_nets(rtl)
 
 
-def test_threaded_ports_collapse_to_the_site_that_drives_the_net():
-    def candidate(module, writers, rank):
-        return {"candidate_rank": rank, "rtl": {
-            "net_id": "bridge::net::one", "module_name": module,
-            "signal_id": f"rtl::port::{module}::MAWBurst",
-            "writer_sites": [{"line": 1}] * writers, "reader_sites": []}}
-
-    close = [candidate("fetch_stage", 0, 1), candidate("cache", 2, 2)]
-
-    assert [item["rtl"]["module_name"]
-            for item in bridge._collapse_threaded_ports(close)] == ["cache"]
-
-
-def test_candidates_on_different_nets_stay_ambiguous():
-    def candidate(net, module):
-        return {"candidate_rank": 1, "rtl": {
-            "net_id": net, "module_name": module, "writer_sites": [], "reader_sites": []}}
-
-    close = [candidate("bridge::net::one", "cache"), candidate("bridge::net::two", "risc_mem")]
-
-    assert bridge._collapse_threaded_ports(close) == close
-
-
-
 def test_the_bridge_has_no_tiny_model_resolver_or_lookup_helpers():
     assert not any(hasattr(bridge, name) for name in (
         "ollama_resolver", "ambiguity_evidence", "lookup_signal", "lookup_module"))
-    with pytest.raises(SystemExit):
-        bridge._arguments(["--llm"])
 
 
 def test_the_bridge_infers_no_module_roles():
