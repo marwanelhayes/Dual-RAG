@@ -108,13 +108,12 @@ def test_a_spec_signal_links_to_the_rtl_signal_with_the_same_flat_name():
     assert links == [("rounding_mode", "rm_i", "fpu", "identity", None)]
 
 
-def test_full_artifact_maps_sections_from_title_context_and_child_signals():
+def test_a_section_links_to_the_modules_its_own_signals_link_to():
     rtl = _rtl(
-        ("fpu", _module("fpu", "rtl::module::fpu", [
-            _rtl_signal("rm_i", "rtl::signal::rm")], original_name="fpu")),
+        ("fpu_core", _module("fpu_core", "rtl::module::fpu_core", [
+            _rtl_signal("rm_i", "rtl::signal::rm")])),
         ("decoder", _module("decoder", "rtl::module::decoder", [
-            _rtl_signal("opcode_i", "rtl::signal::opcode", 7, "input", "opcode")]))
-    )
+            _rtl_signal("opcode_i", "rtl::signal::opcode", 7, "input", "opcode")])))
 
     artifact = bridge.build_bridge(_spec(), rtl, _hierarchy())
 
@@ -122,16 +121,22 @@ def test_full_artifact_maps_sections_from_title_context_and_child_signals():
         "schema_version", "source_fingerprints", "signal_alignments",
         "unresolved_signals", "module_alignments", "summary",
     }
-    assert artifact["signal_alignments"][0]["rtl_signal_id"] == "rtl::signal::rm"
-    module = artifact["module_alignments"][0]
-    assert module["rtl_module_id"] == "rtl::module::fpu"
-    assert "normalized_title" in module["methods"]
-    assert "child_signal_support" in module["methods"]
+    assert [(row["rtl_module_name"], row["method"], row["link_count"])
+            for row in artifact["module_alignments"]] == [("fpu_core", "link_support", 1)]
     serialized = json.dumps(artifact)
     for behavioral_verdict in ("IMPLEMENTED", "PARTIALLY", "MISSING", "CONTRADICTED"):
         assert behavioral_verdict not in serialized
     assert artifact == bridge.build_bridge(_spec(), rtl, _hierarchy())
 
+
+def test_a_section_with_no_title_identity_or_linked_signal_is_not_written():
+    rtl = _rtl(("pc_adder", _module("pc_adder", "rtl::module::pc_adder", [])))
+    hierarchy = {"documents": [{"document_id": "axi", "sections": [{
+        "node_id": "axi::pcie", "section_name": "PCIe XT mode", "path": ["PCIe XT mode"],
+        "doc_name": "axi.pdf", "start_page": 1,
+    }]}]}
+
+    assert bridge.build_bridge({"signals": []}, rtl, hierarchy)["module_alignments"] == []
 
 def test_module_alignment_normalizes_plural_and_container_nouns():
     rtl = _rtl(("cache", _module("cache", "rtl::module::cache", [])))
@@ -143,9 +148,8 @@ def test_module_alignment_normalizes_plural_and_container_nouns():
     artifact = bridge.build_bridge({"signals": []}, rtl, hierarchy)
 
     assert artifact["module_alignments"][0]["rtl_module_name"] == "cache"
-    assert artifact["module_alignments"][0]["confidence_level"] in {
-        bridge.MEDIUM, bridge.STRONG,
-    }
+    assert artifact["module_alignments"][0]["method"] == "title_identity"
+    assert artifact["module_alignments"][0]["confidence_level"] == bridge.STRONG
 
 
 def test_inputs_are_read_by_their_schema_keys_only():

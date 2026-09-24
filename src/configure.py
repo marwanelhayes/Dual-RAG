@@ -130,23 +130,13 @@ RTL_ABBREVIATIONS = {
 }
 set_abbreviation_aliases(RTL_ABBREVIATIONS)
 
-# Conservative bridge scoring keeps identity alignment separate from behavioral judgment.
+# Suggested look-alikes weigh edit similarity below exact token overlap.
 BRIDGE_EDIT_WEIGHT = 0.8
 BRIDGE_PROVENANCE_SITES = 2
 # An interface prefix is 1-3 characters, shared by at least 2 ports naming 4+ character specs.
 BRIDGE_PREFIX_MAX_CHARS = 3
 BRIDGE_PREFIX_MIN_NAME = 4
 BRIDGE_PREFIX_MIN_PORTS = 2
-BRIDGE_ACCEPT_MIN = 0.62
-BRIDGE_MEDIUM_MIN = 0.74
-BRIDGE_STRONG_MIN = 0.88
-BRIDGE_AMBIGUITY_MARGIN = 0.05
-BRIDGE_MODULE_WEIGHTS = {"name": 0.5, "context": 0.2, "child_signals": 0.3}
-BRIDGE_MODULE_NAME_MIN = 0.45
-BRIDGE_MODULE_CONTEXT_MIN = 0.15
-BRIDGE_MODULE_CANDIDATES = 3
-BRIDGE_MODULE_ACCEPT_MIN = 0.62
-BRIDGE_MODULE_PERSIST_NAME_MIN = 0.55
 # Unresolved shortlists may guide inspection without becoming persisted alignments.
 BRIDGE_QUERY_CANDIDATES = 3
 BRIDGE_QUERY_CANDIDATE_MIN = 0.45

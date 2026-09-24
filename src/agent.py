@@ -633,14 +633,6 @@ def bridge_targets(signal_matches, module_matches):
             _resolved_fields(mapping),
             ("rtl_module_name", "rtl_module", "module_name", "module")))
     for mapping in module_matches:
-        if mapping.get("confidence_level") == "UNRESOLVED":
-            candidates = [candidate for candidate in mapping.get("candidates", [])
-                          if candidate.get("score", 0)
-                          >= getattr(cfg, "BRIDGE_QUERY_CANDIDATE_MIN", 0.45)]
-            for candidate in candidates[:getattr(cfg, "BRIDGE_QUERY_CANDIDATES", 3)]:
-                modules.extend(_mapping_values(
-                    candidate, ("rtl_module_name", "rtl_module", "module_name")))
-            continue
         if not any(mapping.get(key) for key in (
                 "rtl_module_id", "rtl_module_name", "rtl_module", "module_name")):
             continue

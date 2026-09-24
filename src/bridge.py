@@ -20,7 +20,6 @@ from naming import identifier_tokens, normalize_identifier, normalize_module_nam
 SCHEMA_VERSION = "4.0"
 STRONG = "STRONG"
 MEDIUM = "MEDIUM"
-WEAK = "WEAK"
 UNRESOLVED = "UNRESOLVED"
 PORT_ROW = "port"
 REGISTER_FIELD_ROW = "register_field"
@@ -350,11 +349,9 @@ def rtl_modules(rtl):
             "normalized_name": raw.get("normalized_name") or normalize_module_name(name),
             "normalized_tokens": _unique(str(token).lower() for token in
                                          raw.get("normalized_tokens") or identifier_tokens(name)),
-            "description": "",
             "file": raw["file"],
             "start_line": raw.get("start_line"),
             "end_line": raw.get("end_line"),
-            "raw": raw,
         })
     return sorted(modules, key=lambda module: module["module_id"])
 
@@ -420,37 +417,6 @@ def rtl_signals(rtl):
             rows.append(signal)
     return sorted(rows, key=lambda signal: signal["signal_id"])
 
-def _component(score, weight, available, detail):
-    """Describe one understandable structural score component.
-
-    Args:
-        score: Component score in ``[0, 1]``.
-        weight: Configured component weight.
-        available: Whether both sides stated enough to score this component.
-        detail: Human-readable explanation of what was compared.
-
-    Returns:
-        One component-evidence mapping.
-    """
-    return {"score": _round(score), "weight": _round(weight),
-            "available": bool(available), "detail": detail}
-
-
-def _weighted_components(components):
-    """Average available score components by configured weight.
-
-    Args:
-        components: Component name to component evidence.
-
-    Returns:
-        The weighted mean of available components, or zero when none are.
-    """
-    active = [component for component in components.values() if component["available"]]
-    weight = sum(component["weight"] for component in active)
-    return (sum(component["score"] * component["weight"] for component in active) / weight
-            if weight else 0.0)
-
-
 def _rtl_provenance(rtl):
     """Return the source handles and bounded sites needed to inspect an RTL signal.
 
@@ -467,24 +433,6 @@ def _rtl_provenance(rtl):
         "reader_sites": rtl["reader_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
         "writer_sites": rtl["writer_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
     }
-
-
-def confidence_level(score):
-    """Map a numeric accepted alignment score to the configured trust band.
-
-    Args:
-        score: Accepted alignment score.
-
-    Returns:
-        ``STRONG``, ``MEDIUM``, ``WEAK``, or ``UNRESOLVED``.
-    """
-    if score >= cfg.BRIDGE_STRONG_MIN:
-        return STRONG
-    if score >= cfg.BRIDGE_MEDIUM_MIN:
-        return MEDIUM
-    if score >= cfg.BRIDGE_ACCEPT_MIN:
-        return WEAK
-    return UNRESOLVED
 
 
 def _spec_provenance(spec):
@@ -759,138 +707,69 @@ def _canonical_section(raw):
         "section_id": raw["node_id"],
         "title": raw.get("subsection_title") or raw["section_name"],
         "path": list(raw["path"]),
-        "description": "",
         "document_id": raw.get("document_id"),
         "page": raw["start_page"],
         "source_file": raw["doc_name"],
     }
 
-def _module_candidate(section, module, scoped_alignments, scoped_specs):
-    """Score one section-to-module candidate using names, context, and child mappings.
+def _title_identity(section, module):
+    """Tell whether a section title names a module, ignoring plurals and container nouns.
 
     Args:
         section: Canonical section record.
         module: Canonical RTL module record.
-        scoped_alignments: Signal alignments belonging to this section.
-        scoped_specs: Specification signals belonging to this section.
 
     Returns:
-        A scored candidate record carrying its eligibility flag.
+        True when the title and the module name are the same words.
     """
     title_tokens = _module_identity_tokens(_tokens(section["title"]))
     module_tokens = _module_identity_tokens(module["normalized_tokens"])
-    token_score = _jaccard(title_tokens, module_tokens)
-    edit = _edit_similarity("".join(title_tokens), "".join(module_tokens))
-    name_score = max(token_score, edit * cfg.BRIDGE_EDIT_WEIGHT)
-    if (normalize_module_name(section["title"]) == module["normalized_name"]
-            or set(title_tokens) == set(module_tokens)):
-        name_score = 1.0
-    spec_context = _tokens(" ".join([*section["path"], section["description"],
-                                      *(spec.get("description", "") for spec in scoped_specs)]))
-    module_signal_text = " ".join(
-        signal["original_name"] for key in ("ports", "signals")
-        for signal in module["raw"].get(key, []))
-    module_context = _tokens(" ".join((module["normalized_name"], module["description"],
-                                       module_signal_text)))
-    context_available = bool(spec_context and module_context)
-    context_score = _jaccard(spec_context, module_context)
-    child = [alignment for alignment in scoped_alignments
-             if alignment.get("rtl_module_id") == module["module_id"]]
-    child_score = len(child) / len(scoped_alignments) if scoped_alignments else 0.0
-    components = {
-        "normalized_title": _component(name_score, cfg.BRIDGE_MODULE_WEIGHTS["name"], True,
-                                       "section title vs normalized module name"),
-        "context": _component(context_score, cfg.BRIDGE_MODULE_WEIGHTS["context"],
-                              context_available,
-                              "section path/descriptions vs module/signals"),
-        "child_signals": _component(child_score,
-                                    cfg.BRIDGE_MODULE_WEIGHTS["child_signals"],
-                                    bool(scoped_alignments),
-                                    f"{len(child)} of {len(scoped_alignments)} aligned signals"),
-    }
-    return {
-        "rtl_module_id": module["module_id"],
-        "rtl_module_name": module["original_name"],
-        "score": _round(_weighted_components(components)),
-        "methods": _unique((["normalized_title"] if name_score > 0 else []) +
-                           (["context_overlap"] if context_score > 0 else []) +
-                           (["child_signal_support"] if child else [])),
-        "component_evidence": components,
-        "child_spec_signal_ids": [alignment["spec_signal_id"] for alignment in child],
-        "provenance": {"file": module["file"], "start_line": module["start_line"],
-                       "end_line": module["end_line"]},
-        "eligible": (name_score >= cfg.BRIDGE_MODULE_NAME_MIN or bool(child) or
-                     context_score >= cfg.BRIDGE_MODULE_CONTEXT_MIN),
-    }
+    return bool(title_tokens) and (
+        normalize_module_name(section["title"]) == module["normalized_name"]
+        or set(title_tokens) == set(module_tokens))
 
 
 def derive_module_alignments(hierarchy, modules, alignments, specs):
-    """Derive inspectable section-to-module alignments from names, context, and child signals.
+    """Link sections to modules by title identity or by their own signals' links.
 
     Args:
         hierarchy: Decoded specification hierarchy artifact.
         modules: Canonical RTL module records.
-        alignments: Accepted signal alignments.
+        alignments: Signal link rows.
         specs: Canonical specification signals.
 
     Returns:
-        Section alignment records ordered by section identifier.
+        One row per (section, module) with stated evidence, ordered by section then module;
+        sections with none are not written.
     """
-    by_spec_id = {spec["signal_id"]: spec for spec in specs}
-    results = []
+    rows = []
     for raw in _section_rows(hierarchy):
         section = _canonical_section(raw)
-        if not section["section_id"] or not section["title"]:
-            continue
-        scoped_specs = [spec for spec in specs if section["section_id"] in
-                        {spec.get("section_id"), spec.get("subsection_id")}]
-        scoped_ids = {spec["signal_id"] for spec in scoped_specs}
-        scoped_alignments = [alignment for alignment in alignments
-                             if alignment["spec_signal_id"] in scoped_ids]
-        candidates = [_module_candidate(section, module, scoped_alignments, scoped_specs)
-                      for module in modules]
-        candidates = [candidate for candidate in candidates if candidate["eligible"]]
-        candidates.sort(key=lambda candidate: (-candidate["score"],
-                                               candidate["rtl_module_id"]))
-        candidates = candidates[:cfg.BRIDGE_MODULE_CANDIDATES]
-        for rank, candidate in enumerate(candidates, 1):
-            candidate["candidate_rank"] = rank
-            candidate.pop("eligible", None)
-        if not candidates:
-            continue
-        top_name_score = candidates[0]["component_evidence"]["normalized_title"]["score"]
-        if (not scoped_specs and not scoped_alignments
-                and top_name_score < cfg.BRIDGE_MODULE_PERSIST_NAME_MIN):
-            continue
-        top = candidates[0]
-        ambiguous = (len(candidates) > 1 and
-                     top["score"] - candidates[1]["score"] <= cfg.BRIDGE_AMBIGUITY_MARGIN)
-        accepted = top["score"] >= cfg.BRIDGE_MODULE_ACCEPT_MIN and not ambiguous
-        entry = {
-            "alignment_id": ("bridge::module::" + content_hash(
-                section["section_id"], top["rtl_module_id"]) if accepted else None),
-            "spec_section_id": section["section_id"],
-            "spec_section_title": section["title"],
-            "rtl_module_id": top["rtl_module_id"] if accepted else None,
-            "rtl_module_name": top["rtl_module_name"] if accepted else None,
-            "confidence": top["score"] if accepted else 0.0,
-            "confidence_level": confidence_level(top["score"]) if accepted else UNRESOLVED,
-            "methods": top["methods"] if accepted else [],
-            "candidate_rank": top["candidate_rank"] if accepted else None,
-            "component_evidence": top["component_evidence"] if accepted else {},
-            "ambiguous": ambiguous,
-            "candidates": candidates,
-            "provenance": {"spec": {key: section[key] for key in (
-                "document_id", "page", "source_file") if section.get(key) is not None},
-                           "child_spec_signal_ids": sorted(by_spec_id[signal_id]["signal_id"]
-                                                           for signal_id in scoped_ids)},
-        }
-        if not accepted:
-            entry["reason"] = ("top module candidates are too close to choose safely" if ambiguous
-                               else "best module candidate is below the acceptance threshold")
-        results.append(entry)
-    return sorted(results, key=lambda entry: entry["spec_section_id"])
-
+        scoped = {spec["signal_id"] for spec in specs if section["section_id"] in
+                  {spec.get("section_id"), spec.get("subsection_id")}}
+        counts = {}
+        for link in alignments:
+            if link["spec_signal_id"] in scoped and link.get("rtl_module_id"):
+                counts[link["rtl_module_id"]] = counts.get(link["rtl_module_id"], 0) + 1
+        for module in modules:
+            titled = _title_identity(section, module)
+            if not titled and module["module_id"] not in counts:
+                continue
+            rows.append({
+                "spec_section_id": section["section_id"],
+                "spec_section_title": section["title"],
+                "rtl_module_id": module["module_id"],
+                "rtl_module_name": module["original_name"],
+                "method": "title_identity" if titled else "link_support",
+                "link_count": counts.get(module["module_id"], 0),
+                "confidence_level": STRONG if titled else MEDIUM,
+                "provenance": {"spec": {key: section[key] for key in (
+                    "document_id", "page", "source_file") if section.get(key) is not None},
+                               "rtl": {"file": module["file"],
+                                       "start_line": module["start_line"],
+                                       "end_line": module["end_line"]}},
+            })
+    return sorted(rows, key=lambda row: (row["spec_section_id"], row["rtl_module_id"]))
 
 def build_bridge(spec_data, rtl_data, hierarchy_data, source_fingerprints=None):
     """Build the complete deterministic bridge artifact from decoded upstream artifacts.
@@ -924,8 +803,7 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, source_fingerprints=None):
         "summary": {
             "spec_signals": len(specs), "rtl_signals": len(rtl_rows),
             "signal_alignments": len(alignments), "unresolved_signals": len(unresolved),
-            "module_alignments": sum(item["rtl_module_id"] is not None
-                                     for item in module_alignments),
+            "module_alignments": len(module_alignments),
         },
     }
 
