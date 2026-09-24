@@ -82,3 +82,11 @@ Every step: failing test first, full suite green, commit, `build.py --clean`,
 
 Behaviour steps s2-s7 wait for the ingest queue so every row delta is attributable to one
 change.
+
+## Outcome (2026-09-24)
+
+s2-s7 and the consolidation ran: 1557 → 931 rows, all ids unique. Record contract (schema 6):
+`signal_id`, `name`, `normalized_name`, `normalized_tokens`, `width` (cell), `source` (cell),
+`description`, `document_id`, `hierarchy_id`, `section_path`, `section_id`, `subsection_id`
+(until the agent walk), `table_id`, `table_label`, `table_caption`, `row_index`, `page`,
+`source_file`, `chunk_id`.

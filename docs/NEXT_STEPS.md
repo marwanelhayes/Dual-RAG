@@ -9,7 +9,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-19).
 
 ## Where we are
 
-Branch `simplify`, head `1d4b526`. Tests: 257 passed. Decision metrics:
+Branch `simplify`, head `6545463`. Tests: 273 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -62,6 +62,30 @@ RTL section recall stayed 1.0 throughout.
 | rt10 `windows` | `2d52910` | `1f036772` | 0.633 / 0.458 / 0.634 | coverage 1.0; 308 records |
 | rt11 `drop-terms-cap` | `1d4b526` | `939a6415` | **0.633 / 0.458 / 0.625** | 323 records; max 474 tokens |
 
+Queues run 2026-09-24 (columns: spec section recall / RTL exact-id recall; bridge recall /
+precision against `eval/bridge_gold.json`, 25 AXI channel signals).
+
+| Step | Commit | MLflow run | spec / rtl | Notes |
+|---|---|---|---|---|
+| ingest 10 `prose-excludes-tables` | `1cd7264` | `b00eb79a` | 0.608 / 0.458 | prose with a table header 404 → 59 |
+| ingest 11 `table-owner-position` | `423ba04` | `f47dbba8` | 0.617 / 0.458 | 127 table owners corrected |
+| ingest 12 `table-continuations` | `3d059b4` | `8b9356ce` | 0.617 / 0.458 | table rows 2471 → 3109 |
+| ingest 12b `wrapped-cells` | `5952227` | `fcee13b7` | 0.617 / 0.458 | rows 3109 → 2964 (run logged pre-amend; comment-only diff) |
+| ingest 13 `code-line-split` | `f24e832` | `5f70353f` | 0.617 / 0.458 | chunks over 512 tokens 38 → 21 |
+| ingest 14 `token-caps` | `965d084` | `43d18285` | 0.583 / 0.458 | 0 over limit; hard limit fails the run |
+| ingest 15 `sweep/chunk_tokens` | `68011aa` | `b0eb5072` | **0.675** / 0.458 | 9-point grid; prose 384 / table 128 tokens |
+| signals s2-s7 | `d4265ea`..`09150b0` | `e2bae491`..`311a6295` | 0.675 / 0.458 | rows 1557 → 931, ids unique |
+| bridge b0 `metrics` | `01d7147` | `062b11bb` | bridge 0.44 / 1.0 | 13 links |
+| bridge b1-b4 removals | `bf84696`..`dbc296e` | `2135c733`..`306f2d50` | bridge 0.44 / 1.0 | zero / minus-key diffs |
+| bridge b5 `identity-links` | `57e637e` | `ff227735` | bridge **1.0** / 0.972 | 569 links; learned prefixes |
+| bridge b6 `same-net` | `7fe75f0` | `54758a49` | bridge 1.0 / 0.94 | 19 net links, all spreading name collisions |
+| bridge b7-b9 | `2768d78`..`45fe9fb` | `a9619356`..`8aa7cd87` | bridge 1.0 / 0.94 | suggestions; 18 CSR→enum links; module links |
+| bridge b10 `consolidate-signals` | `b68ccf3` | `07e50ab5` | bridge 1.0 / 0.94 | spec_signals contract; modules 136 |
+| naming `active-low-suffix` | `6545463` | `c8f6267f` | 0.675 / 0.458 | `ARESETn` → `areset` + `n` |
+
+Ingest 10 (-0.025): gold rewarded prose copies of the rounding-mode table; the table chunk is
+still retrieved. Ingest 14 (-0.034): the default 256-token cap, fixed by the sweep.
+
 rt6 (-1 gold id): `cache` now names both parents, which trimmed its comment facet; its vector
 moved and `CMP_EXCLUSIVE_EXACT` lost `rtl:cache` at rank 5. rt8 (-2): all 154 texts changed;
 3 of 5 lost ids were trimmed blocks shifting among near ties (3 gained, MRR up). Both were
@@ -101,32 +125,32 @@ test PDFs have points but no printed heading, and it would delete body text.
 ## Then
 
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
-ending "... going for bridge.py" when the walk queue reaches it.
+ending "... going for retrieve.py".
 
-1. Ingest steps 10-15 in `docs/specs/ingest.md` (10 prose excludes tables, 11 table owner by
-   position, 12 continuations, 12b wrapped cells, 13 code-line split, 14 token caps, 15
-   sweep). Step 13 uses the newlines step 9 keeps; step 14 also closes DF-09 (52 chunks over
-   512 tokens).
-2. spec_signals s2-s7 after the ingest queue (row deltas attributable).
-3. Then `bridge.py`, `retrieve.py` / `agent.py` walks.
+1. **Walk `retrieve.py`** (exact lookup and `RTLRetriever` moved in at rt1; `Document` hit
+   type; window folding), then **`agent.py`** (pending lists below).
+2. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
+   collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
+   (DF), or propagate only from `interface_prefix` links.
 
 Done 2026-09-23: step 9b, `embed.py` walk + e0-e5 (Chroma), `rtl_ingest.py` walk + r0-r5.
-Done 2026-09-24: `rtl_embed.py` walk + rt0-rt11. Specs: [`embed.md`](specs/embed.md),
-[`rtl_ingest.md`](specs/rtl_ingest.md).
+Done 2026-09-24: `rtl_embed.py` walk + rt0-rt11; ingest 10-15; spec_signals s2-s7;
+`bridge.py` walk + b0-b10; `ARESETn` tokenization; `faiss-cpu` / `langchain-community`
+uninstalled from `.venv`.
 
-## Pending consolidation (bridge / agent walk)
+## Pending consolidation (agent walk)
 
-Consumers move to `hierarchy_id` + `section_path`, `name`, raw `source` and `width`; then
-drop `section_id`, `section_title`, `subsection_id`, `subsection_title`, `id`,
-`original_name`, `row_kind`, `direction`, `source_role`, `source_role_source`. Open
-duplicate: `doc_name` and `source_file` hold the same filename. Document authority (kept)
-is revisited at the `retrieve.py` walk.
+spec_signals still writes `section_id` / `subsection_id` because `agent.select_spec_signals`
+matches them against chunk metadata; the agent moves to `hierarchy_id`, then both go (and
+ingest's `section_id`, `section_title`, `subsection_id`, `subsection_title`). The agent's
+`direction=` print reads a field that no longer exists. Open duplicate: `doc_name` and
+`source_file` hold the same filename. Document authority (kept) is revisited at the
+`retrieve.py` walk.
 
 ## Pending consolidation (embed / rtl, by consumer walk)
 
 - `rtl_embed`: done (rt0-rt11). Alias pairs `file` / `file_path`, `line` / `start_line`, `symbol_name` /
   `original_name`, `instance_id` / `construct_id` (also bridge, agent).
-- `bridge`: `enum_usage` moves here or is dropped; `naming.py` judged here.
 - `retrieve`: `langchain_core.documents.Document` as hit type; `VectorStore.load(records)`.
 - `agent`: the embed manifest (freshness guard) is revisited.
 
@@ -138,15 +162,12 @@ is revisited at the `retrieve.py` walk.
 - `rtl.construct.chunk_tokens_max` is 474 of 512 with `RTL_CHUNK_CHARS = 1200`; windows cut
   by characters, so a denser block could pass 512 (`rtl.chunks_over_limit` watches it).
 
-- `naming._raw_tokens` splits `ARESETn` as `arese` + `tn` (acronym boundary), so AXI-style
-  `…n` resets cannot link spec to RTL. Fix at the `bridge.py` walk, failing test first.
-- `rtl_ingest.enum_usage`: 13 of 326 usage sites match an enum member only inside comments.
 
 - `bench._chunk_family` treats an unwindowed table's label as a window suffix, so
   `family_recall_at_k` counts any table of the document as a hit (superseded as a decision
   metric by section recall).
 - `SPEC_AXI_WLAST` is 0 since step 9: waveform 7.6 outranks spec A3.2.1.
-- `faiss-cpu` and `langchain-community` left `requirements.txt` but are still installed in
-  `.venv`; `pip uninstall` them when convenient.
+- Bridge name collisions: exact identity links `WDATA` → register-file `WData` (9 rows) and
+  `VALID` → FPU `valid` (6), counted wrong by `bridge.axi_precision`.
 - `.gitignore` is itself ignored, so un-ignore lines are local only; tracked eval files were
   added with `git add -f`.

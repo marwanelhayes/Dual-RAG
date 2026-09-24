@@ -89,3 +89,18 @@ commit, `build.py --clean`, `bench.py --retrieval`, `track.py --tag <tag>`.
 | b8 | `bridge/register-links` | enum-member targets | + CSR links |
 | b9 | `bridge/module-links` | title identity + link support; agent branch removed | module rows |
 | b10 | `bridge/consolidate-signals` | spec_signals `hierarchy_id`, `section_path`, raw `width`; drops pending fields | renamed / minus keys |
+
+## Outcome (2026-09-24)
+
+| | b0 | b10 |
+|---|---|---|
+| `bridge.axi_recall` | 0.44 | **1.0** |
+| `bridge.axi_precision` | 1.0 | 0.94 |
+| links (identity / interface_prefix / same_net) | 13 scored | 606 (34 / 553 / 19) |
+| CSR → enum-member links | 0 | 18 |
+| width conflicts stated | hidden | 23 (`ARSIZE` / `AWSIZE` 3 vs 4) |
+| section → module rows | 53 (2 accepted) | 136 (2 title, 134 link support) |
+
+Deviation: `confidence` (numeric) is gone; the agent prints `method=` instead. Precision
+losses are exact-name collisions (`WDATA`→`WData`, `VALID`→`valid`) and the 19 `same_net`
+links that spread them; `same_net` is reopened in `NEXT_STEPS.md`.

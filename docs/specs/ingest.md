@@ -134,3 +134,11 @@ Every step: failing test first, full suite green, commit, `build.py --clean`,
 | 13 | `ingest/code-line-split` | oversize units split at line breaks | no chunk over cap |
 | 14 | `ingest/token-caps` | `MAX_CHUNK_TOKENS`, `MAX_TABLE_CHUNK_TOKENS`, 512 hard limit, env override | sizes change |
 | 15 | `sweep/chunk_tokens` | grid 128 / 256 / 384 prose; 1-row / 128 / 256 tables | pick by metrics |
+
+## Outcome of steps 10-15 (2026-09-24)
+
+Section recall 0.633 (9b) → **0.675** at the swept caps (384 prose / 128 table tokens,
+`MAX_CHUNK_TOKENS` / `MAX_TABLE_CHUNK_TOKENS` env overrides). `prose_table_overlap` 404 → 49
+(the rest: uncaptioned tables sharing a header shape). Table rows 2471 → 2964. Chunks over
+512 tokens 52 → 0; the run fails on any. Not added: `oversize_units_split`,
+`table_owner_changed` metrics (diffs were computed per step instead).
