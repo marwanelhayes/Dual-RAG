@@ -547,3 +547,29 @@ def test_table_cells_never_enter_prose(tmp_path):
     assert "CELLAWID" in table
     assert "CELLAWID" not in prose and "Signal Source" not in prose
     assert "prose continues" in prose
+
+
+def _node(node_id, page, y, path):
+    return {"node_id": node_id, "own_start_page": page, "start_y": y, "path": path,
+            "section_id": node_id, "section_title": path[-1], "subsection_id": None,
+            "subsection_title": None, "section_number": None}
+
+
+def test_a_table_belongs_to_the_section_whose_heading_sits_above_its_caption(monkeypatch):
+    nodes = [_node("s1", 4, 100.0, ["1 Bus"]), _node("s2", 4, 500.0, ["1 Bus", "1.2 Later"])]
+    monkeypatch.setattr(ingest, "build_caption_index", lambda document: {
+        "1.1": {"page": 4, "caption": "Signals", "bbox": (0, 300, 1, 310)}})
+    monkeypatch.setattr(ingest, "extract_table", lambda page, bbox, next_page=None: (
+        [["Signal", "Width"], ["rm_i", "3"]], "lines", None))
+
+    table = ingest.build_tables(PageSequence(20), "spec", "spec.pdf", nodes)["1.1"]
+
+    assert table["hierarchy_id"] == "s1"
+
+
+def test_a_table_chunk_header_names_its_section_path(tmp_path):
+    _, _, records = ingest.ingest_pdf(_ruled_table_pdf(tmp_path))
+
+    assert [record["context_header"] for record in records
+            if record["chunk_type"] == "table"] == [
+        "ruled.pdf > 1 Channels > Table 1.1: Channel signals"]

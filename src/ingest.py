@@ -858,10 +858,11 @@ def build_tables(doc, doc_id, doc_name, nodes):
         page = doc[cap["page"] - 1]
         following = doc[cap["page"]] if cap["page"] < doc.page_count else None
         rows, method, region = extract_table(page, cap["bbox"], next_page=following)
-        # Ordered outlines make the latest section start the table's owner.
+        # The owner is the last section whose heading point sits at or above the caption.
+        caption_at = (cap["page"], cap["bbox"][1] + cfg.HEADING_POINT_SLACK)
         owner = None
         for node in nodes:
-            if node["own_start_page"] <= cap["page"]:
+            if (node["own_start_page"], node["start_y"] or 0.0) <= caption_at:
                 owner = node
             else:
                 break
@@ -1093,8 +1094,9 @@ def ingest_pdf(path):
                 "section_number": table["section_number"],
                 "section_name": table["subsection_title"] or table["section_title"],
                 "section_path": table["section_path"],
-                "context_header": (
-                    f"{doc_name} > Table {table['label']}: {table['caption']}"),
+                "context_header": " > ".join([
+                    doc_name, *table["section_path"],
+                    f"Table {table['label']}: {table['caption']}"]),
                 "table_label": table["label"],
                 "table_id": table["table_id"],
                 "table_ids": [table["table_id"]],
