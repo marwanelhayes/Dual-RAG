@@ -16,7 +16,7 @@ def table_chunk(columns, rows):
         "subsection_id": "fpu_spec::sec::0001", "subsection_title": "Interface",
         "table_id": "fpu_spec::table::2.1", "table_ids": ["fpu_spec::table::2.1"],
         "table_label": "2.1", "caption": "Interface signals", "page": 4,
-        "columns": columns, "rows": rows,
+        "columns": columns, "rows": rows, "row_start": 0,
     }
 
 
@@ -169,3 +169,16 @@ def test_a_bits_column_is_a_position_not_a_width():
     fields = table_chunk(["Bits", "Name", "Description"], [["[5:4]", "CBIE", "Enable."]])
 
     assert spec_signals.build_spec_signals([fields]) == []
+
+
+def test_a_name_repeated_across_windows_of_one_table_keeps_every_row():
+    first = table_chunk(["Signal", "Width"], [["AWID", "4"], ["AWLEN", "8"]])
+    second = table_chunk(["Signal", "Width"], [["AWID", "8"]])
+    first["row_start"], second["row_start"] = 0, 2
+    second["chunk_id"] = "fpu_spec#table#2.1#0002"
+
+    signals = spec_signals.build_spec_signals([first, second])
+
+    assert [(signal["name"], signal["row_index"]) for signal in signals] == [
+        ("AWID", 1), ("AWLEN", 2), ("AWID", 3)]
+    assert signals[2]["signal_id"] == signals[0]["signal_id"] + "::2"

@@ -168,7 +168,7 @@ def _signal_record(record, signal_id, name, row_kind, row_index, **stated):
         signal_id: Stable identifier for this signal.
         name: Source spelling of the signal.
         row_kind: ``port`` or ``register_field``.
-        row_index: One-based position within the chunk.
+        row_index: One-based row position within the whole table.
         stated: Fields the caller actually read, overriding the unstated defaults.
 
     Returns:
@@ -205,11 +205,13 @@ def _signal_record(record, signal_id, name, row_kind, row_index, **stated):
     return signal
 
 
-def signals_from_table(record):
+def signals_from_table(record, occurrences=None):
     """Extract structured signal rows from one table chunk.
 
     Args:
         record: Structured table chunk emitted by ``ingest.py``.
+        occurrences: Per-name counter shared by every window of the table, so a name
+            repeated across windows gets the next ``::n`` suffix.
 
     Returns:
         Stable signal records in source row order.
@@ -241,8 +243,8 @@ def signals_from_table(record):
     table_id = record["table_id"]
     table_label = record["table_label"]
     signals = []
-    occurrences = {}
-    for row_index, row in enumerate(rows, start=1):
+    occurrences = {} if occurrences is None else occurrences
+    for row_index, row in enumerate(rows, start=record["row_start"] + 1):
         original_name = _signal_name(_cell(row, name_index))
         # In an address table a row without an address is a group label, not a register.
         if not original_name or (address_index is not None and not _cell(row, address_index)):
@@ -279,16 +281,9 @@ def build_spec_signals(records):
     Returns:
         Signal records with one stable ID each.
     """
-    records = list(records)
-    signals = []
-    seen = set()
-    for record in records:
-        for signal in signals_from_table(record):
-            if signal["signal_id"] in seen:
-                continue
-            seen.add(signal["signal_id"])
-            signals.append(signal)
-    return signals
+    occurrences = {}
+    return [signal for record in records
+            for signal in signals_from_table(record, occurrences)]
 
 
 def save_spec_signals(signals, path=cfg.SPEC_SIGNALS_PATH):
