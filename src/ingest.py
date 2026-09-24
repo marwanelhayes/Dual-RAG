@@ -979,6 +979,27 @@ def enrich_spec_record(record):
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
+def _line_pieces(text, max_chars):
+    """Pack a text's lines into whitespace-normalised pieces within the cap.
+
+    Args:
+        text: Text whose line breaks are the only safe cut points.
+        max_chars: Soft character cap per piece; a longer single line stays whole.
+
+    Returns:
+        Pieces in order, together holding every line once.
+    """
+    pieces = []
+    for line in (" ".join(line.split()) for line in text.splitlines()):
+        if not line:
+            continue
+        if pieces and len(pieces[-1]) + 1 + len(line) <= max_chars:
+            pieces[-1] += " " + line
+        else:
+            pieces.append(line)
+    return pieces
+
+
 def split_sentences(text):
     """Split text into sentences with a rule-based splitter.
 
@@ -991,9 +1012,13 @@ def split_sentences(text):
     # Keep this stage offline; overlap absorbs occasional regex miscuts of spec tokens.
     parts = _SENTENCE_END.split(text)
     sentences = []
-    for part in parts:
-        part = " ".join(part.split())
+    for raw in parts:
+        part = " ".join(raw.split())
         if not part:
+            continue
+        # A unit over the cap with no sentence end (a code listing) splits at its lines.
+        if len(part) > cfg.MAX_CHUNK_CHARS:
+            sentences.extend(_line_pieces(raw, cfg.MAX_CHUNK_CHARS))
             continue
         # Abbreviations and bare initials/digits are false sentence endings.
         if sentences:

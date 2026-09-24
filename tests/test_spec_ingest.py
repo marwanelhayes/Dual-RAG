@@ -631,3 +631,14 @@ def test_a_wrapped_description_joins_its_row_instead_of_repeating_the_name():
 def test_cells_stacked_to_the_same_depth_still_split_into_rows():
     assert ingest.unstack_row(["AWID\nAWADDR", "Manager\nManager", "Write id"]) == [
         ["AWID", "Manager", "Write id"], ["AWADDR", "Manager", "Write id"]]
+
+
+def test_a_code_listing_over_the_cap_splits_at_its_line_breaks(monkeypatch):
+    monkeypatch.setattr(ingest.cfg, "MAX_CHUNK_CHARS", 60)
+    listing = "\n".join(f"reg[{index}] <= data_in" for index in range(12))
+
+    units = ingest.split_sentences("Intro sentence ends here. " + listing)
+
+    assert units[0] == "Intro sentence ends here."
+    assert all(len(unit) <= 60 for unit in units)
+    assert " ".join(units[1:]) == " ".join(listing.split())
