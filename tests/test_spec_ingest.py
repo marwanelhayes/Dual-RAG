@@ -6,12 +6,20 @@ import configure as cfg
 import ingest
 
 
+class BlankPage:
+    """Page stand-in carrying no text blocks."""
+
+    def get_text(self, kind=None):
+        """Report an empty page."""
+        return []
+
+
 class PageSequence(list):
     """Minimal PDF stand-in that indexes like pages and reports its length."""
 
     def __init__(self, page_count):
-        """Fill the sequence with one placeholder page per document page."""
-        super().__init__(object() for _ in range(page_count))
+        """Fill the sequence with one blank page per document page."""
+        super().__init__(BlankPage() for _ in range(page_count))
         self.page_count = page_count
 
 
@@ -573,3 +581,41 @@ def test_a_table_chunk_header_names_its_section_path(tmp_path):
     assert [record["context_header"] for record in records
             if record["chunk_type"] == "table"] == [
         "ruled.pdf > 1 Channels > Table 1.1: Channel signals"]
+
+
+def _draw_table(page, top, rows):
+    """Draw a ruled two-column table with ``rows`` of cell text starting at ``top``."""
+    left, width, height = 72, 300, 20
+    for index in range(len(rows) + 1):
+        page.draw_line((left, top + index * height), (left + width, top + index * height))
+    for column in range(3):
+        page.draw_line((left + column * width / 2, top),
+                       (left + column * width / 2, top + len(rows) * height))
+    for index, cells in enumerate(rows):
+        for column, text in enumerate(cells):
+            page.insert_text((left + 4 + column * width / 2, top + 14 + index * height), text,
+                             fontsize=9)
+
+
+def test_a_table_continued_on_the_next_page_keeps_its_rows(tmp_path):
+    import fitz
+
+    path = tmp_path / "continued.pdf"
+    doc = fitz.open()
+    first = doc.new_page()
+    first.insert_text((72, 100), "The channel signals are listed in the table below.", fontsize=10)
+    first.insert_text((72, 140), "Table 1.1: Channel signals", fontsize=10)
+    _draw_table(first, 160, [("Signal", "Source"), ("CELLAWID", "Manager")])
+    second = doc.new_page()
+    # The base-14 test font cannot encode an en dash; real banners use one.
+    second.insert_text((72, 100), "Table 1.1 - Continued from previous page", fontsize=10)
+    _draw_table(second, 120, [("Signal", "Source"), ("CELLAWLEN", "Manager")])
+    second.insert_text((72, 300), "Prose after the table resumes here with words.", fontsize=10)
+    doc.set_toc([[1, "1 Channels", 1]])
+    doc.save(path)
+
+    _, tables, records = ingest.ingest_pdf(path)
+    prose = " ".join(record["text"] for record in records if record["chunk_type"] == "prose")
+
+    assert tables["1.1"]["rows"] == [["CELLAWID", "Manager"], ["CELLAWLEN", "Manager"]]
+    assert "CELLAWLEN" not in prose and "resumes here" in prose

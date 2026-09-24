@@ -591,6 +591,27 @@ def section_page_texts(doc, sec, furniture, bands=(None, None), regions=None):
 _CAPTION = re.compile(r"^(Table)\s+([A-Z]?\d+(?:[.-]\d+)*)\s*([.:])\s+(.+)$")
 
 _TABLE_REF = re.compile(r"\bTable\s+([A-Z]?\d+(?:[.-]\d+)*)")
+# A table running past its page restates its label in a banner on each following page.
+_CONTINUED = re.compile(r"^Table\s+([A-Z]?\d+(?:[.-]\d+)*)\s*[\u2013-]\s*Continued from previous page")
+_CONTINUES = "Continued on next page"
+
+
+def continuation_banners(doc):
+    """Find every "Table X – Continued from previous page" banner.
+
+    Args:
+        doc: an open fitz.Document.
+
+    Returns:
+        dict of label -> list of (one-based page, banner bbox), in page order.
+    """
+    banners = collections.defaultdict(list)
+    for i in range(doc.page_count):
+        for block in doc[i].get_text("blocks"):
+            match = _CONTINUED.match(block[4].strip())
+            if match:
+                banners[match.group(1)].append((i + 1, tuple(block[:4])))
+    return banners
 
 
 def build_caption_index(doc):
@@ -854,10 +875,20 @@ def build_tables(doc, doc_id, doc_name, nodes):
         Table metadata keyed by label. Tables are not hierarchy nodes.
     """
     tables = {}
+    banners = continuation_banners(doc)
     for label, cap in build_caption_index(doc).items():
         page = doc[cap["page"] - 1]
         following = doc[cap["page"]] if cap["page"] < doc.page_count else None
         rows, method, region = extract_table(page, cap["bbox"], next_page=following)
+        regions = [(cap["page"] + region[0], region[1])] if region else []
+        # Continuation pages restate the header row, which is dropped once rows exist.
+        for number, banner in banners.get(label, []):
+            carried, _, carried_region = extract_table(doc[number - 1], banner)
+            carried = [row for row in carried if " ".join(row).strip() != _CONTINUES]
+            if not carried:
+                continue
+            rows = rows + (carried[1:] if rows and carried[0] == rows[0] else carried)
+            regions.append((number + carried_region[0], carried_region[1]))
         # The owner is the last section whose heading point sits at or above the caption.
         caption_at = (cap["page"], cap["bbox"][1] + cfg.HEADING_POINT_SLACK)
         owner = None
@@ -886,8 +917,8 @@ def build_tables(doc, doc_id, doc_name, nodes):
             "rows": data_rows,
             "n_rows": len(data_rows),
             "extraction": method,
-            # One-based page and bbox of the body, so prose can leave it out.
-            "regions": [(cap["page"] + region[0], region[1])] if region else [],
+            # One-based page and bbox of every body part, so prose can leave them out.
+            "regions": regions,
             "markdown": rows_to_markdown(rows) if rows else "",
         }
     return tables
