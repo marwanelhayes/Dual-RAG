@@ -1,8 +1,8 @@
 """Build a small, inspectable alignment bridge between specification and RTL evidence.
 
 The bridge aligns identities; it never decides whether RTL implements a requirement.  Cheap
-name probes generate several candidates, structured metadata narrows them, an optional pair
-scorer reranks only the survivors, and an optional tiny-model callback breaks close ties.
+name probes generate several candidates, structured metadata narrows them, and an optional
+pair scorer reranks only the survivors.
 """
 
 import argparse
@@ -1147,70 +1147,6 @@ def _rtl_provenance(rtl):
     }
 
 
-def ambiguity_evidence(spec, candidates, max_chars=None):
-    """Render one strictly bounded temporary evidence file for an ambiguous signal.
-
-    Args:
-        spec: Canonical specification signal.
-        candidates: Close candidates offered to the resolver.
-        max_chars: Optional cap, never exceeding the configured maximum.
-
-    Returns:
-        Bounded plain-text evidence describing the signal and its candidates.
-    """
-    limit = min(max_chars or cfg.BRIDGE_LLM_MAX_CHARS, cfg.BRIDGE_LLM_MAX_CHARS)
-    lines = ["SPEC SIGNAL", "", f"id: {spec['signal_id']}",
-             f"name: {spec['original_name']}", f"width: {spec['width']}",
-             f"direction: {spec['direction']}",
-             f"section: {spec.get('section_title') or ''} / {spec.get('subsection_title') or ''}",
-             f"description: {spec.get('description') or ''}", "", "RTL CANDIDATES"]
-    for candidate in candidates[:cfg.BRIDGE_LLM_MAX_CANDIDATES]:
-        rtl = candidate["rtl"]
-        lines.extend(["", f"{candidate['candidate_rank']}.", f"id: {rtl['signal_id']}",
-                      f"name: {rtl['original_name']}", f"width: {rtl['width']}",
-                      f"direction: {rtl['direction']}", f"module: {rtl['module_name']}",
-                      f"used in: {rtl.get('usage') or ''}",
-                      f"deterministic score: {candidate['final_score']}"])
-    lines.extend(["", "Choose only a candidate representing the same architectural concept.",
-                  "Return candidate_id, confidence, reason; return candidate_id null if unsure."])
-    return "\n".join(lines)[:limit]
-
-
-def _resolver_result(resolver, evidence, candidates):
-    """Validate a tiny-model resolver response against the offered candidate IDs.
-
-    Args:
-        resolver: Callable taking evidence text and returning a decision.
-        evidence: Bounded evidence text passed to the resolver.
-        candidates: Candidates the resolver was allowed to choose between.
-
-    Returns:
-        ``{candidate_id, confidence, reason}``, or None when the reply is unusable.
-    """
-    raw = resolver(evidence)
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-    if not isinstance(raw, dict):
-        return None
-    selected = _first(raw, "candidate_id", "rtl_signal_id", "candidate")
-    if isinstance(selected, int):
-        indexed = {candidate["candidate_rank"]: candidate["rtl"]["signal_id"]
-                   for candidate in candidates}
-        selected = indexed.get(selected)
-    offered = {candidate["rtl"]["signal_id"] for candidate in candidates}
-    if selected not in offered:
-        return None
-    try:
-        confidence = max(0.0, min(1.0, float(raw.get("confidence", 0.0))))
-    except (TypeError, ValueError):
-        confidence = 0.0
-    return {"candidate_id": selected, "confidence": _round(confidence),
-            "reason": str(raw.get("reason", ""))[:cfg.BRIDGE_LLM_REASON_CHARS]}
-
-
 def _implementation_sites(candidate):
     """Count compiler-observed sites that read or write one candidate signal.
 
@@ -1273,14 +1209,13 @@ def _spec_provenance(spec):
         "table_id", "chunk_id", "page", "source_file") if spec.get(key) is not None}
 
 
-def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
+def align_signal(spec, rtl_rows, scorer=None):
     """Run all enabled layers and return either an alignment or unresolved record.
 
     Args:
         spec: Canonical specification signal.
         rtl_rows: Canonical RTL signals to align against.
         scorer: Optional semantic pair scorer.
-        llm_resolver: Optional tiny-model tie-breaker.
 
     Returns:
         ``("aligned", record)`` or ``("unresolved", record)``.
@@ -1328,31 +1263,17 @@ def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
         top = most_used[0]
         close = most_used
     ambiguous = len(close) > 1
-    resolution = None
     selected = top
-    if ambiguous and llm_resolver is not None:
-        evidence = ambiguity_evidence(spec, close)
-        resolution = _resolver_result(llm_resolver, evidence, close)
-        if resolution:
-            selected = next(candidate for candidate in close
-                            if candidate["rtl"]["signal_id"] == resolution["candidate_id"])
     score = selected["final_score"]
     if score < cfg.BRIDGE_ACCEPT_MIN:
         return unresolved("best candidate is below the acceptance threshold", ambiguous,
                           best_candidate_score=_round(score))
-    if ambiguous and resolution is None:
+    if ambiguous:
         return unresolved("top candidates are too close to choose safely", True,
                           best_candidate_score=_round(score))
-    if resolution is not None:
-        score = min(score, resolution["confidence"])
-        if score < cfg.BRIDGE_ACCEPT_MIN:
-            return unresolved("tiny-model resolution confidence is too low", True,
-                              resolution=resolution,
-                              best_candidate_score=_round(selected["final_score"]))
     rtl = selected["rtl"]
     alignment_id = "bridge::signal::" + content_hash(spec["signal_id"], rtl["signal_id"])
-    methods = _unique(selected["cheap"]["methods"] + ["structural_score"] +
-                      (["tiny_llm_resolution"] if resolution else []))
+    methods = _unique(selected["cheap"]["methods"] + ["structural_score"])
     return "aligned", {
         **base,
         "alignment_id": alignment_id,
@@ -1367,9 +1288,7 @@ def align_signal(spec, rtl_rows, scorer=None, llm_resolver=None):
         "candidate_rank": selected["candidate_rank"],
         "component_evidence": selected["component_evidence"],
         "ambiguity": {"was_ambiguous": ambiguous,
-                      "margin": cfg.BRIDGE_AMBIGUITY_MARGIN,
-                      "resolver_used": resolution is not None,
-                      "resolution": resolution},
+                      "margin": cfg.BRIDGE_AMBIGUITY_MARGIN},
         "provenance": {"spec": _spec_provenance(spec), "rtl": _rtl_provenance(rtl)},
     }
 
@@ -1565,8 +1484,7 @@ def derive_module_alignments(hierarchy, modules, alignments, specs):
     return sorted(results, key=lambda entry: entry["spec_section_id"])
 
 
-def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=None,
-                 source_fingerprints=None):
+def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, source_fingerprints=None):
     """Build the complete deterministic bridge artifact from decoded upstream artifacts.
 
     Args:
@@ -1574,7 +1492,6 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=
         rtl_data: Decoded RTL artifact.
         hierarchy_data: Decoded specification hierarchy artifact.
         scorer: Optional semantic pair scorer.
-        llm_resolver: Optional tiny-model tie-breaker.
         source_fingerprints: Optional precomputed input fingerprints.
 
     Returns:
@@ -1589,28 +1506,9 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=
                        if record is not None]
     rtl_rows = with_module_roles(rtl_signals(rtl_data), specs)
     modules = rtl_modules(rtl_data)
-    resolver_calls = 0
-
-    def bounded_resolver(evidence):
-        """Permit at most one configured tiny-model ambiguity decision per build.
-
-        Args:
-            evidence: Bounded evidence text for one ambiguous signal.
-
-        Returns:
-            The resolver's reply, or None once the per-build budget is spent.
-        """
-        nonlocal resolver_calls
-        if llm_resolver is None or resolver_calls >= cfg.BRIDGE_LLM_MAX_CALLS:
-            return None
-        resolver_calls += 1
-        return llm_resolver(evidence)
-
     alignments, unresolved = [], []
     for spec in specs:
-        outcome, record = align_signal(spec, rtl_rows, scorer=scorer,
-                                       llm_resolver=(bounded_resolver
-                                                     if llm_resolver is not None else None))
+        outcome, record = align_signal(spec, rtl_rows, scorer=scorer)
         (alignments if outcome == "aligned" else unresolved).append(record)
     module_alignments = derive_module_alignments(
         hierarchy_data, modules, alignments, specs)
@@ -1634,7 +1532,6 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, llm_resolver=
             "signal_alignments": len(alignments), "unresolved_signals": len(unresolved),
             "module_alignments": sum(item["rtl_module_id"] is not None
                                      for item in module_alignments),
-            "llm_fallback_calls": resolver_calls,
         },
     }
 
@@ -1654,50 +1551,6 @@ def load_bridge(path=cfg.BRIDGE_PATH):
                 "module_alignments": [], "summary": {}}
     with open(path, encoding="utf-8") as source:
         return json.load(source)
-
-
-def lookup_signal(bridge, name_or_id, include_unresolved=False):
-    """Return bridge rows matching a spec or RTL signal ID/name.
-
-    Args:
-        bridge: Decoded bridge artifact.
-        name_or_id: Specification or RTL signal identifier or name.
-        include_unresolved: Also search unresolved signals when true.
-
-    Returns:
-        Matching alignment rows, empty when nothing matches.
-    """
-    normalized = normalize_identifier(name_or_id)
-    rows = list(bridge.get("signal_alignments", []))
-    if include_unresolved:
-        rows.extend(bridge.get("unresolved_signals", []))
-    return [row for row in rows if name_or_id in {
-        row.get("spec_signal_id"), row.get("rtl_signal_id")
-    } or normalized in {
-        normalize_identifier(row.get("spec_original_name", "")),
-        normalize_identifier(row.get("rtl_original_name", "")),
-    }]
-
-
-def lookup_module(bridge, name_or_id, include_unresolved=False):
-    """Return section-to-module rows matching either side of the bridge.
-
-    Args:
-        bridge: Decoded bridge artifact.
-        name_or_id: Section or module identifier or name.
-        include_unresolved: Also return rows with no accepted module when true.
-
-    Returns:
-        Matching module alignment rows, empty when nothing matches.
-    """
-    normalized = normalize_module_name(name_or_id)
-    return [row for row in bridge.get("module_alignments", [])
-            if (include_unresolved or row.get("rtl_module_id") is not None) and (
-                name_or_id in {row.get("spec_section_id"), row.get("rtl_module_id")} or
-                normalized in {
-                    normalize_module_name(row.get("spec_section_title", "")),
-                    normalize_module_name(row.get("rtl_module_name", "")),
-                })]
 
 
 def _load_json(path):
@@ -1750,38 +1603,8 @@ def _write_bridge(artifact, path=cfg.BRIDGE_PATH):
     temporary.replace(destination)
 
 
-def ollama_resolver(evidence):
-    """Ask the configured tiny local model to resolve one bounded ambiguous shortlist.
-
-    Args:
-        evidence: Bounded evidence text for one ambiguous signal.
-
-    Returns:
-        The model's raw reply text, left unparsed so a truncated reply stays recoverable.
-    """
-    import httpx
-
-    schema = {"type": "object", "properties": {
-        "candidate_id": {"type": ["string", "null"]},
-        "confidence": {"type": "number"}, "reason": {"type": "string"}},
-        "required": ["candidate_id", "confidence", "reason"]}
-    body = {"model": cfg.LOCAL_LLM_MODEL, "stream": False, "think": False,
-            "format": schema,
-            "messages": [{"role": "system", "content": (
-                "Align identities only. Choose a candidate only when the evidence says it is "
-                "the same architectural concept; otherwise return null. Output JSON only.")},
-                         {"role": "user", "content": evidence[:cfg.BRIDGE_LLM_MAX_CHARS]}],
-            "options": {"temperature": 0, "num_ctx": cfg.AGENT_NUM_CTX,
-                        "num_predict": cfg.BRIDGE_LLM_MAX_TOKENS}}
-    host = str(cfg.LOCAL_LLM_HOST).rstrip("/")
-    response = httpx.post(f"{host}/api/chat", json=body, timeout=cfg.AGENT_TIMEOUT_S)
-    response.raise_for_status()
-    # Hand back raw text so a truncated reply resolves to unresolved instead of aborting.
-    return str(response.json()["message"]["content"])
-
-
 def _arguments(argv=None):
-    """Parse full-build bridge options without accepting the obsolete prefix mode.
+    """Parse full-build bridge options.
 
     Args:
         argv: Optional argument list for tests.
@@ -1792,8 +1615,6 @@ def _arguments(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rerank", action="store_true",
                         help="rerank structural survivors with the configured cross-encoder")
-    parser.add_argument("--llm", action="store_true",
-                        help="ask the tiny local model only for ambiguous top candidates")
     return parser.parse_args(argv)
 
 
@@ -1817,7 +1638,6 @@ def main(argv=None):
         scorer = Reranker().score_pairs
     fingerprints = source_fingerprints()
     artifact = build_bridge(spec_data, rtl_data, hierarchy_data, scorer=scorer,
-                            llm_resolver=ollama_resolver if args.llm else None,
                             source_fingerprints=fingerprints)
     _write_bridge(artifact)
     summary = artifact["summary"]

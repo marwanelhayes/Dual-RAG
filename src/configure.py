@@ -152,13 +152,6 @@ BRIDGE_ACCEPT_MIN = 0.62
 BRIDGE_MEDIUM_MIN = 0.74
 BRIDGE_STRONG_MIN = 0.88
 BRIDGE_AMBIGUITY_MARGIN = 0.05
-BRIDGE_LLM_MAX_CANDIDATES = 3
-BRIDGE_LLM_MAX_CHARS = 2600
-BRIDGE_LLM_REASON_CHARS = 240
-# Measured complete replies need 95-144 tokens, so 96 truncated the JSON mid-reason.
-BRIDGE_LLM_MAX_TOKENS = 256
-# Bounded fallbacks keep bridge construction from becoming an extraction workload.
-BRIDGE_LLM_MAX_CALLS = 300
 BRIDGE_MODULE_WEIGHTS = {"name": 0.5, "context": 0.2, "child_signals": 0.3}
 BRIDGE_MODULE_NAME_MIN = 0.45
 BRIDGE_MODULE_CONTEXT_MIN = 0.15

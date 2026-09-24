@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 import bridge
 import configure as cfg
 
@@ -234,58 +236,6 @@ def test_close_top_candidates_remain_unresolved_without_tiny_model():
     assert [item["candidate_rank"] for item in record["candidates"][:2]] == [1, 2]
 
 
-def test_tiny_model_is_bounded_to_ambiguous_shortlist_and_cannot_inflate_confidence():
-    spec = bridge.spec_signals(_spec())[0]
-    rtl = _rtl(
-        ("a", _module("a", "rtl::module::a", [
-            _rtl_signal("rounding_mode", "rtl::signal::a")], original_name="fpu")),
-        ("b", _module("b", "rtl::module::b", [
-            _rtl_signal("rounding_mode", "rtl::signal::b")], original_name="fpu")),
-    )
-    received = []
-
-    def resolver(evidence):
-        received.append(evidence)
-        return {"candidate_id": "rtl::signal::b", "confidence": 0.8, "reason": "same port"}
-
-    outcome, record = bridge.align_signal(
-        spec, bridge.rtl_signals(rtl), llm_resolver=resolver)
-
-    assert outcome == "aligned"
-    assert len(received) == 1 and len(received[0]) <= cfg.BRIDGE_LLM_MAX_CHARS
-    assert record["rtl_signal_id"] == "rtl::signal::b"
-    assert record["candidate_rank"] == 2
-    assert record["confidence"] == 0.8
-    assert record["ambiguity"]["resolver_used"] is True
-
-
-def test_full_build_stops_calling_the_tiny_model_at_the_configured_cap(monkeypatch):
-    monkeypatch.setattr(cfg, "BRIDGE_LLM_MAX_CALLS", 1)
-    specs = _spec()
-    duplicate = dict(specs["signals"][0])
-    duplicate["signal_id"] = "spec::signal::rounding_mode::duplicate"
-    specs["signals"].append(duplicate)
-    rtl = _rtl(
-        ("a", _module("a", "rtl::module::a", [
-            _rtl_signal("rounding_mode", "rtl::signal::a")], original_name="fpu")),
-        ("b", _module("b", "rtl::module::b", [
-            _rtl_signal("rounding_mode", "rtl::signal::b")], original_name="fpu")),
-    )
-    calls = []
-
-    def resolver(evidence):
-        calls.append(evidence)
-        return {"candidate_id": "rtl::signal::a", "confidence": 0.8,
-                "reason": "same interface role"}
-
-    artifact = bridge.build_bridge(specs, rtl, _hierarchy(), llm_resolver=resolver)
-
-    assert len(calls) == cfg.BRIDGE_LLM_MAX_CALLS == 1
-    assert artifact["summary"]["llm_fallback_calls"] == 1
-    assert len(artifact["signal_alignments"]) == 1
-    assert len(artifact["unresolved_signals"]) == 1
-
-
 def test_low_quality_candidates_are_retained_but_not_linked():
     spec = bridge.spec_signals(_spec("architectural_flag", 1, "input", "architectural flag"))[0]
     rtl = _rtl(
@@ -372,13 +322,10 @@ def test_schema_aliases_and_lookup_helpers_survive_upstream_migration(tmp_path):
     hierarchy = {"nodes": [{"node_id": "legacy::fpu", "title": "FPU", "type": "section"}]}
 
     artifact = bridge.build_bridge(specs, rtl, hierarchy)
-    path = tmp_path / "bridge.json"
-    path.write_text(json.dumps(artifact), encoding="utf-8")
-    loaded = bridge.load_bridge(path)
 
-    assert bridge.lookup_signal(loaded, "rounding_mode")[0]["rtl_signal_id"] == "legacy::rtl::rm"
-    assert bridge.lookup_signal(loaded, "legacy::rtl::rm")[0]["spec_signal_id"] == "legacy::rm"
-    assert bridge.lookup_module(loaded, "fpu")[0]["rtl_module_id"] == "legacy::module::fpu"
+    assert artifact["signal_alignments"][0]["rtl_signal_id"] == "legacy::rtl::rm"
+    assert artifact["signal_alignments"][0]["spec_signal_id"] == "legacy::rm"
+    assert artifact["module_alignments"][0]["rtl_module_id"] == "legacy::module::fpu"
 
 
 def test_source_fingerprints_hash_the_three_current_inputs(tmp_path, monkeypatch):
@@ -438,26 +385,6 @@ def test_observed_usage_separates_a_driver_from_identically_named_passthrough_po
     assert record["rtl_signal_id"] == "rtl::signal::driver"
 
 
-def test_resolver_hands_back_raw_output_so_truncation_cannot_abort_the_build(monkeypatch):
-    """Return unparsed model output so a truncated reply degrades to unresolved."""
-    import httpx
-
-    truncated = '{\n  "candidate_id": "rtl::signal::a",\n  "confidence": 0.9,\n  "reason": "the ca'
-
-    class _Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"message": {"content": truncated}}
-
-    monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: _Response())
-
-    raw = bridge.ollama_resolver("evidence")
-
-    assert bridge._resolver_result(lambda _: raw, "evidence", []) is None
-
-
 def _threaded_rtl():
     """Return an artifact where one port is threaded through two hierarchy levels."""
     port = {"original_name": "MAWBurst", "direction": "output", "width": 2}
@@ -513,3 +440,10 @@ def test_candidates_on_different_nets_stay_ambiguous():
 
     assert bridge._collapse_threaded_ports(close) == close
 
+
+
+def test_the_bridge_has_no_tiny_model_resolver_or_lookup_helpers():
+    assert not any(hasattr(bridge, name) for name in (
+        "ollama_resolver", "ambiguity_evidence", "lookup_signal", "lookup_module"))
+    with pytest.raises(SystemExit):
+        bridge._arguments(["--llm"])
