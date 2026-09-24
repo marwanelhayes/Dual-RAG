@@ -138,3 +138,13 @@ def test_bit_slices_and_dotted_names_are_not_signals():
         [["ACADDR[51]", "1"], ["vsew[2:0]", "3"], ["mstatus.MIE", "1"], ["AWVALID", "1"]])])
 
     assert [signal["original_name"] for signal in signals] == ["AWVALID"]
+
+
+def test_an_address_table_row_without_an_address_is_a_group_label():
+    listing = table_chunk(
+        ["Number", "Privilege", "Name", "Description"],
+        [["", "", "Supe", "rvisor Trap Setup"], ["0x100", "SRW", "sstatus", "Status."]])
+
+    signals = spec_signals.build_spec_signals([listing])
+
+    assert [signal["original_name"] for signal in signals] == ["sstatus"]

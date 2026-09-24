@@ -268,7 +268,8 @@ def signals_from_table(record):
     occurrences = {}
     for row_index, row in enumerate(rows, start=1):
         original_name = _signal_name(_cell(row, name_index))
-        if not original_name:
+        # In an address table a row without an address is a group label, not a register.
+        if not original_name or (address_index is not None and not _cell(row, address_index)):
             continue
         normalized_name = normalize_identifier(original_name)
         if not normalized_name:
