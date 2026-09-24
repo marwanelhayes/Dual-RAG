@@ -331,3 +331,16 @@ def test_records_carry_only_fields_a_reader_uses(tmp_path):
 
     assert set(module) == shared | {"original_name", "normalized_name", "signal_metadata"}
     assert set(block) == shared | {"signals_read", "signals_written"}
+
+
+def test_record_text_does_not_repeat_its_header_or_cite_line_numbers(tmp_path):
+    source = tmp_path / "fpu_decoder.sv"
+    records = re_.retrieval_records(_rtl(source))
+    module = next(record for record in records if record["chunk_id"] == "rtl:fpu_decoder")
+    block = next(record for record in records if record["source_type"] == "construct")
+
+    assert "structure:" not in module["text"]
+    assert "normalized module:" not in module["text"]
+    assert block["text"].startswith("reads: clk, enable\n")
+    assert "source:" not in block["text"]
+    assert "in module fpu_decoder" not in block["text"]

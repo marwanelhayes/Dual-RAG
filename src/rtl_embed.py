@@ -6,7 +6,6 @@ thousands of tiny semantic documents.
 """
 
 import json
-from pathlib import Path
 import re
 
 import configure as cfg
@@ -14,7 +13,6 @@ from embed import VectorStore, build_manifest, write_manifest
 from naming import identifier_tokens, normalize_identifier
 
 
-_MODULE_STRUCTURES = 24
 _MODULE_LINKS = 24
 # Rendered signal lists are bounded; the full lists stay in metadata, unembedded.
 _CONSTRUCT_SIGNALS = 16
@@ -226,16 +224,6 @@ def chunks(rtl):
         prose = comments(entry["source_code"])
         port_names = [port["original_name"] for port in entry["ports"]]
         kids = _unique(instance["target_module"] for instance in entry["instances"])
-        structures = [
-            *entry["always_blocks"],
-            *entry["functions_tasks"],
-            *entry["assignment_groups"],
-        ]
-        structural_summary = ", ".join(
-            f"{block['construct_type'].lower()} "
-            f"lines {block['start_line']}-{block['end_line']}"
-            for block in structures[:_MODULE_STRUCTURES]
-        )
         wiring = links.get(name, {})
         drives = _unique((f"{formal} -> {peer}"
                           for formal, peer in wiring.get("drives", [])), _MODULE_LINKS)
@@ -245,8 +233,6 @@ def chunks(rtl):
         said = "; ".join(prose)
         parts = [(label, text) for label, text in (
             ("identity", f"module {name}"),
-            ("normalized", f"normalized module: {entry['normalized_name']}"
-             if entry["normalized_name"] and entry["normalized_name"] != name else ""),
             ("parent", f"instantiated by: {', '.join(parents[name])}"
              if name in parents else ""),
             ("ports", f"ports: {', '.join(_unique(port_names, _MODULE_PORTS))}"
@@ -255,7 +241,6 @@ def chunks(rtl):
             ("drives", f"drives: {', '.join(drives)}" if drives else ""),
             ("reads", f"reads: {', '.join(reads)}" if reads else ""),
             ("instantiates", f"instantiates: {', '.join(kids)}" if kids else ""),
-            ("structure", f"structure: {structural_summary}" if structural_summary else ""),
             ("comments", f"comments: {said}" if said else ""),
         ) if text]
         records.append(_record(
@@ -320,21 +305,18 @@ def _structural_records(rtl):
             writes = block["signals_written"]
             name = block["original_name"]
             terms = _terms([module, *writes, *reads])
-            source_file = Path(block["file"]).name
             shown_reads = _unique(reads, _CONSTRUCT_SIGNALS)
             shown_writes = _unique(writes, _CONSTRUCT_SIGNALS)
             heading = [part for part in (
-                f"{kind.lower()} in module {module}",
                 f"reads: {', '.join(shown_reads)}" if shown_reads else "",
                 f"writes: {', '.join(shown_writes)}" if shown_writes else "",
                 f"terms: {', '.join(terms)}" if terms else "",
             ) if part]
-            citation = f"source: {source_file}:{first}-{last}"
             # One construct stays one chunk; the surface is bounded, never split.
-            budget = max(cfg.RTL_CHUNK_CHARS - len("\n".join([*heading, citation])) - 1,
+            budget = max(cfg.RTL_CHUNK_CHARS - len("\n".join(heading)) - 1,
                          cfg.RTL_CHUNK_MIN_SOURCE_CHARS)
             surface = _whole_lines(surface, budget)
-            body = "\n".join([*heading, citation, *([surface] if surface else [])])
+            body = "\n".join([*heading, *([surface] if surface else [])])
             records.append(_record(
                 chunk_id=chunk_id,
                 record_id=block["block_id"],
