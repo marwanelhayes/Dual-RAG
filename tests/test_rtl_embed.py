@@ -364,3 +364,12 @@ def test_module_facets_overflow_into_windows_without_losing_a_port_or_comment(
     assert all(f"note {index}" in text for index in range(40))
     assert all(not record["lookup_terms"] and "signal_metadata" not in record
                for record in windows[1:])
+
+
+def test_every_port_name_is_expanded_into_terms(tmp_path):
+    ports = [_declaration("wide", f"addr_{index}", "PORT", "input") for index in range(20)]
+    rtl = {"modules": {"wide": _module("wide", tmp_path / "wide.sv", ports=ports)}}
+
+    text = "\n".join(record["text"] for record in re_.retrieval_records(rtl))
+
+    assert all(f"address {index}" in text for index in range(20))

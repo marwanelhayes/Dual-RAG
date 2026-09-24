@@ -13,8 +13,6 @@ from embed import VectorStore, build_manifest, write_manifest
 from naming import identifier_tokens, normalize_identifier
 
 
-# Past a dozen phrases the expanded names outweigh the module's own prose, measurably.
-_TERMS = 12
 _LOOKUP_TERMS = 128
 _COMMENT = re.compile(r"//+([^\n]*)|/\*(.*?)\*/", re.S)
 _RULE = re.compile(r"^[\s\-=_*#~+.─━—–]*$")
@@ -126,10 +124,9 @@ def _terms(names):
         names: Source identifier spellings.
 
     Returns:
-        Space-joined expanded token strings, deduplicated and bounded.
+        Space-joined expanded token strings, deduplicated.
     """
-    return _unique((" ".join(identifier_tokens(name)) for name in names if name),
-                   _TERMS)
+    return _unique(" ".join(identifier_tokens(name)) for name in names if name)
 
 
 def port_connections(rtl):
