@@ -46,7 +46,7 @@ def _runtime_data():
     rtl = {"modules": {"fpu": {
         "module_id": "rtl::mod::fpu", "original_name": "fpu", "normalized_name": "fpu",
         "normalized_tokens": ["fpu"], "file": "rtl/fpu.sv", "start_line": 1,
-        "end_line": 40, "source_code": "module fpu; endmodule", "ports": [],
+        "end_line": 40, "source_code": "module fpu; endmodule", "preamble": "", "ports": [],
         "signals": [], "parameters": [], "instances": [], "always_blocks": [{
             "construct_id": "rtl:block:fpu:20", "block_id": "rtl::blk::fpu::always::20-32",
             "kind": "always", "construct_type": "ALWAYS_COMB", "original_name": "always@20",

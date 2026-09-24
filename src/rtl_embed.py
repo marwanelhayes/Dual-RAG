@@ -21,7 +21,7 @@ _FACET_MIN_CHARS = 80
 # Past a dozen phrases the expanded names outweigh the module's own prose, measurably.
 _TERMS = 12
 _LOOKUP_TERMS = 128
-_COMMENT = re.compile(r"//+(.*)$")
+_COMMENT = re.compile(r"//+([^\n]*)|/\*(.*?)\*/", re.S)
 _RULE = re.compile(r"^[\s\-=_*#~+.─━—–]*$")
 # Box-drawing banners cost about one token per character, so they are collapsed away.
 _DECORATION = re.compile(r"[─━—–\-=_*#~+]{3,}")
@@ -80,22 +80,22 @@ def _record(chunk_id, record_id, context_header, text, source_type, module, entr
 
 
 def comments(text):
-    """Extract useful line-comment prose from source text.
+    """Extract useful comment prose, line and block comments, from source text.
 
     Args:
         text: RTL source text to scan.
 
     Returns:
-        Unique comment bodies in source order, excluding divider rules.
+        Unique comment bodies in source order, one per comment line, excluding divider
+        rules.
     """
     found = []
-    for line in text.splitlines():
-        match = _COMMENT.search(line)
-        if not match:
-            continue
-        body = _DECORATION.sub(" ", match.group(1)).strip()
-        if body and not _RULE.match(body) and body not in found:
-            found.append(body)
+    for match in _COMMENT.finditer(text):
+        lines = [match.group(1)] if match.group(1) is not None else match.group(2).split("\n")
+        for line in lines:
+            body = _DECORATION.sub(" ", line.strip().lstrip("*")).strip()
+            if body and not _RULE.match(body) and body not in found:
+                found.append(body)
     return found
 
 
@@ -221,7 +221,7 @@ def chunks(rtl):
     links = port_connections(rtl)
     records = []
     for name, entry in sorted(rtl["modules"].items()):
-        prose = comments(entry["source_code"])
+        prose = comments(entry["preamble"] + entry["source_code"])
         port_names = [port["original_name"] for port in entry["ports"]]
         kids = _unique(instance["target_module"] for instance in entry["instances"])
         wiring = links.get(name, {})

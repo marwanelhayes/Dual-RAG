@@ -34,8 +34,8 @@ def _module(name, source, **fields):
     return {
         "module_id": f"rtl::mod::{name}", "original_name": name, "normalized_name": name,
         "normalized_tokens": [name], "file": str(source), "start_line": 1, "end_line": 2,
-        "source_code": f"module {name}; endmodule\n", "ports": [], "signals": [],
-        "parameters": [], "instances": [], "always_blocks": [], "functions_tasks": [],
+        "source_code": f"module {name}; endmodule\n", "preamble": "", "ports": [],
+        "signals": [], "parameters": [], "instances": [], "always_blocks": [], "functions_tasks": [],
         "assignment_groups": [], "other_blocks": [], **fields,
     }
 
@@ -107,6 +107,7 @@ def _rtl(source):
         "always_blocks": [always],
         "assignment_groups": [group],
         "other_blocks": [{"construct_type": "INITIAL", "start_line": 9}],
+        "preamble": "",
         "source_code": ("module fpu_decoder; // rounding mode and valid flag\n"
                         "endmodule\n"),
     }
@@ -120,7 +121,7 @@ def _rtl(source):
         "end_line": 26,
         "ports": [], "signals": [], "parameters": [], "instances": [],
         "functions_tasks": [], "always_blocks": [], "assignment_groups": [],
-        "other_blocks": [], "source_code": "module child; endmodule\n",
+        "other_blocks": [], "source_code": "module child; endmodule\n", "preamble": "",
     }
     return {
         "schema_version": 2,
@@ -344,3 +345,20 @@ def test_record_text_does_not_repeat_its_header_or_cite_line_numbers(tmp_path):
     assert block["text"].startswith("reads: clk, enable\n")
     assert "source:" not in block["text"]
     assert "in module fpu_decoder" not in block["text"]
+
+
+def test_block_comments_are_prose_too():
+    source = "/* Instruction encoding reference:\n * FADD.S adds\n */\nassign a = b; // done"
+
+    assert re_.comments(source) == ["Instruction encoding reference:", "FADD.S adds", "done"]
+
+
+def test_the_header_above_a_module_leads_its_comments(tmp_path):
+    source = tmp_path / "hazard_unit.sv"
+    rtl = {"modules": {"hazard_unit": _module(
+        "hazard_unit", source, preamble="// Generate pipeline stall signals\n",
+        source_code="module hazard_unit; // forwarding selects\nendmodule\n")}}
+
+    text = re_.retrieval_records(rtl)[0]["text"]
+
+    assert "comments: Generate pipeline stall signals; forwarding selects" in text
