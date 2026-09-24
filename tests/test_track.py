@@ -125,3 +125,25 @@ def test_rtl_metrics_count_records_and_rate_resolution():
     assert metrics["rtl.bindings_formal_resolved_rate"] == 0.5
     assert metrics["rtl.bindings_actuals_resolved_rate"] == 0.5
     assert metrics["rtl.signals_with_writer_rate"] == 0.5
+
+
+def test_rtl_chunk_metrics_count_records_line_coverage_and_over_limit():
+    block = {"source_code": "always_comb\n  a = b;\n\n  c = d;\n"}
+    rtl = {"modules": {"m": {"always_blocks": [block], "functions_tasks": [],
+                             "assignment_groups": []}}}
+    records = [
+        {"source_type": "module", "module": "m", "context_header": "RTL > m",
+         "text": "module m\nports: a, b, c, d, e, f"},
+        {"source_type": "construct", "module": "m", "context_header": "RTL > m",
+         "text": "reads: b\nalways_comb\n  a = b;"},
+    ]
+    count_tokens = lambda text: len(text.split())
+
+    metrics = track.rtl_chunk_metrics(records, rtl, count_tokens, limit=10)
+
+    assert metrics["rtl.records.module"] == 1
+    assert metrics["rtl.records.construct"] == 1
+    # Two of the block's three non-blank source lines reach the embedder.
+    assert metrics["rtl.embedded_line_coverage"] == 2 / 3
+    assert metrics["rtl.chunks_over_limit"] == 1
+    assert metrics["rtl.construct.chunk_tokens_max"] == 9

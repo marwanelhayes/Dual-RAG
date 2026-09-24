@@ -193,6 +193,44 @@ def rtl_metrics(rtl):
     return dict(metrics)
 
 
+def rtl_chunk_metrics(records, rtl, count_tokens, limit=TOKEN_LIMIT):
+    """Measure RTL retrieval records against the block source they should carry.
+
+    Args:
+        records: Records from ``rtl_chunks.jsonl``.
+        rtl: Parsed ``rtl.json`` payload.
+        count_tokens: Callable returning the encoder token count of one string.
+        limit: Encoder window; embedded text over it is silently truncated.
+
+    Returns:
+        Record counts per type, block-line coverage, token percentiles, over-limit count.
+    """
+    metrics = collections.Counter()
+    tokens = collections.defaultdict(list)
+    embedded = collections.defaultdict(set)
+    for record in records:
+        metrics[f"rtl.records.{record['source_type']}"] += 1
+        tokens[record["source_type"]].append(
+            count_tokens(record["context_header"] + "\n\n" + record["text"]))
+        if record["source_type"] == "construct":
+            embedded[record["module"]].update(
+                line.strip() for line in record["text"].splitlines())
+    total = covered = 0
+    for name, module in rtl["modules"].items():
+        for field in ("always_blocks", "functions_tasks", "assignment_groups"):
+            for block in module[field]:
+                lines = [line.strip() for line in block["source_code"].splitlines()
+                         if line.strip()]
+                total += len(lines)
+                covered += sum(line in embedded[name] for line in lines)
+    metrics["rtl.embedded_line_coverage"] = covered / total if total else 0.0
+    metrics["rtl.chunks_over_limit"] = sum(
+        count > limit for counts in tokens.values() for count in counts)
+    for source_type, counts in tokens.items():
+        metrics.update(_percentiles(f"rtl.{source_type}.chunk_tokens", counts))
+    return dict(metrics)
+
+
 def _git(*args):
     """Return one git command's trimmed stdout, run from the project root.
 
@@ -227,7 +265,8 @@ def pipeline_metrics():
     """
     with open(cfg.CHUNKS_PATH, encoding="utf-8") as handle:
         records = [json.loads(line) for line in handle]
-    metrics = chunk_metrics(records, _token_counter())
+    count_tokens = _token_counter()
+    metrics = chunk_metrics(records, count_tokens)
     metrics["ingest.chunks_bytes"] = cfg.CHUNKS_PATH.stat().st_size
     with open(cfg.SPEC_HIERARCHY_PATH, encoding="utf-8") as handle:
         for document in json.load(handle)["documents"]:
@@ -242,10 +281,13 @@ def pipeline_metrics():
     with open(AXI_CHANNEL_GOLD, encoding="utf-8") as handle:
         metrics.update(signal_metrics(signals, json.load(handle)["names"]))
     with open(cfg.RTL_PATH, encoding="utf-8") as handle:
-        metrics.update(rtl_metrics(json.load(handle)))
+        rtl = json.load(handle)
+    metrics.update(rtl_metrics(rtl))
     metrics["rtl.rtl_bytes"] = cfg.RTL_PATH.stat().st_size
     with open(cfg.RTL_CHUNKS_PATH, encoding="utf-8") as handle:
-        metrics["rtl.chunks"] = sum(1 for _ in handle)
+        rtl_records = [json.loads(line) for line in handle]
+    metrics["rtl.chunks"] = len(rtl_records)
+    metrics.update(rtl_chunk_metrics(rtl_records, rtl, count_tokens))
     with open(cfg.BRIDGE_PATH, encoding="utf-8") as handle:
         bridge = json.load(handle)
     metrics.update({f"bridge.{key}": len(value) for key, value in bridge.items()
