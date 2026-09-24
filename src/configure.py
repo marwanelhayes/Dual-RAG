@@ -25,9 +25,9 @@ EMBED_BATCH = 64
 # BGE's asymmetric training requires this prefix only on queries.
 EMBED_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
-# Chunk caps are counted in encoder tokens; the environment overrides them for sweeps.
-MAX_CHUNK_TOKENS = int(os.environ.get("MAX_CHUNK_TOKENS", 256))
-MAX_TABLE_CHUNK_TOKENS = int(os.environ.get("MAX_TABLE_CHUNK_TOKENS", 256))
+# Encoder-token caps picked by the sweep/chunk_tokens grid; the environment overrides them.
+MAX_CHUNK_TOKENS = int(os.environ.get("MAX_CHUNK_TOKENS", 384))
+MAX_TABLE_CHUNK_TOKENS = int(os.environ.get("MAX_TABLE_CHUNK_TOKENS", 128))
 # Header plus body must fit the encoder window; a longer chunk fails the run.
 ENCODER_MAX_TOKENS = 512
 OVERLAP_SENTENCES = 2
