@@ -30,3 +30,9 @@ def test_neutral_module_normalization_expands_configured_abbreviations():
         "floating", "point", "unit", "top", "wrapper"]
     assert naming.normalize_module_name("FPU_top_wrapper") == \
         "floating point unit top wrapper"
+
+
+def test_an_active_low_n_after_an_acronym_is_its_own_token():
+    assert naming.identifier_tokens("ARESETn", expand_abbreviations=False) == ["areset", "n"]
+    assert naming.identifier_tokens("HRESETn", expand_abbreviations=False) == ["hreset", "n"]
+    assert naming.identifier_tokens("MAWAddr", expand_abbreviations=False) == ["maw", "addr"]

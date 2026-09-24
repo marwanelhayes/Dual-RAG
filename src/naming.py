@@ -23,6 +23,8 @@ SUFFIX_ALIASES = {
     "o": ("output",),
 }
 
+# An active-low ``n`` after an all-caps name (ARESETn) is a suffix, not the next word's head.
+_ACTIVE_LOW = re.compile(r"([A-Z]{2,})n$")
 _ACRONYM_BOUNDARY = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
 _LETTER_TO_DIGIT = re.compile(r"([A-Za-z])([0-9])")
@@ -40,6 +42,7 @@ def _raw_tokens(name):
         Lowercase identifier tokens in source order.
     """
     text = str(name or "").strip()
+    text = _ACTIVE_LOW.sub(r"\1 n", text)
     text = _ACRONYM_BOUNDARY.sub(r"\1 \2", text)
     text = _CAMEL_BOUNDARY.sub(r"\1 \2", text)
     text = _LETTER_TO_DIGIT.sub(r"\1 \2", text)
