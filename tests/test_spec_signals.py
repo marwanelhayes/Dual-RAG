@@ -148,3 +148,10 @@ def test_an_address_table_row_without_an_address_is_a_group_label():
     signals = spec_signals.build_spec_signals([listing])
 
     assert [signal["original_name"] for signal in signals] == ["sstatus"]
+
+
+def test_a_signal_caption_alone_does_not_admit_a_name_only_table():
+    listing = table_chunk(["Name", "Description"], [["lock", "Lock state"]])
+    listing["caption"] = "Interface signals"
+
+    assert spec_signals.build_spec_signals([listing]) == []

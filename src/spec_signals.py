@@ -26,7 +26,6 @@ _IDENTIFIER = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
 _WIDTH_INTEGER = re.compile(r"^\d+$")
 _WIDTH_RANGE = re.compile(r"^\[?\s*(\d+)\s*:\s*(\d+)\s*\]?$")
 _PROSE_WIDTH = re.compile(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\[\s*(\d+)\s*:\s*(\d+)\s*\]")
-_SIGNAL_CAPTION = re.compile(r"\b(?:signals?|ports?|interfaces?)\b")
 _DIRECTION = {
     "i": "input", "in": "input", "input": "input",
     "o": "output", "out": "output", "output": "output",
@@ -251,15 +250,14 @@ def signals_from_table(record):
     direction_index = _column_index(columns, DIRECTION_HEADERS)
     source_index = _column_index(columns, SOURCE_HEADERS)
     address_index = _column_index(columns, ADDRESS_HEADERS)
-    caption = _header_key(record.get("caption"))
-    caption_is_signal_table = bool(_SIGNAL_CAPTION.search(caption))
-    typed = (explicit_index, width_index, direction_index, source_index, address_index)
-    if not caption_is_signal_table and all(index is None for index in typed):
+    # Columns alone admit a table: a signal column, or a name beside width/source/address.
+    if all(index is None for index in (explicit_index, width_index, source_index,
+                                       address_index)):
         return []
     if explicit_index is not None or direction_index is not None or source_index is not None:
         row_kind = PORT_ROW
     else:
-        row_kind = PORT_ROW if caption_is_signal_table else REGISTER_FIELD_ROW
+        row_kind = REGISTER_FIELD_ROW
     description_index = _column_index(columns, DESCRIPTION_HEADERS)
     document_id = record["document_id"]
     table_id = record["table_id"]
