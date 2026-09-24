@@ -206,3 +206,62 @@ Why not now: packages are not modules in `rtl.json`; enums reach the bridge sepa
 
 Reopen when: a question about a package-level definition (CSR addresses, shared enums)
 misses in the RTL lane.
+
+## DF-14: Tiny-model tie-breaker and bridge lookup helpers
+
+Decided 2026-09-24. Current choice: a close tie between candidates stays unresolved.
+
+Deferred option: ask a local model to choose between a bounded shortlist (`--llm`).
+
+Why not now: the pipeline never ran it (`llm_fallback_calls: 0`).
+
+Reopen when: ties become a main unresolved reason and a gold set shows they are real.
+
+## DF-15: Port direction from spec Source role and module role votes
+
+Decided 2026-09-24. Current choice: the bridge compares no direction; spec rows state none.
+
+Deferred option: raw `Source` cell plus netlist driver to infer the expected port direction.
+
+Why not now: switching it off changed 0 alignments; it needed a synonym map (`Tx` → manager).
+
+Reopen when: a gold case shows direction separating two candidates.
+
+## DF-16: Instruction to enum-member alignment
+
+Decided 2026-09-24. Current choice: instruction rows leave spec_signals (s2), so the bridge
+aligns none; `rtl_ingest` stops computing `enum_usage`.
+
+Deferred option: align an instruction inventory (DF-05) to `fpu_operation_t` / ALU enums.
+
+Reopen when: DF-05 reopens.
+
+## DF-17: Contextual scoring (section, description, table caption)
+
+Decided 2026-09-24. Current choice: links need a stated tier (identity, learned prefix, net).
+
+Deferred option: weighted jaccards of section title, description and caption against module
+name and usage text.
+
+Why not now: about 0 on every AXI port; it hid 16 of 25 implemented signals.
+
+Reopen when: two stated-tier candidates for one spec row need ranking.
+
+## DF-18: Semantic cross-encoder rerank of bridge candidates
+
+Decided 2026-09-24. Current choice: fuzzy scores only rank `SUGGESTED` candidates.
+
+Deferred option: `--rerank` with the retrieval cross-encoder.
+
+Reopen when: suggestions are used for links and their precision needs raising.
+
+## DF-19: Fuzzy section-title to module matching
+
+Decided 2026-09-24. Current choice: sections link to modules by title identity or link
+support only.
+
+Deferred option: title / context similarity scoring with thresholds.
+
+Why not now: its above-0.45 candidates fed agent expansion with `PCIe` → `pc_adder`.
+
+Reopen when: a gold section → module set exists to measure it.

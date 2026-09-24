@@ -4,8 +4,8 @@ Handoff from the 2026-09-21/24 simplification sessions. Method and session promp
 [`docs/SIMPLIFICATION_METHOD.md`](SIMPLIFICATION_METHOD.md). Decided specs and queues:
 [`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md),
 [`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md),
-[`docs/specs/rtl_embed.md`](specs/rtl_embed.md).
-Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-13).
+[`docs/specs/rtl_embed.md`](specs/rtl_embed.md), [`docs/specs/bridge.md`](specs/bridge.md).
+Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-19).
 
 ## Where we are
 
