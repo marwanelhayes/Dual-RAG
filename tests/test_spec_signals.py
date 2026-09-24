@@ -50,51 +50,26 @@ def test_unknown_width_and_non_direction_are_preserved_without_inference():
     assert signals[0]["description"] == "result bus"
 
 
-def test_mnemonic_tables_yield_instruction_rows_named_by_the_mnemonic():
-    record = table_chunk(
+def test_instruction_tables_and_prose_mnemonics_are_not_signals():
+    mnemonics = table_chunk(
         ["Rounding Mode", "Mnemonic", "Meaning"],
-        [["000", "RNE", "Round to Nearest, ties to Even"],
-         ["001", "RTZ", "Round towards Zero"]])
-    record["caption"] = "Floating Point Rounding Modes"
-
-    signals = spec_signals.build_spec_signals([record])
-
-    assert [signal["original_name"] for signal in signals] == ["RNE", "RTZ"]
-    assert {signal["row_kind"] for signal in signals} == {spec_signals.INSTRUCTION_ROW}
-    assert signals[0]["description"] == "Round to Nearest, ties to Even"
-
-
-def test_prose_mnemonics_are_extracted_without_section_references():
+        [["000", "RNE", "Round to Nearest, ties to Even"]])
+    encoding = table_chunk(["Opcode", "Meaning"], [["ADD", "addition"]])
     prose = {
         "chunk_id": "isa#0082#015", "chunk_type": "prose", "document_id": "isa",
-        "source_file": "isa.pdf", "page": 119, "section_id": "isa::sec::0001",
-        "section_title": "Single-Precision Floating-Point",
-        "text": "FADD.S rs1, rs2, frm rd NV, OF, NX FCVT.W.S rs1 rd. See A15.3 and B2.2.",
+        "source_file": "isa.pdf", "page": 119, "text": "FADD.S rs1, rs2, frm rd.",
     }
 
-    signals = spec_signals.build_spec_signals([prose])
-    names = [signal["original_name"] for signal in signals]
-
-    assert names == ["FADD.S", "FCVT.W.S"]
-    assert all(signal["row_kind"] == spec_signals.INSTRUCTION_ROW for signal in signals)
-    assert signals[0]["page"] == 119 and signals[0]["chunk_id"] == "isa#0082#015"
-    assert signals[0]["normalized_name"] == "fadd_s"
+    assert spec_signals.build_spec_signals([mnemonics, encoding, prose]) == []
 
 
-def test_non_table_records_and_tables_without_signal_name_headers_are_ignored():
-    prose = {"chunk_type": "prose", "text": "AWVALID is a signal."}
-    encoding = table_chunk(["Opcode", "Meaning"], [["ADD", "addition"]])
+def test_tables_without_signal_name_headers_are_ignored():
     properties = table_chunk(
         ["Name", "Values", "Description"],
         [["Num_RP_AWW", "1-8", "number of resource planes"]])
     properties["caption"] = "Resource plane properties"
 
-    signals = spec_signals.build_spec_signals([prose, encoding, properties])
-
-    assert [signal["original_name"] for signal in signals] == ["ADD"]
-    assert signals[0]["row_kind"] == spec_signals.INSTRUCTION_ROW
-    assert not [signal for signal in signals
-                if signal["row_kind"] != spec_signals.INSTRUCTION_ROW]
+    assert spec_signals.build_spec_signals([properties]) == []
 
 
 def test_build_and_save_are_idempotent(tmp_path):
