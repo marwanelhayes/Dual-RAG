@@ -139,14 +139,17 @@ def test_comments_keep_prose_and_drop_decorative_rules():
     assert re_.comments(text) == ["useful explanation", "another note"]
 
 
-def test_children_are_read_from_the_authoritative_instance_tree():
-    tree = [
-        {"depth": 0, "module": "top"},
-        {"depth": 1, "module": "left"},
-        {"depth": 2, "module": "leaf"},
-        {"depth": 1, "module": "right"},
-    ]
-    assert re_.children(tree) == {"top": ["left", "right"], "left": ["leaf"]}
+def test_a_module_names_every_module_that_instantiates_it(tmp_path):
+    source = tmp_path / "top.sv"
+    rtl = {"modules": {
+        name: _module(name, source, instances=[
+            {"target_module": "mux", "bindings": []}] if name != "mux" else [])
+        for name in ("execute_stage", "wb_stage", "mux")}}
+
+    text = {record["chunk_id"]: record["text"] for record in re_.retrieval_records(rtl)}
+
+    assert "instantiated by: execute_stage, wb_stage" in text["rtl:mux"]
+    assert "instantiates: mux" in text["rtl:wb_stage"]
 
 
 def test_records_are_module_first_and_do_not_vectorize_signals_or_instances(tmp_path):

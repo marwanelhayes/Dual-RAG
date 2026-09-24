@@ -101,27 +101,6 @@ def comments(text):
     return found
 
 
-def children(tree):
-    """Map each source module to child modules from the pre-order instance tree.
-
-    Args:
-        tree: Pre-order instance nodes carrying ``depth`` and ``module``.
-
-    Returns:
-        Parent module name to its unique child module names.
-    """
-    parents, out = {}, {}
-    for node in tree:
-        depth, module = node["depth"], node["module"]
-        parents[depth] = module
-        parent = parents.get(depth - 1)
-        if depth > 0 and parent is not None:
-            out.setdefault(parent, [])
-            if module not in out[parent]:
-                out[parent].append(module)
-    return out
-
-
 def _signal_metadata(entry):
     """Return declarations retained for exact lookup, never as vector rows.
 
@@ -224,25 +203,27 @@ def _budgeted_facets(parts, max_chars=cfg.RTL_CHUNK_CHARS):
     return kept
 
 
-def chunks(rtl, child_modules):
+def chunks(rtl):
     """Build one stable, provenance-bearing vector record per module.
 
     Args:
         rtl: Parsed ``rtl.json`` payload.
-        child_modules: Parent module name to child module names, from ``children``.
 
     Returns:
         One module record per module, in module-name order.
     """
-    parents = {child: parent for parent, kids in child_modules.items() for child in kids}
+    parents = {}
+    for parent, entry in sorted(rtl["modules"].items()):
+        for instance in entry["instances"]:
+            parents.setdefault(instance["target_module"], [])
+            if parent not in parents[instance["target_module"]]:
+                parents[instance["target_module"]].append(parent)
     links = port_connections(rtl)
     records = []
     for name, entry in sorted(rtl["modules"].items()):
         prose = comments(entry["source_code"])
         port_names = [port["original_name"] for port in entry["ports"]]
-        instances = [instance["target_module"] for instance in entry["instances"]]
-        instance_children = _unique(instances)
-        kids = _unique([*child_modules.get(name, []), *instance_children])
+        kids = _unique(instance["target_module"] for instance in entry["instances"])
         structures = [
             *entry["always_blocks"],
             *entry["functions_tasks"],
@@ -264,7 +245,8 @@ def chunks(rtl, child_modules):
             ("identity", f"module {name}"),
             ("normalized", f"normalized module: {entry['normalized_name']}"
              if entry["normalized_name"] and entry["normalized_name"] != name else ""),
-            ("parent", f"instantiated by: {parents[name]}" if name in parents else ""),
+            ("parent", f"instantiated by: {', '.join(parents[name])}"
+             if name in parents else ""),
             ("ports", f"ports: {', '.join(_unique(port_names, _MODULE_PORTS))}"
              if port_names else ""),
             ("terms", f"terms: {', '.join(terms)}" if terms else ""),
@@ -371,18 +353,16 @@ def _structural_records(rtl):
     return records
 
 
-def retrieval_records(rtl, child_modules=None):
+def retrieval_records(rtl):
     """Return module records first, followed only by useful structural records.
 
     Args:
         rtl: Parsed ``rtl.json`` payload.
-        child_modules: Optional precomputed parent-to-children map.
 
     Returns:
         Module records followed by structural records, in stable order.
     """
-    child_modules = children(rtl.get("tree", [])) if child_modules is None else child_modules
-    return [*chunks(rtl, child_modules), *_structural_records(rtl)]
+    return [*chunks(rtl), *_structural_records(rtl)]
 
 
 def main():
