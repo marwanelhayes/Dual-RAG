@@ -11,7 +11,6 @@ import re
 
 import configure as cfg
 from embed import VectorStore, build_manifest, write_manifest
-from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier
 
 
@@ -49,23 +48,6 @@ def _unique(items, limit=None):
     return out
 
 
-def _source_id(path):
-    """Return a machine-independent source identifier for an RTL file.
-
-    Args:
-        path: Absolute or relative path to an RTL source file.
-
-    Returns:
-        An ``rtl::file::`` identifier relative to the configured RTL directory.
-    """
-    source = Path(path)
-    try:
-        relative = source.resolve().relative_to(Path(cfg.RTL_DIR).resolve()).as_posix()
-    except (OSError, ValueError):
-        relative = source.name
-    return f"rtl::file::{relative}"
-
-
 def _record(chunk_id, record_id, context_header, text, source_type, module, entry,
             lookup_terms, **metadata):
     """Build one vector-compatible retrieval record with shared provenance.
@@ -82,17 +64,14 @@ def _record(chunk_id, record_id, context_header, text, source_type, module, entr
         metadata: Extra record-type fields, and an optional ``line`` override.
 
     Returns:
-        One retrieval record carrying provenance and its content hash.
+        One retrieval record carrying provenance.
     """
     record = {
         "chunk_id": chunk_id,
         "record_id": record_id,
-        "source_id": _source_id(entry["file"]),
-        "domain": "rtl",
         "source_type": source_type,
         "context_header": context_header,
         "text": text,
-        "content_hash": content_hash(context_header, text),
         "module": module,
         "file": entry["file"],
         "line": metadata.pop("line"),
@@ -161,7 +140,7 @@ def _signal_metadata(entry):
                     "signal_id", "construct_type", "original_name", "normalized_name",
                     "normalized_tokens", "direction", "data_type", "width",
                     "width_expression", "file_path", "start_line", "end_line",
-                    "reader_sites", "writer_sites", "content_hash",
+                    "reader_sites", "writer_sites",
                 ) if declaration.get(key) is not None
             }
             signals.append(item)
@@ -309,9 +288,7 @@ def chunks(rtl, child_modules):
             end_line=entry["end_line"],
             original_name=entry["original_name"],
             normalized_name=entry["normalized_name"],
-            normalized_tokens=entry["normalized_tokens"],
             signal_metadata=_signal_metadata(entry),
-            module_content_hash=entry.get("content_hash"),
         ))
     return records
 
@@ -388,15 +365,8 @@ def _structural_records(rtl):
                 line=first,
                 start_line=first,
                 end_line=last,
-                construct_type=kind,
-                construct_name=name,
-                source_code=surface,
                 signals_read=reads,
                 signals_written=writes,
-                sensitivity=block.get("sensitivity", []),
-                clock=block.get("clock"),
-                reset=block.get("reset"),
-                compiler_content_hash=block.get("content_hash"),
             ))
     return records
 

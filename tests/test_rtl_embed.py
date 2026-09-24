@@ -6,7 +6,6 @@ from pathlib import Path
 import configure as cfg
 import rtl_embed as re_
 from embed import build_manifest, read_manifest
-from ingest import content_hash
 
 
 def _declaration(module, name, kind="SIGNAL", direction="internal", **metadata):
@@ -26,7 +25,6 @@ def _declaration(module, name, kind="SIGNAL", direction="internal", **metadata):
         "end_line": 2,
         "reader_sites": [],
         "writer_sites": [],
-        "content_hash": content_hash(kind, module, name),
         **metadata,
     }
 
@@ -60,9 +58,6 @@ def _rtl(source):
         "signals_read": ["clk", "enable"],
         "signals_written": ["FPUValidD"],
         "sensitivity": [{"signal": "clk", "edge": "posedge"}],
-        "clock": "clk",
-        "reset": None,
-        "content_hash": content_hash("ALWAYS_FF", "fpu_decoder", "10-14"),
     }
     function = {
         "block_id": "rtl::blk::fpu_decoder::func::16:3-18",
@@ -75,7 +70,6 @@ def _rtl(source):
         "source_code": "function decodeRoundMode; endfunction",
         "signals_read": ["enable"],
         "signals_written": [],
-        "content_hash": content_hash("FUNCTION", "fpu_decoder", "16-18"),
     }
     group = {
         "block_id": "rtl::assign_group::fpu_decoder::20-21",
@@ -89,7 +83,6 @@ def _rtl(source):
         "signals_read": ["b", "d"],
         "signals_written": ["a", "c"],
         "assignments": [{}, {}],
-        "content_hash": content_hash("ASSIGNMENT_GROUP", "fpu_decoder", "20-21"),
     }
     instance = {
         "instance_id": "rtl::instdef::fpu_decoder::u_child::23:3",
@@ -116,7 +109,6 @@ def _rtl(source):
         "other_blocks": [{"construct_type": "INITIAL", "start_line": 9}],
         "source_code": ("module fpu_decoder; // rounding mode and valid flag\n"
                         "endmodule\n"),
-        "content_hash": content_hash("MODULE", "fpu_decoder"),
     }
     child = {
         "module_id": "rtl::mod::child",
@@ -129,7 +121,6 @@ def _rtl(source):
         "ports": [], "signals": [], "parameters": [], "instances": [],
         "functions_tasks": [], "always_blocks": [], "assignment_groups": [],
         "other_blocks": [], "source_code": "module child; endmodule\n",
-        "content_hash": content_hash("MODULE", "child"),
     }
     return {
         "schema_version": 2,
@@ -173,7 +164,7 @@ def test_records_are_module_first_and_do_not_vectorize_signals_or_instances(tmp_
     assert len({record["chunk_id"] for record in records}) == len(records)
 
 
-def test_module_record_preserves_id_source_provenance_children_and_signal_metadata(tmp_path):
+def test_module_record_preserves_id_provenance_children_and_signal_metadata(tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")
     record = next(record for record in re_.retrieval_records(_rtl(source))
@@ -181,7 +172,6 @@ def test_module_record_preserves_id_source_provenance_children_and_signal_metada
 
     assert record["chunk_id"] == "rtl:fpu_decoder"
     assert record["record_id"] == "rtl::mod::fpu_decoder"
-    assert record["source_id"].endswith("fpu_decoder.sv")
     assert record["file"] == str(source) and record["line"] == 1
     assert "instantiates: child" in record["text"]
     assert "rounding mode and valid flag" in record["text"]
@@ -308,3 +298,17 @@ def test_decoration_banners_are_stripped_from_comments():
     source = "// ─── risc_alu: multiplication unit ────────────\nassign a = b;"
 
     assert re_.comments(source) == ["risc_alu: multiplication unit"]
+
+
+def test_records_carry_only_fields_a_reader_uses(tmp_path):
+    source = tmp_path / "fpu_decoder.sv"
+    source.write_text("module fpu_decoder; endmodule\n")
+    records = re_.retrieval_records(_rtl(source))
+    shared = {"chunk_id", "record_id", "source_type", "context_header", "text", "module",
+              "file", "line", "start_line", "end_line", "lookup_terms"}
+
+    module = next(record for record in records if record["source_type"] == "module")
+    block = next(record for record in records if record["source_type"] == "construct")
+
+    assert set(module) == shared | {"original_name", "normalized_name", "signal_metadata"}
+    assert set(block) == shared | {"signals_read", "signals_written"}
