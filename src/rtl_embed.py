@@ -13,11 +13,6 @@ from embed import VectorStore, build_manifest, write_manifest
 from naming import identifier_tokens, normalize_identifier
 
 
-_MODULE_LINKS = 24
-# Rendered signal lists are bounded; the full lists stay in metadata, unembedded.
-_CONSTRUCT_SIGNALS = 16
-_MODULE_PORTS = 24
-_FACET_MIN_CHARS = 80
 # Past a dozen phrases the expanded names outweigh the module's own prose, measurably.
 _TERMS = 12
 _LOOKUP_TERMS = 128
@@ -171,36 +166,27 @@ def port_connections(rtl):
     return links
 
 
-def _budgeted_facets(parts, max_chars=cfg.RTL_CHUNK_CHARS):
-    """Keep a module's facets within the budget, trimming the last one to fit.
-
-    One module stays one chunk: several chunks per module would compete with each
-    other for the same retrieval slots, so the surface is bounded instead of split.
+def _facet_lines(label, items, separator, max_chars):
+    """Render one labelled list as lines that each fit a window.
 
     Args:
-        parts: ``(label, text)`` facets in priority order.
-        max_chars: Character budget for the whole surface.
+        label: Facet label, e.g. ``"ports"``.
+        items: Facet values in order.
+        separator: Joiner between values.
+        max_chars: Character budget for one line.
 
     Returns:
-        Facet strings that together fit the budget, last one trimmed if needed.
+        ``"label: a, b"`` lines; the label repeats on each continuation line.
     """
-    kept, size = [], 0
-    for _, text in parts:
-        remaining = max_chars - size
-        if not kept:
-            kept.append(text)
-            size = len(text)
-            continue
-        if len(text) + 1 <= remaining:
-            kept.append(text)
-            size += len(text) + 1
-        elif remaining > _FACET_MIN_CHARS:
-            # A long trailing facet is trimmed rather than dropped whole.
-            kept.append(text[:remaining - 1].rstrip())
-            break
-        else:
-            break
-    return kept
+    lines, current = [], []
+    for item in items:
+        if current and len(f"{label}: " + separator.join([*current, item])) > max_chars:
+            lines.append(f"{label}: " + separator.join(current))
+            current = []
+        current.append(item)
+    if current:
+        lines.append(f"{label}: " + separator.join(current))
+    return lines
 
 
 def chunks(rtl):
@@ -210,7 +196,8 @@ def chunks(rtl):
         rtl: Parsed ``rtl.json`` payload.
 
     Returns:
-        One module record per module, in module-name order.
+        One module record per module, each followed by its continuation windows, in
+        module-name order.
     """
     parents = {}
     for parent, entry in sorted(rtl["modules"].items()):
@@ -225,29 +212,25 @@ def chunks(rtl):
         port_names = [port["original_name"] for port in entry["ports"]]
         kids = _unique(instance["target_module"] for instance in entry["instances"])
         wiring = links.get(name, {})
-        drives = _unique((f"{formal} -> {peer}"
-                          for formal, peer in wiring.get("drives", [])), _MODULE_LINKS)
-        reads = _unique((f"{formal} <- {peer}"
-                         for formal, peer in wiring.get("reads", [])), _MODULE_LINKS)
-        terms = _terms([name, *port_names])
-        said = "; ".join(prose)
-        parts = [(label, text) for label, text in (
-            ("identity", f"module {name}"),
-            ("parent", f"instantiated by: {', '.join(parents[name])}"
-             if name in parents else ""),
-            ("ports", f"ports: {', '.join(_unique(port_names, _MODULE_PORTS))}"
-             if port_names else ""),
-            ("terms", f"terms: {', '.join(terms)}" if terms else ""),
-            ("drives", f"drives: {', '.join(drives)}" if drives else ""),
-            ("reads", f"reads: {', '.join(reads)}" if reads else ""),
-            ("instantiates", f"instantiates: {', '.join(kids)}" if kids else ""),
-            ("comments", f"comments: {said}" if said else ""),
-        ) if text]
-        records.append(_record(
+        facets = (
+            ("instantiated by", parents.get(name, []), ", "),
+            ("ports", _unique(port_names), ", "),
+            ("terms", _terms([name, *port_names]), ", "),
+            ("drives", _unique(f"{formal} -> {peer}"
+                               for formal, peer in wiring.get("drives", [])), ", "),
+            ("reads", _unique(f"{formal} <- {peer}"
+                              for formal, peer in wiring.get("reads", [])), ", "),
+            ("instantiates", kids, ", "),
+            ("comments", prose, "; "),
+        )
+        lines = [f"module {name}", *(line for label, items, separator in facets
+                                      for line in _facet_lines(label, items, separator,
+                                                               cfg.RTL_CHUNK_CHARS))]
+        records.extend(_windowed(_record(
             chunk_id=f"rtl:{name}",
             record_id=entry["module_id"],
             context_header=f"RTL > {cfg.RTL_DIR.name}/{name}",
-            text="\n".join(_budgeted_facets(parts)),
+            text="",
             source_type="module",
             module=name,
             entry=entry,
@@ -258,27 +241,54 @@ def chunks(rtl):
             original_name=entry["original_name"],
             normalized_name=entry["normalized_name"],
             signal_metadata=_signal_metadata(entry),
-        ))
+        ), lines))
     return records
 
 
-def _whole_lines(source, max_chars):
-    """Trim source to the budget without cutting a line in half.
+def _windows(lines, max_chars):
+    """Pack lines into texts that each fit the budget, cutting only between lines.
 
     Args:
-        source: Full source text of one construct.
-        max_chars: Character budget for the embedded surface.
+        lines: Text lines in order.
+        max_chars: Character budget for one window.
 
     Returns:
-        Leading whole lines of the source that fit the budget.
+        Window texts in order; a single line longer than the budget is split into
+        budget-sized pieces rather than dropped.
     """
-    kept, size = [], 0
-    for line in source.split("\n"):
-        if kept and size + len(line) + 1 > max_chars:
-            break
-        kept.append(line)
-        size += len(line) + 1
-    return "\n".join(kept)[:max_chars].rstrip()
+    pieces = [line[start:start + max_chars]
+              for line in lines for start in range(0, max(len(line), 1), max_chars)]
+    windows, current = [], []
+    for piece in pieces:
+        if current and len("\n".join([*current, piece])) > max_chars:
+            windows.append("\n".join(current))
+            current = []
+        current.append(piece)
+    if current:
+        windows.append("\n".join(current))
+    return windows
+
+
+def _windowed(record, lines):
+    """Split one record's text lines into windows; the first keeps the record's id.
+
+    Continuation windows ``<chunk_id>:wN`` carry provenance only, so exact lookup and
+    signal fills still see each record once.
+
+    Args:
+        record: Retrieval record whose ``text`` is replaced by its first window.
+        lines: The record's full text lines.
+
+    Returns:
+        The record followed by its continuation windows.
+    """
+    texts = _windows(lines, cfg.RTL_CHUNK_CHARS)
+    record["text"] = texts[0]
+    provenance = ("record_id", "source_type", "context_header", "module", "file", "line",
+                  "start_line", "end_line")
+    return [record, *({"chunk_id": f"{record['chunk_id']}:w{index}", "text": text,
+                       "lookup_terms": [], **{key: record[key] for key in provenance}}
+                      for index, text in enumerate(texts[1:], start=1))]
 
 
 def _structural_records(rtl):
@@ -288,7 +298,8 @@ def _structural_records(rtl):
         rtl: Parsed ``rtl.json`` payload.
 
     Returns:
-        One record per always block, function, task, and assignment group.
+        One record per always block, function, task, and assignment group, each
+        followed by its continuation windows.
     """
     records = []
     fields = ("always_blocks", "functions_tasks", "assignment_groups")
@@ -305,24 +316,18 @@ def _structural_records(rtl):
             writes = block["signals_written"]
             name = block["original_name"]
             terms = _terms([module, *writes, *reads])
-            shown_reads = _unique(reads, _CONSTRUCT_SIGNALS)
-            shown_writes = _unique(writes, _CONSTRUCT_SIGNALS)
             heading = [part for part in (
-                f"reads: {', '.join(shown_reads)}" if shown_reads else "",
-                f"writes: {', '.join(shown_writes)}" if shown_writes else "",
+                f"reads: {', '.join(_unique(reads))}" if reads else "",
+                f"writes: {', '.join(_unique(writes))}" if writes else "",
                 f"terms: {', '.join(terms)}" if terms else "",
             ) if part]
-            # One construct stays one chunk; the surface is bounded, never split.
-            budget = max(cfg.RTL_CHUNK_CHARS - len("\n".join(heading)) - 1,
-                         cfg.RTL_CHUNK_MIN_SOURCE_CHARS)
-            surface = _whole_lines(surface, budget)
-            body = "\n".join([*heading, *([surface] if surface else [])])
-            records.append(_record(
+            lines = [*heading, *(surface.split("\n") if surface else [])]
+            records.extend(_windowed(_record(
                 chunk_id=chunk_id,
                 record_id=block["block_id"],
                 context_header=(f"RTL > {cfg.RTL_DIR.name}/{module} > "
                                 f"{kind.lower()} lines {first}-{last}"),
-                text=body,
+                text="",
                 source_type="construct",
                 module=module,
                 entry=block,
@@ -333,7 +338,7 @@ def _structural_records(rtl):
                 end_line=last,
                 signals_read=reads,
                 signals_written=writes,
-            ))
+            ), lines))
     return records
 
 

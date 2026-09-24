@@ -222,3 +222,22 @@ def test_generic_short_words_do_not_activate_signal_lookup(tmp_path):
 
     assert retrieve.exact_lookup("What is in this module?", re_.retrieval_records(rtl)) == []
 
+
+
+def test_window_hits_fold_into_one_hit_for_their_record():
+    base = {"chunk_id": "rtl:m", "record_id": "rtl::mod::m", "context_header": "RTL > m",
+            "text": "module m", "source_type": "module", "module": "m",
+            "lookup_terms": []}
+    window = {**base, "chunk_id": "rtl:m:w1", "text": "comments: stall logic"}
+    other = {**base, "chunk_id": "rtl:n", "module": "n", "text": "module n"}
+
+    class Store:
+        def search(self, query, k):
+            return [(retrieve.record_to_document(record), 0.9)
+                    for record in (window, base, other)]
+
+    hits = retrieve.RTLRetriever([base, window, other], store=Store()).search(
+        "where is the stall logic", top_k=2)
+
+    assert [hit.metadata["chunk_id"] for hit in hits] == ["rtl:m", "rtl:n"]
+    assert hits[0].page_content.endswith("comments: stall logic")

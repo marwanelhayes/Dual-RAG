@@ -106,7 +106,6 @@ RTL_INDEX_DIR = OUTPUT_DIR / "rtl_index"
 RTL_MANIFEST_PATH = OUTPUT_DIR / "rtl_embed_manifest.json"
 # Largest surface that keeps every measured RTL chunk inside the encoder's 512 tokens.
 RTL_CHUNK_CHARS = 1200
-RTL_CHUNK_MIN_SOURCE_CHARS = 320
 RTL_TOP_MODULE = "riscv_top"
 VERILATOR_ARGS = ["-Wno-fatal", "--top-module", RTL_TOP_MODULE,
                   "-y", str(RTL_DIR), str(RTL_DIR / "shared_pkg.sv"),

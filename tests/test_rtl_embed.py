@@ -270,48 +270,9 @@ def test_main_embeds_on_every_run_and_writes_the_manifest(monkeypatch, tmp_path)
     assert read_manifest(manifest_path) == build_manifest(builds[0])
 
 
-def test_module_facets_are_bounded_into_one_chunk():
-    parts = [("identity", "module wide"), ("ports", "ports: " + "a, " * 200),
-             ("comments", "comments: " + "b " * 200)]
-
-    kept = re_._budgeted_facets(parts, max_chars=400)
-
-    assert kept[0] == "module wide"
-    assert len("\n".join(kept)) <= 400
-
-
-def test_a_small_module_keeps_every_facet():
-    parts = [("identity", "module tiny"), ("ports", "ports: clk, rst")]
-
-    assert re_._budgeted_facets(parts, max_chars=400) == [
-        "module tiny", "ports: clk, rst"]
-
-
-def test_a_long_trailing_facet_is_trimmed_rather_than_dropped():
-    parts = [("identity", "module m"), ("comments", "comments: " + "x" * 500)]
-
-    kept = re_._budgeted_facets(parts, max_chars=200)
-
-    assert len(kept) == 2
-    assert kept[1].startswith("comments: ")
-    assert len("\n".join(kept)) <= 200
-
-
-def test_source_is_trimmed_on_whole_lines_only():
-    source = "\n".join(f"line {index}" for index in range(40))
-
-    trimmed = re_._whole_lines(source, max_chars=60)
-
-    assert len(trimmed) <= 60
-    assert source.startswith(trimmed)
-    assert not trimmed.endswith("lin")
-    assert all(line in source.split("\n") for line in trimmed.split("\n"))
-
-
-def test_a_single_long_source_line_is_kept_rather_than_dropped():
-    trimmed = re_._whole_lines("x" * 500 + "\nshort", max_chars=100)
-
-    assert trimmed == "x" * 100
+def test_a_line_longer_than_a_window_is_split_rather_than_dropped():
+    assert re_._windows(["x" * 250, "short"], max_chars=100) == [
+        "x" * 100, "x" * 100, "x" * 50 + "\nshort"]
 
 
 def test_decoration_banners_are_stripped_from_comments():
@@ -362,3 +323,44 @@ def test_the_header_above_a_module_leads_its_comments(tmp_path):
     text = re_.retrieval_records(rtl)[0]["text"]
 
     assert "comments: Generate pipeline stall signals; forwarding selects" in text
+
+
+def test_a_long_block_is_embedded_whole_across_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "RTL_CHUNK_CHARS", 120)
+    source_lines = [f"    q{index} <= d{index};" for index in range(30)]
+    block = {"block_id": "rtl::blk::m::always::1-30", "kind": "always",
+             "construct_type": "ALWAYS_FF", "original_name": "always@1",
+             "file": "m.sv", "start_line": 1, "end_line": 30,
+             "source_code": "\n".join(source_lines), "signals_read": ["d0"],
+             "signals_written": ["q0"]}
+    rtl = {"modules": {"m": _module("m", tmp_path / "m.sv", always_blocks=[block])}}
+
+    windows = [record for record in re_.retrieval_records(rtl)
+               if record["source_type"] == "construct"]
+
+    assert windows[0]["chunk_id"] == "rtl:construct:m:always:1-30"
+    assert [record["chunk_id"] for record in windows[1:]] == [
+        f"rtl:construct:m:always:1-30:w{index}" for index in range(1, len(windows))]
+    assert all(len(record["text"]) <= 120 for record in windows)
+    embedded = [line.strip() for record in windows for line in record["text"].split("\n")]
+    assert all(embedded.count(line.strip()) == 1 for line in source_lines)
+
+
+def test_module_facets_overflow_into_windows_without_losing_a_port_or_comment(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "RTL_CHUNK_CHARS", 150)
+    ports = [_declaration("wide", f"port_{index}", "PORT", "input") for index in range(40)]
+    source = "module wide;\n" + "".join(f"// note {index}\n" for index in range(40))
+    rtl = {"modules": {"wide": _module("wide", tmp_path / "wide.sv", ports=ports,
+                                       source_code=source)}}
+
+    windows = [record for record in re_.retrieval_records(rtl)
+               if record["module"] == "wide" and record["source_type"] == "module"]
+    text = "\n".join(record["text"] for record in windows)
+
+    assert windows[0]["chunk_id"] == "rtl:wide" and len(windows) > 1
+    assert all(len(record["text"]) <= 150 for record in windows)
+    assert all(f"port_{index}" in text for index in range(40))
+    assert all(f"note {index}" in text for index in range(40))
+    assert all(not record["lookup_terms"] and "signal_metadata" not in record
+               for record in windows[1:])

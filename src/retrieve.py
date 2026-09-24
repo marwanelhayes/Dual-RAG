@@ -8,6 +8,8 @@ from embed import Embedder, VectorStore, available_device, record_to_document
 from ingest import load_chunks
 from naming import identifier_tokens, normalize_identifier
 
+from langchain_core.documents import Document
+
 
 TOKEN_RE = re.compile(r"[a-z0-9_.]+")
 IDENTIFIER_RE = re.compile(
@@ -19,6 +21,8 @@ CONTEXT_TERMS = frozenset({"RTL", "SPEC", "AXI", "FPU"})
 _IDENTIFIER = re.compile(
     r"0[xX][0-9A-Fa-f]+|[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+)*"
 )
+# RTL records too long for one window continue in ``<chunk_id>:wN`` windows.
+_WINDOW = re.compile(r":w\d+$")
 _QUERY_STOP_WORDS = frozenset({
     "the", "and", "for", "from", "into", "what", "where", "which", "who",
     "does", "how", "this", "that", "with", "begin", "end", "else", "case",
@@ -451,6 +455,24 @@ def exact_lookup(query, records, k=None):
     return documents[:k] if k is not None else documents
 
 
+def _fold_window(document):
+    """Report a continuation-window hit as a hit on the record it continues.
+
+    Args:
+        document: Retrieved document, possibly a ``<chunk_id>:wN`` window.
+
+    Returns:
+        The document, its ``chunk_id`` set to the record's id when it was a window; the
+        matched window text is kept.
+    """
+    chunk_id = document.metadata.get("chunk_id") or ""
+    base = _WINDOW.sub("", chunk_id)
+    if base == chunk_id:
+        return document
+    return Document(page_content=document.page_content,
+                    metadata={**document.metadata, "chunk_id": base})
+
+
 class RTLRetriever:
     """Keep compiler-metadata exact lookup ahead of hybrid semantic retrieval."""
 
@@ -548,7 +570,7 @@ class RTLRetriever:
         output = list(exact)
         seen = {document.metadata.get("chunk_id") for document in exact}
         for hit in ranked:
-            document = hit[0] if isinstance(hit, tuple) else hit
+            document = _fold_window(hit[0] if isinstance(hit, tuple) else hit)
             chunk_id = document.metadata.get("chunk_id")
             if chunk_id in seen:
                 continue
@@ -558,10 +580,14 @@ class RTLRetriever:
                 break
         modules = {document.metadata.get("module") for document in output
                    if document.metadata.get("source_type") == "module"}
-        owned = [record_to_document(record) for record in self.records
-                 if record.get("source_type") == "construct"
-                 and record.get("module") in modules
-                 and record.get("chunk_id") not in seen]
+        owned = {}
+        for record in self.records:
+            document = _fold_window(record_to_document(record))
+            if (record.get("source_type") == "construct"
+                    and record.get("module") in modules
+                    and document.metadata["chunk_id"] not in seen):
+                owned.setdefault(document.metadata["chunk_id"], document)
+        owned = list(owned.values())
         if hybrid is not None and owned and getattr(hybrid, "reranker", None):
             reranked = [document for document, _ in hybrid.reranker.rank(
                 query, [*output, *owned])]
