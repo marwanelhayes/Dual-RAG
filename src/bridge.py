@@ -329,6 +329,7 @@ def _canonical_rtl_signal(raw, module):
         "reader_sites": raw.get("reader_sites", []),
         "writer_sites": raw.get("writer_sites", []),
     }
+    canonical["similarity_tokens"] = _without_direction(identifier_tokens(original))
     return canonical
 
 def rtl_modules(rtl):
@@ -601,6 +602,38 @@ def _link(spec, rtl, method, prefix):
     }
 
 
+def _suggestions(spec, rtl_rows):
+    """Rank the RTL signals whose names look like an unresolved spec name.
+
+    Similarity is shown to a reader and never becomes a link.
+
+    Args:
+        spec: Canonical specification signal no tier linked.
+        rtl_rows: Canonical RTL signals, each carrying its ``similarity_tokens``.
+
+    Returns:
+        Up to ``cfg.BRIDGE_QUERY_CANDIDATES`` ``SUGGESTED`` candidates, best first.
+    """
+    tokens = _without_direction(identifier_tokens(spec["original_name"]))
+    flat = "".join(tokens)
+    scored = []
+    for rtl in rtl_rows:
+        score = max(_jaccard(tokens, rtl["similarity_tokens"]),
+                    _edit_similarity(flat, "".join(rtl["similarity_tokens"]))
+                    * cfg.BRIDGE_EDIT_WEIGHT)
+        if score > 0:
+            scored.append((-score, rtl["signal_id"], rtl))
+    return [{
+        "status": "SUGGESTED",
+        "rtl_signal_id": rtl["signal_id"],
+        "rtl_original_name": rtl["original_name"],
+        "rtl_module_name": rtl["module_name"],
+        "score": _round(-negative),
+        "width": _width_evidence(spec, rtl),
+    } for negative, _, rtl in sorted(scored, key=lambda item: item[:2])[
+        :cfg.BRIDGE_QUERY_CANDIDATES]]
+
+
 def link_signals(specs, rtl_rows):
     """Link every RTL signal that states a specification name to those spec rows.
 
@@ -644,7 +677,7 @@ def link_signals(specs, rtl_rows):
         "spec_original_name": spec["original_name"],
         "confidence_level": UNRESOLVED,
         "reason": "no RTL signal states this name",
-        "candidates": [],
+        "candidates": _suggestions(spec, rtl_rows),
         "provenance": {"spec": _spec_provenance(spec)},
     } for spec in specs if spec["signal_id"] not in linked]
     return (sorted(links, key=lambda row: (row["spec_signal_id"], row["rtl_signal_id"])),

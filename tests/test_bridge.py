@@ -310,3 +310,19 @@ def test_a_renamed_wire_on_a_linked_net_is_linked_through_the_net():
     links = _links(_specs("AWBURST", "AWVALID"), rtl)
 
     assert ("AWBURST", "burst_to_bus", "fetch_stage", "same_net", None) in links
+
+
+def test_an_unresolved_signal_keeps_suggested_candidates_that_are_not_links():
+    rtl = _rtl(("fpu", _module("fpu", "rtl::module::fpu", [
+        _rtl_signal("round_mode_sel", "rtl::signal::round", 3, "input", ""),
+        _rtl_signal("opcode_i", "rtl::signal::op", 7, "input", "")])))
+
+    artifact = bridge.build_bridge(_specs("round_mode", widths={"round_mode": 3}), rtl,
+                                   _hierarchy())
+    candidates = artifact["unresolved_signals"][0]["candidates"]
+
+    assert artifact["signal_alignments"] == []
+    assert candidates[0]["rtl_original_name"] == "round_mode_sel"
+    assert candidates[0]["status"] == "SUGGESTED" and 0 < candidates[0]["score"] <= 1
+    assert candidates[0]["width"]["status"] == "equal"
+    assert len(candidates) <= 3
