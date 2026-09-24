@@ -177,7 +177,7 @@ def test_layer_one_recognizes_known_namespace_prefix_without_suffix_false_positi
     assert by_name["invalid_o"]["cheap"]["namespace_prefix"] is False
 
 
-def test_structural_width_and_direction_choose_the_compatible_signal():
+def test_structural_width_chooses_the_compatible_signal():
     spec = bridge.spec_signals(_spec("result", 32, "output", "calculated result"))[0]
     rtl = _rtl(
         ("fpu", _module("fpu", "rtl::module::fpu", [
@@ -192,7 +192,7 @@ def test_structural_width_and_direction_choose_the_compatible_signal():
 
     assert ranked[0]["rtl"]["signal_id"] == "rtl::signal::right"
     assert ranked[0]["component_evidence"]["width"]["score"] == 1.0
-    assert ranked[0]["component_evidence"]["direction"]["score"] == 1.0
+    assert "direction" not in ranked[0]["component_evidence"]
     assert ranked[1]["component_evidence"]["width"]["score"] == 0.0
 
 
@@ -436,3 +436,8 @@ def test_the_bridge_has_no_tiny_model_resolver_or_lookup_helpers():
         "ollama_resolver", "ambiguity_evidence", "lookup_signal", "lookup_module"))
     with pytest.raises(SystemExit):
         bridge._arguments(["--llm"])
+
+
+def test_the_bridge_infers_no_module_roles():
+    assert not any(hasattr(bridge, name) for name in (
+        "module_roles", "with_module_roles", "expected_direction", "_source_role"))

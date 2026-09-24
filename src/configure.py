@@ -141,7 +141,6 @@ BRIDGE_PROVENANCE_SITES = 2
 BRIDGE_SIGNAL_WEIGHTS = {
     "name": 0.4,
     "width": 0.15,
-    "direction": 0.12,
     "section_module": 0.15,
     "description_usage": 0.12,
     "table_context": 0.06,

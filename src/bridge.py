@@ -26,8 +26,6 @@ UNRESOLVED = "UNRESOLVED"
 PORT_ROW = "port"
 REGISTER_FIELD_ROW = "register_field"
 INSTRUCTION_ROW = "instruction"
-_OPPOSITE_ROLE = {"manager": "subordinate", "subordinate": "manager"}
-_ROLE_VOTE_MIN = 2
 
 _DIRECTION_TOKENS = frozenset({"i", "in", "input", "o", "out", "output"})
 _NAMESPACE_PREFIXES = frozenset({
@@ -140,19 +138,6 @@ def _namespace_prefixed(spec_flat, rtl_flat):
             and rtl_flat[:-len(spec_flat)] in _NAMESPACE_PREFIXES)
 
 
-def _suffix_direction(name):
-    """Infer input/output from a conventional final identifier token when present.
-
-    Args:
-        name: Source identifier spelling.
-
-    Returns:
-        ``input``, ``output``, or None when the tail names no direction.
-    """
-    tokens = identifier_tokens(name, expand_abbreviations=False)
-    return _PORT_DIRECTIONS.get(tokens[-1]) if tokens else None
-
-
 def _direction(value):
     """Normalize common direction spellings, retaining internal when explicit.
 
@@ -163,23 +148,6 @@ def _direction(value):
         A canonical direction, or None when the value names none.
     """
     return _DIRECTIONS.get(str(value or "").strip().lower())
-
-
-def _source_role(value):
-    """Normalize the interface role a specification names as one signal's driver.
-
-    Args:
-        value: Raw source or driver field.
-
-    Returns:
-        ``manager``, ``subordinate``, or None when no role is named.
-    """
-    folded = str(value or "").strip().lower()
-    return {"manager": "manager", "master": "manager", "initiator": "manager",
-            "requester": "manager", "transmitter": "manager", "tx": "manager",
-            "subordinate": "subordinate", "slave": "subordinate", "target": "subordinate",
-            "completer": "subordinate", "receiver": "subordinate",
-            "rx": "subordinate"}.get(folded)
 
 
 def _row_kind(value):
@@ -306,8 +274,6 @@ def _canonical_spec_signal(raw):
         "normalized_tokens": _unique(str(token).lower() for token in
                                      raw.get("normalized_tokens") or identifier_tokens(original)),
         "width": _width(raw.get("width")),
-        "direction": _direction(raw.get("direction")),
-        "source_role": _source_role(raw.get("source_role")),
         "row_kind": _row_kind(raw.get("row_kind")),
         "description": raw.get("description") or "",
         "document_id": raw.get("document_id"),
@@ -573,75 +539,6 @@ def align_enum(spec, members):
     }
 
 
-def module_roles(specs, rtl_rows):
-    """Infer each module's interface role from spec-stated signal sources.
-
-    A module drives the signals its own role sources, so an identically named port
-    votes for the spec role when it is an output and for the opposite role when it
-    is an input.  Only deterministic name identity casts a vote, and a module keeps
-    a role only when several ports agree, so one generic name cannot decide it.
-
-    Args:
-        specs: Canonical specification signals.
-        rtl_rows: Canonical RTL signals to vote with.
-
-    Returns:
-        Module identifier to its inferred role, only where the vote is decisive.
-    """
-    stated = {}
-    for spec in specs:
-        if spec["source_role"]:
-            stated.setdefault(_flat_name(spec["original_name"]), spec["source_role"])
-    votes = {}
-    for rtl in rtl_rows:
-        if rtl["direction"] not in ("input", "output"):
-            continue
-        flat = _flat_name(rtl["original_name"])
-        role = next((value for name, value in stated.items()
-                     if name == flat or _namespace_prefixed(name, flat)), None)
-        if not role:
-            continue
-        inferred = role if rtl["direction"] == "output" else _OPPOSITE_ROLE[role]
-        tally = votes.setdefault(rtl["module_id"], {})
-        tally[inferred] = tally.get(inferred, 0) + 1
-    return {module_id: max(sorted(tally), key=tally.get)
-            for module_id, tally in votes.items()
-            if sum(tally.values()) >= _ROLE_VOTE_MIN
-            and max(tally.values()) * 2 > sum(tally.values())}
-
-
-def with_module_roles(rtl_rows, specs):
-    """Return RTL rows annotated with the interface role inferred for their module.
-
-    Args:
-        rtl_rows: Canonical RTL signals.
-        specs: Canonical specification signals.
-
-    Returns:
-        Copies of the RTL rows carrying a ``module_role`` field.
-    """
-    roles = module_roles(specs, rtl_rows)
-    return [{**rtl, "module_role": roles.get(rtl["module_id"])} for rtl in rtl_rows]
-
-
-def expected_direction(spec, rtl):
-    """Return the port direction a specification implies for one candidate module.
-
-    Args:
-        spec: Canonical specification signal.
-        rtl: Candidate canonical RTL signal.
-
-    Returns:
-        The implied direction, or None when neither side states enough.
-    """
-    if spec["direction"]:
-        return spec["direction"]
-    role, module_role = spec["source_role"], rtl.get("module_role")
-    if not role or not module_role:
-        return None
-    return "output" if role == module_role else "input"
-
-
 def cheap_name_evidence(spec, rtl):
     """Measure every deterministic layer-one name probe for one signal pair.
 
@@ -771,13 +668,6 @@ def structural_signal_score(spec, candidate):
     spec_width, rtl_width = spec["width"], rtl["width"]
     width_available = spec_width is not None and rtl_width is not None
     width_score = 1.0 if width_available and spec_width == rtl_width else 0.0
-    spec_direction, rtl_direction = expected_direction(spec, rtl), rtl["direction"]
-    inferred = _suffix_direction(rtl["original_name"])
-    comparable_rtl_direction = rtl_direction if rtl_direction != "internal" else inferred
-    direction_available = spec_direction is not None and comparable_rtl_direction is not None
-    direction_score = 1.0 if direction_available and spec_direction == comparable_rtl_direction else 0.0
-    role_detail = (f" via role {spec['source_role']}/{rtl.get('module_role')}"
-                   if not spec["direction"] and spec_direction else "")
     spec_section = " ".join(str(value) for value in (
         spec.get("section_title"), spec.get("subsection_title")) if value)
     section_tokens = _tokens(spec_section)
@@ -798,9 +688,6 @@ def structural_signal_score(spec, candidate):
                            ", ".join(cheap["methods"]) or "weak nearest-name fallback"),
         "width": _component(width_score, weights["width"], width_available,
                             f"spec={spec_width!r}, rtl={rtl_width!r}"),
-        "direction": _component(direction_score, weights["direction"], direction_available,
-                                f"spec={spec_direction!r}{role_detail}, "
-                                f"rtl={comparable_rtl_direction!r}"),
         "section_module": _component(section_score, weights["section_module"],
                                      section_available,
                                      f"section={spec_section!r}, module={rtl['original_name']!r}"),
@@ -825,7 +712,6 @@ def _spec_pair_text(spec):
     return "\n".join(str(part) for part in (
         f"Signal: {spec['original_name']}",
         f"Width: {spec['width']}" if spec["width"] is not None else "",
-        f"Direction: {spec['direction']}" if spec["direction"] else "",
         f"Section: {spec.get('section_title') or ''} {spec.get('subsection_title') or ''}".strip(),
         f"Table: {spec.get('table_id') or ''} {spec.get('table_title') or ''}".strip(),
         f"Description: {spec.get('description') or ''}",
@@ -1318,7 +1204,7 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, source_finger
     enum_alignments = [record for record in
                        (align_enum(spec, members) for spec in instructions)
                        if record is not None]
-    rtl_rows = with_module_roles(rtl_signals(rtl_data), specs)
+    rtl_rows = rtl_signals(rtl_data)
     modules = rtl_modules(rtl_data)
     alignments, unresolved = [], []
     for spec in specs:
