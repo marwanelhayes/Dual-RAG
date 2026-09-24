@@ -37,15 +37,19 @@ the manifest it reads; parsing SystemVerilog (`rtl_ingest.py` owns every source 
 3. **Header** `RTL > rtl/<module>` or `RTL > rtl/<module> > <kind> lines a-b`; the text never
    repeats it.
 4. **Windows**: a record over `RTL_CHUNK_CHARS` continues in `<chunk_id>:w1`, `:w2`, ...
-   Every window repeats the record's first line(s) (`module X`, or the construct's
-   reads/writes) and cuts only at whole lines / whole facets. The first window keeps the plain
-   id, so gold ids hold; retrieval folds `:wN` hits into one hit.
+   cut only between lines; a long facet wraps onto continuation lines that repeat its label,
+   and a single line over the budget is split rather than dropped. Identity is not repeated
+   in the text: the `context_header` (`RTL > rtl/<module>[ > <kind> lines a-b]`) is embedded
+   with every window. The first window keeps the plain id and all metadata, so gold ids hold;
+   continuation windows carry provenance only (no `lookup_terms`, `signal_metadata`,
+   `signals_*`), so exact lookup sees each record once. `retrieve.RTLRetriever` folds `:wN`
+   hits into one hit on the record, keeping the matched window text.
 5. **Parents and children** come from `instances[*].target_module` only (tree children equal
    them in all 35 modules).
 6. **Wiring** from port bindings sharing one parent net, by stated directions: `drives X ->
    peer` only to a peer whose formal is not `output`, `reads X <- peer` only from a peer whose
    formal is `output`.
-7. **No render caps** except `_TERMS = 12` (until rt11).
+7. **No render caps.**
 8. **Fields read directly**; `rtl.json` schema 4 is the contract, no fallbacks.
 9. `main` writes `rtl_chunks.jsonl`, the index, and the manifest; no smoke query, no skip.
 
@@ -114,3 +118,20 @@ old minus keys.
 | rt9b | `rtl_embed/preamble-comments` | preamble + `/* */` first in `comments` | module texts |
 | rt10 | `rtl_embed/windows` | `:wN` windows, drop caps, retrieve folds windows | coverage → 1.0 |
 | rt11 | `rtl_embed/drop-terms-cap` | drop `_TERMS` | module texts |
+
+## Outcome (2026-09-24)
+
+All steps run; commits and MLflow runs in [`docs/NEXT_STEPS.md`](../NEXT_STEPS.md).
+
+| | rt0 | rt11 |
+|---|---|---|
+| records (module / construct, windows included) | 35 / 119 | 82 / 241 |
+| `rtl.embedded_line_coverage` | 0.53 | **1.0** |
+| max bge tokens (module / construct) | 477 / 468 | 439 / 474 |
+| `retrieval.rtl.exact_id_recall_at_k` | 0.400 | **0.458** |
+| `retrieval.rtl.mrr_at_k` | 0.584 | 0.625 |
+| RTL / spec section recall | 1.0 / 0.633 | 1.0 / 0.633 |
+| `src/rtl_embed.py` lines | 848 | 379 |
+
+Coverage is measured on non-blank block source lines (set match per module), so the rt0
+value (0.53) differs from the line-extent estimate in the baseline (0.36).

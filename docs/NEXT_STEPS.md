@@ -1,6 +1,6 @@
 # Next steps
 
-Handoff from the 2026-09-21/23 simplification sessions. Method and session prompt:
+Handoff from the 2026-09-21/24 simplification sessions. Method and session prompt:
 [`docs/SIMPLIFICATION_METHOD.md`](SIMPLIFICATION_METHOD.md). Decided specs and queues:
 [`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md),
 [`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md),
@@ -9,7 +9,9 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-13).
 
 ## Where we are
 
-Branch `simplify`, head `9a1b46e`. Tests: 249 passed. Decision metric: `retrieval.spec.section_recall_at_k`.
+Branch `simplify`, head `1d4b526`. Tests: 257 passed. Decision metrics:
+`retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
+the `rtl_embed` walk).
 
 | Step | Commit | MLflow run | section recall | Notes |
 |---|---|---|---|---|
@@ -39,7 +41,31 @@ Branch `simplify`, head `9a1b46e`. Tests: 249 passed. Decision metric: `retrieva
 | rtl r2 `drop-compiler-internals` | `81ff2c2` | `6499c7a0` | 0.633 | rtl.json = old minus keys |
 | rtl r3 `hierarchy-once` | `4c3f869` | `11ff82ba` | 0.633 | rtl.json = old minus keys; 4.1 → 3.4 MB |
 | rtl r4 `drop-clock-reset` | `0d124ac` | `1a02e5ef` | 0.633 | rtl.json = old minus keys |
-| rtl r5 `drop-content-hash` | `71e2a3a` | `4515b440` | **0.633** | rtl.json = old minus keys; 3.3 MB |
+| rtl r5 `drop-content-hash` | `71e2a3a` | `4515b440` | 0.633 | rtl.json = old minus keys; 3.3 MB |
+
+RTL steps (`rtl_embed` walk). Columns: spec section recall / RTL exact-id recall / RTL MRR;
+RTL section recall stayed 1.0 throughout.
+
+| Step | Commit | MLflow run | spec / rtl exact / mrr | Notes |
+|---|---|---|---|---|
+| rt0 `rtl_embed/metrics` | `b723512` | `a0235796` | 0.633 / 0.400 / 0.584 | baseline; line coverage 0.53 |
+| rt1 `move-retrieval` | `903138e` | `9bdee203` | 0.633 / 0.400 / 0.584 | zero diff |
+| rt2 `drop-dead-code` | `f4ba805` | `cc9904a3` | 0.633 / 0.400 / 0.584 | zero diff |
+| rt3 `drop-fallbacks` | `1581a22` | `4b00c7bc` | 0.633 / 0.400 / 0.584 | zero diff |
+| rt4 `drop-dead-fields` | `c7f9083` | `09e867c2` | 0.633 / 0.400 / 0.584 | rtl_chunks = old minus 12 keys |
+| rt5 `rtl/relative-paths` | `910eadc` | `a499c8a3` | 0.633 / 0.400 / 0.584 | path values only |
+| rt6 `instances-only` | `9ec48df` | `826890c7` | 0.633 / 0.392 / 0.542 | see below |
+| rt7 `wiring-directions` | `8a95eaf` | `a2d7f4ab` | 0.633 / 0.433 / 0.610 | 25 module texts |
+| rt8 `drop-repeated-facets` | `6e3d94b` | `0de7b7dd` | 0.633 / 0.417 / 0.627 | see below |
+| rt9a `rtl/preamble` | `aded00e` | `186d454c` | 0.633 / 0.417 / 0.627 | rtl.json = old plus key |
+| rt9b `preamble-comments` | `3a55661` | `46a6f153` | 0.633 / 0.425 / 0.596 | 26 module texts |
+| rt10 `windows` | `2d52910` | `1f036772` | 0.633 / 0.458 / 0.634 | coverage 1.0; 308 records |
+| rt11 `drop-terms-cap` | `1d4b526` | `939a6415` | **0.633 / 0.458 / 0.625** | 323 records; max 474 tokens |
+
+rt6 (-1 gold id): `cache` now names both parents, which trimmed its comment facet; its vector
+moved and `CMP_EXCLUSIVE_EXACT` lost `rtl:cache` at rank 5. rt8 (-2): all 154 texts changed;
+3 of 5 lost ids were trimmed blocks shifting among near ties (3 gained, MRR up). Both were
+trim effects that rt10 removed.
 
 Step 7b (`drop-text-furniture`) is skipped by its own rule: `furniture_text_only_hits` is
 not 0 (AXI 321, waveform 125, riscv-privileged 266: stacked copyright footers above the
@@ -75,22 +101,17 @@ test PDFs have points but no printed heading, and it would delete body text.
 ## Then
 
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
-ending "... going for rtl_embed.py".
+ending "... going for bridge.py" when the walk queue reaches it.
 
-1. **Execute the `rtl_embed` queue rt0-rt11** in [`docs/specs/rtl_embed.md`](specs/rtl_embed.md)
-   (walked 2026-09-24). Decision metric for these steps: `retrieval.rtl.exact_id_recall_at_k`
-   (0.4); guards RTL section recall 1.0, spec section recall 0.633. Carry-overs from the
-   `rtl_ingest` walk are folded in (rt2 fixture, rt4 `clock`/`reset`/`content_hash`, rt5
-   relative paths).
-2. Ingest steps 10-15 in `docs/specs/ingest.md` (10 prose excludes tables, 11 table owner by
+1. Ingest steps 10-15 in `docs/specs/ingest.md` (10 prose excludes tables, 11 table owner by
    position, 12 continuations, 12b wrapped cells, 13 code-line split, 14 token caps, 15
    sweep). Step 13 uses the newlines step 9 keeps; step 14 also closes DF-09 (52 chunks over
    512 tokens).
-3. spec_signals s2-s7 after the ingest queue (row deltas attributable).
-4. Then `bridge.py`, `retrieve.py` / `agent.py` walks.
+2. spec_signals s2-s7 after the ingest queue (row deltas attributable).
+3. Then `bridge.py`, `retrieve.py` / `agent.py` walks.
 
-Done this session (2026-09-23): step 9b, `embed.py` walk + e0-e5 (Chroma),
-`rtl_ingest.py` walk + r0-r5. Specs: [`embed.md`](specs/embed.md),
+Done 2026-09-23: step 9b, `embed.py` walk + e0-e5 (Chroma), `rtl_ingest.py` walk + r0-r5.
+Done 2026-09-24: `rtl_embed.py` walk + rt0-rt11. Specs: [`embed.md`](specs/embed.md),
 [`rtl_ingest.md`](specs/rtl_ingest.md).
 
 ## Pending consolidation (bridge / agent walk)
@@ -103,13 +124,19 @@ is revisited at the `retrieve.py` walk.
 
 ## Pending consolidation (embed / rtl, by consumer walk)
 
-- `rtl_embed`: queued as rt0-rt11 (see its spec). Alias pairs `file` / `file_path`, `line` / `start_line`, `symbol_name` /
+- `rtl_embed`: done (rt0-rt11). Alias pairs `file` / `file_path`, `line` / `start_line`, `symbol_name` /
   `original_name`, `instance_id` / `construct_id` (also bridge, agent).
 - `bridge`: `enum_usage` moves here or is dropped; `naming.py` judged here.
 - `retrieve`: `langchain_core.documents.Document` as hit type; `VectorStore.load(records)`.
 - `agent`: the embed manifest (freshness guard) is revisited.
 
 ## Known issues noted, not fixed
+
+- `rtl_ingest._module_extents` ends a module at the next module's start, so the second
+  module in a file (`booth_multiplier_seq`, `lzc`, `non_restoring_divider_seq`) has an empty
+  `preamble` and its header comment is embedded in the previous module's comments.
+- `rtl.construct.chunk_tokens_max` is 474 of 512 with `RTL_CHUNK_CHARS = 1200`; windows cut
+  by characters, so a denser block could pass 512 (`rtl.chunks_over_limit` watches it).
 
 - `naming._raw_tokens` splits `ARESETn` as `arese` + `tn` (acronym boundary), so AXI-style
   `…n` resets cannot link spec to RTL. Fix at the `bridge.py` walk, failing test first.
