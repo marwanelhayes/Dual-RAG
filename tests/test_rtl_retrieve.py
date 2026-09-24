@@ -4,7 +4,7 @@ from langchain_core.documents import Document
 
 import retrieve
 import rtl_embed as re_
-from test_rtl_embed import _declaration, _rtl
+from test_rtl_embed import _declaration, _module, _rtl
 
 
 def test_exact_signal_lookup_returns_owning_module_metadata_not_a_signal_vector(tmp_path):
@@ -39,13 +39,9 @@ def test_exact_lookup_prefers_the_module_the_query_named_over_a_shared_signal(tm
     other.write_text("module flp_add_sub; endmodule\n")
     rtl = {"modules": {}, "instance_tree": []}
     for source, module in ((named, "risc_fpu"), (other, "flp_add_sub")):
-        rtl["modules"][module] = {
-            "file": str(source), "start_line": 1, "end_line": 2, "ports": [],
-            "parameters": [{"signal_id": f"rtl::par::{module}::PRECISION",
-                            "construct_type": "PARAMETER", "original_name": "PRECISION"}],
-            "signals": [], "always_blocks": [], "functions_tasks": [],
-            "assignment_groups": [], "instances": [],
-        }
+        rtl["modules"][module] = _module(module, source, parameters=[
+            {"signal_id": f"rtl::par::{module}::PRECISION",
+             "construct_type": "PARAMETER", "original_name": "PRECISION"}])
     records = re_.retrieval_records(rtl)
 
     ranked = [hit.metadata["module"]

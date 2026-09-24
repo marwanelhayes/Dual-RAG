@@ -31,6 +31,17 @@ def _declaration(module, name, kind="SIGNAL", direction="internal", **metadata):
     }
 
 
+def _module(name, source, **fields):
+    """Return a schema-4 module entry with empty declarations and blocks."""
+    return {
+        "module_id": f"rtl::mod::{name}", "original_name": name, "normalized_name": name,
+        "normalized_tokens": [name], "file": str(source), "start_line": 1, "end_line": 2,
+        "source_code": f"module {name}; endmodule\n", "ports": [], "signals": [],
+        "parameters": [], "instances": [], "always_blocks": [], "functions_tasks": [],
+        "assignment_groups": [], "other_blocks": [], **fields,
+    }
+
+
 def _rtl(source):
     signal = _declaration(
         "fpu_decoder", "FPUValidD",
@@ -200,11 +211,7 @@ def test_module_text_names_the_peer_modules_its_ports_are_wired_to(tmp_path):
     source.write_text("module hazard_unit; endmodule\n")
     rtl = {"modules": {}, "instance_tree": []}
     for module in ("hazard_unit", "fetch_stage", "riscv_processor"):
-        rtl["modules"][module] = {
-            "file": str(source), "start_line": 1, "end_line": 2, "ports": [],
-            "signals": [], "parameters": [], "always_blocks": [],
-            "functions_tasks": [], "assignment_groups": [], "instances": [],
-        }
+        rtl["modules"][module] = _module(module, source)
     rtl["modules"]["riscv_processor"]["instances"] = [
         {"target_module": target, "bindings": [
             {"parent_module": "riscv_processor", "formal_name": "StallD",

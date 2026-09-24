@@ -95,7 +95,7 @@ def _record(chunk_id, record_id, context_header, text, source_type, module, entr
         "content_hash": content_hash(context_header, text),
         "module": module,
         "file": entry["file"],
-        "line": metadata.pop("line", entry.get("start_line", entry.get("line", 1))),
+        "line": metadata.pop("line"),
         "lookup_terms": _unique(lookup_terms, _LOOKUP_TERMS),
     }
     record.update(metadata)
@@ -154,7 +154,7 @@ def _signal_metadata(entry):
     """
     signals = []
     for field in ("ports", "signals", "parameters"):
-        for declaration in entry.get(field, []):
+        for declaration in entry[field]:
             item = {
                 key: declaration[key]
                 for key in (
@@ -164,12 +164,7 @@ def _signal_metadata(entry):
                     "reader_sites", "writer_sites", "content_hash",
                 ) if declaration.get(key) is not None
             }
-            # Accept a minimally migrated artifact while keeping the new artifact canonical.
-            item.setdefault("original_name", declaration.get("symbol_name")
-                            or declaration.get("name"))
-            if item["original_name"]:
-                item.setdefault("normalized_name", normalize_identifier(item["original_name"]))
-                signals.append(item)
+            signals.append(item)
     return signals
 
 
@@ -199,20 +194,18 @@ def port_connections(rtl):
         Module name to ``{"drives": [...], "reads": [...]}`` formal/peer pairs.
     """
     scoped = {}
-    for entry in rtl.get("modules", {}).values():
-        for instance in entry.get("instances", []):
-            target = instance.get("target_module")
-            for binding in instance.get("bindings", []):
-                for actual in binding.get("actual_signals") or []:
-                    scoped.setdefault(
-                        (binding.get("parent_module"), str(actual)), []).append(
-                            (target, binding.get("formal_name"),
-                             str(binding.get("direction") or "").casefold()))
+    for entry in rtl["modules"].values():
+        for instance in entry["instances"]:
+            target = instance["target_module"]
+            for binding in instance["bindings"]:
+                for actual in binding["actual_signals"]:
+                    scoped.setdefault((binding["parent_module"], actual), []).append(
+                        (target, binding["formal_name"], binding["direction"].casefold()))
     links = {}
     for endpoints in scoped.values():
         for target, formal, direction in endpoints:
-            peers = [peer for peer, _, _ in endpoints if peer and peer != target]
-            if not target or not formal or not peers:
+            peers = [peer for peer, _, _ in endpoints if peer != target]
+            if not peers:
                 continue
             side = "drives" if direction == "output" else "reads"
             links.setdefault(target, {}).setdefault(side, []).extend(
@@ -265,29 +258,20 @@ def chunks(rtl, child_modules):
     parents = {child: parent for parent, kids in child_modules.items() for child in kids}
     links = port_connections(rtl)
     records = []
-    for name, entry in sorted(rtl.get("modules", {}).items()):
-        source_code = entry.get("source_code", "")
-        prose = comments(source_code)
-        if not source_code:
-            try:
-                source_code = Path(entry.get("file") or "").read_text(
-                    encoding="utf-8", errors="replace")
-                prose = comments(source_code)
-            except OSError:
-                prose = []
-        port_names = [port.get("original_name") or port.get("symbol_name") or port.get("name")
-                      for port in entry.get("ports", [])]
-        instances = [instance.get("target_module") for instance in entry.get("instances", [])]
+    for name, entry in sorted(rtl["modules"].items()):
+        prose = comments(entry["source_code"])
+        port_names = [port["original_name"] for port in entry["ports"]]
+        instances = [instance["target_module"] for instance in entry["instances"]]
         instance_children = _unique(instances)
         kids = _unique([*child_modules.get(name, []), *instance_children])
         structures = [
-            *entry.get("always_blocks", []),
-            *entry.get("functions_tasks", []),
-            *entry.get("assignment_groups", []),
+            *entry["always_blocks"],
+            *entry["functions_tasks"],
+            *entry["assignment_groups"],
         ]
         structural_summary = ", ".join(
-            f"{block.get('construct_type', block.get('kind', 'block')).lower()} "
-            f"lines {block.get('start_line')}-{block.get('end_line')}"
+            f"{block['construct_type'].lower()} "
+            f"lines {block['start_line']}-{block['end_line']}"
             for block in structures[:_MODULE_STRUCTURES]
         )
         wiring = links.get(name, {})
@@ -299,8 +283,8 @@ def chunks(rtl, child_modules):
         said = "; ".join(prose)
         parts = [(label, text) for label, text in (
             ("identity", f"module {name}"),
-            ("normalized", f"normalized module: {entry.get('normalized_name')}"
-             if entry.get("normalized_name") and entry.get("normalized_name") != name else ""),
+            ("normalized", f"normalized module: {entry['normalized_name']}"
+             if entry["normalized_name"] and entry["normalized_name"] != name else ""),
             ("parent", f"instantiated by: {parents[name]}" if name in parents else ""),
             ("ports", f"ports: {', '.join(_unique(port_names, _MODULE_PORTS))}"
              if port_names else ""),
@@ -313,19 +297,19 @@ def chunks(rtl, child_modules):
         ) if text]
         records.append(_record(
             chunk_id=f"rtl:{name}",
-            record_id=entry.get("module_id", f"rtl::mod::{name}"),
+            record_id=entry["module_id"],
             context_header=f"RTL > {cfg.RTL_DIR.name}/{name}",
             text="\n".join(_budgeted_facets(parts)),
             source_type="module",
             module=name,
             entry=entry,
-            lookup_terms=[name, entry.get("original_name"), normalize_identifier(name)],
-            line=entry.get("start_line", entry.get("line", 1)),
-            start_line=entry.get("start_line", entry.get("line", 1)),
-            end_line=entry.get("end_line", entry.get("line", 1)),
-            original_name=entry.get("original_name", name),
-            normalized_name=entry.get("normalized_name", normalize_identifier(name)),
-            normalized_tokens=entry.get("normalized_tokens", []),
+            lookup_terms=[name, entry["original_name"], normalize_identifier(name)],
+            line=entry["start_line"],
+            start_line=entry["start_line"],
+            end_line=entry["end_line"],
+            original_name=entry["original_name"],
+            normalized_name=entry["normalized_name"],
+            normalized_tokens=entry["normalized_tokens"],
             signal_metadata=_signal_metadata(entry),
             module_content_hash=entry.get("content_hash"),
         ))
@@ -361,29 +345,21 @@ def _structural_records(rtl):
         One record per always block, function, task, and assignment group.
     """
     records = []
-    used_ids = set()
     fields = ("always_blocks", "functions_tasks", "assignment_groups")
-    for module, entry in sorted(rtl.get("modules", {}).items()):
-        blocks = [block for field in fields for block in entry.get(field, [])]
+    for module, entry in sorted(rtl["modules"].items()):
+        blocks = [block for field in fields for block in entry[field]]
         blocks.sort(key=lambda block: (
-            block.get("start_line", 0), block.get("end_line", 0),
-            block.get("construct_type", block.get("kind", ""))))
+            block["start_line"], block["end_line"], block["construct_type"]))
         for block in blocks:
-            first = block.get("start_line", entry.get("start_line", 1))
-            last = block.get("end_line", first)
-            kind = str(block.get("construct_type") or block.get("kind") or "STRUCTURE")
-            surface = str(block.get("source_code") or block.get("source_text") or "").strip()
-            record_id = block.get("block_id") or f"rtl::blk::{module}::{kind}:{first}-{last}"
-            legacy_kind = block.get("kind") or kind.lower()
-            chunk_id = f"rtl:construct:{module}:{legacy_kind}:{first}-{last}"
-            if chunk_id in used_ids:
-                chunk_id = f"{chunk_id}:{content_hash(record_id)}"
-            used_ids.add(chunk_id)
-            reads = block.get("signals_read", [])
-            writes = block.get("signals_written", [])
-            name = block.get("original_name") or kind.lower()
+            first, last = block["start_line"], block["end_line"]
+            kind = block["construct_type"]
+            surface = block["source_code"].strip()
+            chunk_id = f"rtl:construct:{module}:{block['kind']}:{first}-{last}"
+            reads = block["signals_read"]
+            writes = block["signals_written"]
+            name = block["original_name"]
             terms = _terms([module, *writes, *reads])
-            source_file = Path(block.get("file", entry["file"])).name
+            source_file = Path(block["file"]).name
             shown_reads = _unique(reads, _CONSTRUCT_SIGNALS)
             shown_writes = _unique(writes, _CONSTRUCT_SIGNALS)
             heading = [part for part in (
@@ -400,13 +376,13 @@ def _structural_records(rtl):
             body = "\n".join([*heading, citation, *([surface] if surface else [])])
             records.append(_record(
                 chunk_id=chunk_id,
-                record_id=record_id,
+                record_id=block["block_id"],
                 context_header=(f"RTL > {cfg.RTL_DIR.name}/{module} > "
                                 f"{kind.lower()} lines {first}-{last}"),
                 text=body,
                 source_type="construct",
                 module=module,
-                entry={"file": block.get("file", entry["file"]), "start_line": first},
+                entry=block,
                 # Named functions/tasks are exact-addressable; source operands are not.
                 lookup_terms=[name] if "@" not in name else [],
                 line=first,

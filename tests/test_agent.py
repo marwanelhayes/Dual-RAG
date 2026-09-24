@@ -44,11 +44,18 @@ def _runtime_data():
         "table_id": "tbl:1",
     }]
     rtl = {"modules": {"fpu": {
-        "original_name": "fpu", "file": "rtl/fpu.sv", "always_blocks": [{
-            "construct_id": "rtl:block:fpu:20", "file": "rtl/fpu.sv",
-            "start_line": 20, "end_line": 32, "signals_read": ["rm_i"],
-            "signals_written": ["result_o"], "source_text": "always_comb result_o = rm_i;",
-        }], "functions_tasks": [], "assignments": [], "structural_chunks": [],
+        "module_id": "rtl::mod::fpu", "original_name": "fpu", "normalized_name": "fpu",
+        "normalized_tokens": ["fpu"], "file": "rtl/fpu.sv", "start_line": 1,
+        "end_line": 40, "source_code": "module fpu; endmodule", "ports": [],
+        "signals": [], "parameters": [], "instances": [], "always_blocks": [{
+            "construct_id": "rtl:block:fpu:20", "block_id": "rtl::blk::fpu::always::20-32",
+            "kind": "always", "construct_type": "ALWAYS_COMB", "original_name": "always@20",
+            "file": "rtl/fpu.sv", "start_line": 20, "end_line": 32,
+            "signals_read": ["rm_i"], "signals_written": ["result_o"],
+            "source_code": "always_comb result_o = rm_i;",
+            "source_text": "always_comb result_o = rm_i;",
+        }], "functions_tasks": [], "assignment_groups": [], "assignments": [],
+        "structural_chunks": [],
     }}}
     bridge = {
         "signal_alignments": [{
