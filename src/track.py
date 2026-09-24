@@ -266,6 +266,7 @@ def bridge_metrics(bridge, gold):
     })
     for link in links:
         metrics[f"bridge.links.{link.get('method', 'scored')}"] += 1
+        metrics[f"bridge.links_to.{link.get('rtl_kind', 'signal')}"] += 1
     for row in bridge.get("unresolved_signals", []):
         metrics[f"bridge.unresolved.{row['reason']}"] += 1
     return dict(metrics)

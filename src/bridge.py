@@ -634,12 +634,56 @@ def _suggestions(spec, rtl_rows):
         :cfg.BRIDGE_QUERY_CANDIDATES]]
 
 
-def link_signals(specs, rtl_rows):
-    """Link every RTL signal that states a specification name to those spec rows.
+def enum_members(rtl):
+    """Flatten every declared enumeration member into a link target.
+
+    Args:
+        rtl: Decoded ``rtl.json``.
+
+    Returns:
+        Member rows ordered by enumeration identifier and member name.
+    """
+    return sorted(({"enum_id": enum["enum_id"], "enum_name": enum["original_name"],
+                    "original_name": item["original_name"], "value": item.get("value"),
+                    "file": item.get("file"), "line": item.get("line")}
+                   for enum in rtl.get("enums", []) for item in enum["items"]),
+                  key=lambda row: (row["enum_id"], row["original_name"]))
+
+
+def _member_link(spec, member):
+    """Build one link row from a spec signal to the enum member that declares it.
+
+    Args:
+        spec: Canonical specification signal.
+        member: Row from ``enum_members``.
+
+    Returns:
+        One ``signal_alignments`` row with ``rtl_kind`` ``enum_member``.
+    """
+    return {
+        "spec_signal_id": spec["signal_id"],
+        "spec_original_name": spec["original_name"],
+        "rtl_kind": "enum_member",
+        "rtl_signal_id": f"{member['enum_id']}::{member['original_name']}",
+        "rtl_original_name": member["original_name"],
+        "rtl_enum_name": member["enum_name"],
+        "rtl_member_name": member["original_name"],
+        "rtl_member_value": member["value"],
+        "method": "identity",
+        "prefix": None,
+        "confidence_level": STRONG,
+        "provenance": {"spec": _spec_provenance(spec),
+                       "rtl": {"file": member["file"], "line": member["line"]}},
+    }
+
+
+def link_signals(specs, rtl_rows, members=()):
+    """Link every RTL signal or enum member that states a specification name.
 
     Args:
         specs: Canonical specification signals.
         rtl_rows: Canonical RTL signals.
+        members: Enumeration members from ``enum_members``; linked by identity only.
 
     Returns:
         ``(links, unresolved)``: link rows, and one row per spec signal with no link.
@@ -671,6 +715,13 @@ def link_signals(specs, rtl_rows):
             if (spec_id, member["signal_id"]) not in pairs:
                 links.append(_link(specs_by_id[spec_id], member, "same_net", None))
                 pairs.add((spec_id, member["signal_id"]))
+    # CSRs are declared as enumeration members (``csr_index_t.mstatus``), not as signals.
+    for member in members:
+        for expand in (False, True):
+            flat = _flat_name(member["original_name"], expand=expand)
+            if flat in by_flat:
+                links.extend(_member_link(spec, member) for spec in by_flat[flat])
+                break
     linked = {link["spec_signal_id"] for link in links}
     unresolved = [{
         "spec_signal_id": spec["signal_id"],
@@ -856,7 +907,7 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, source_fingerprints=None):
     specs = spec_signals(spec_data)
     rtl_rows = rtl_signals(rtl_data)
     modules = rtl_modules(rtl_data)
-    alignments, unresolved = link_signals(specs, rtl_rows)
+    alignments, unresolved = link_signals(specs, rtl_rows, enum_members(rtl_data))
     module_alignments = derive_module_alignments(
         hierarchy_data, modules, alignments, specs)
     fingerprints = source_fingerprints or {

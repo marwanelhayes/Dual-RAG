@@ -183,4 +183,5 @@ def test_bridge_metrics_score_axi_links_against_the_gold_ports():
     assert metrics["bridge.axi_precision"] == 2 / 3
     assert metrics["bridge.links.identity"] == 3
     assert metrics["bridge.links.interface_prefix"] == 1
+    assert metrics["bridge.links_to.signal"] == 4
     assert metrics["bridge.unresolved.no link"] == 2

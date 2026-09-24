@@ -326,3 +326,19 @@ def test_an_unresolved_signal_keeps_suggested_candidates_that_are_not_links():
     assert candidates[0]["status"] == "SUGGESTED" and 0 < candidates[0]["score"] <= 1
     assert candidates[0]["width"]["status"] == "equal"
     assert len(candidates) <= 3
+
+
+def test_a_csr_links_to_the_enum_member_that_declares_it():
+    rtl = _rtl()
+    rtl["enums"] = [{"enum_id": "rtl::enum::csr_pkg::csr_index_t", "original_name": "csr_index_t",
+                     "package": "csr_pkg", "items": [
+                         {"original_name": "mstatus", "value": 0, "file": "csr_defs.sv",
+                          "line": 12}]}]
+
+    artifact = bridge.build_bridge(_specs("mstatus"), rtl, _hierarchy())
+    link = artifact["signal_alignments"][0]
+
+    assert link["rtl_kind"] == "enum_member" and link["method"] == "identity"
+    assert (link["rtl_enum_name"], link["rtl_member_name"], link["rtl_member_value"]) == (
+        "csr_index_t", "mstatus", 0)
+    assert link["provenance"]["rtl"]["file"] == "csr_defs.sv"
