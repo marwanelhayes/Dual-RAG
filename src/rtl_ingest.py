@@ -390,65 +390,6 @@ def enum_types(root, files):
     return [records[enum_id] for enum_id in sorted(records)]
 
 
-def _declared_names(module):
-    """Return every identifier one module declares in its own scope.
-
-    Args:
-        module: One assembled module record.
-
-    Returns:
-        The module's declared port, signal, and parameter names.
-    """
-    return {item.get("original_name") for key in ("ports", "signals", "parameters")
-            for item in module.get(key, []) if item.get("original_name")}
-
-
-def _usage_blocks(module_records):
-    """Return every structural block that carries source, paired with its module.
-
-    Args:
-        module_records: Assembled module records keyed by module name.
-
-    Returns:
-        ``(module name, block)`` pairs in module-name order.
-    """
-    return [(name, block) for name, module in sorted(module_records.items())
-            for key in ("always_blocks", "functions_tasks", "assignment_groups",
-                        "other_blocks")
-            for block in module.get(key, []) if block.get("source_code")]
-
-
-def enum_usage(enums, module_records):
-    """Attach the blocks naming each enumeration member outside a shadowing scope.
-
-    A member mentioned by a module that also declares that identifier is ambiguous,
-    so the site is left out rather than credited to the enumeration.
-
-    Args:
-        enums: Enumeration records from ``enum_types``.
-        module_records: Assembled module records keyed by module name.
-
-    Returns:
-        Copies of the enumerations whose members carry their usage sites.
-    """
-    declared = {name: _declared_names(module) for name, module in module_records.items()}
-    blocks = _usage_blocks(module_records)
-    annotated = []
-    for enum in enums:
-        items = []
-        for item in enum["items"]:
-            name = item["original_name"]
-            pattern = re.compile(r"\b" + re.escape(name) + r"\b") if name else None
-            items.append({**item, "usage_sites": [
-                {"module": module, "construct_type": block.get("construct_type"),
-                 "file": block.get("file"), "line": block.get("start_line")}
-                for module, block in blocks
-                if pattern is not None and name not in declared[module]
-                and pattern.search(block["source_code"])]})
-        annotated.append({**enum, "items": items})
-    return annotated
-
-
 def _declaration_record(var, module, kind, name, located, scopes, files, order, dtypes):
     """Project one compiler-owned declaration before stable-id assignment.
 
@@ -1155,7 +1096,7 @@ def build(xml_path, lint_text):
         "top_module": top,
         "tree": tree(root),
         "modules": module_records,
-        "enums": enum_usage(enum_types(root, files), module_records),
+        "enums": enum_types(root, files),
         "warnings": parse_warnings(lint_text),
     }
 

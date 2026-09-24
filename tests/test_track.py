@@ -104,7 +104,7 @@ def test_rtl_metrics_count_records_and_rate_resolution():
            "always_blocks": [{"construct_type": "ALWAYS_FF"}], "functions_tasks": [],
            "assignment_groups": [{"construct_type": "ASSIGNMENT_GROUP"}], "other_blocks": []}
     rtl = {"modules": {"child": child, "top": top}, "tree": [{}, {}],
-           "enums": [{"items": [{"usage_sites": [{}, {}]}, {"usage_sites": []}]}],
+           "enums": [{"items": [{}, {}]}],
            "warnings": [{"code": "WIDTHEXPAND"}, {"code": "WIDTHEXPAND"}]}
 
     metrics = track.rtl_metrics(rtl)
@@ -119,7 +119,7 @@ def test_rtl_metrics_count_records_and_rate_resolution():
     assert metrics["rtl.blocks.ASSIGNMENT_GROUP"] == 1
     assert metrics["rtl.enums"] == 1
     assert metrics["rtl.enum_items"] == 2
-    assert metrics["rtl.enum_usage_sites"] == 2
+    assert "rtl.enum_usage_sites" not in metrics
     assert metrics["rtl.tree_nodes"] == 2
     assert metrics["rtl.warnings.WIDTHEXPAND"] == 2
     assert metrics["rtl.declarations_with_width_rate"] == 5 / 6

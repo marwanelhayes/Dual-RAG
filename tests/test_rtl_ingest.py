@@ -172,24 +172,10 @@ def test_package_enums_keep_member_values_and_declaration_sites(tmp_path, monkey
     assert state["items"][0]["file"].endswith("design.sv")
 
 
-def test_enum_members_record_the_blocks_that_mention_them(tmp_path, monkeypatch):
-    enums = {enum["original_name"]: enum for enum in built(tmp_path, monkeypatch)["enums"]}
-    items = {item["original_name"]: item for item in enums["state_t"]["items"]}
+def test_enum_members_carry_no_usage_sites(tmp_path, monkeypatch):
+    enums = built(tmp_path, monkeypatch)["enums"]
 
-    assert items["IDLE"]["usage_sites"] == [{
-        "module": "parent", "construct_type": "ALWAYS_FF",
-        "file": "design.sv", "line": 12,
-    }]
-
-
-def test_enum_members_shadowed_by_a_module_declaration_are_not_credited(tmp_path, monkeypatch):
-    enums = {enum["original_name"]: enum for enum in built(tmp_path, monkeypatch)["enums"]}
-    items = {item["original_name"]: item for item in enums["state_t"]["items"]}
-    module = built(tmp_path, monkeypatch)["modules"]["parent"]
-
-    assert "BUSY" in {signal["original_name"] for signal in module["signals"]}
-    assert "BUSY" in module["always_blocks"][0]["source_code"]
-    assert items["BUSY"]["usage_sites"] == []
+    assert not any("usage_sites" in item for enum in enums for item in enum["items"])
 
 
 def test_package_enums_tolerate_a_missing_package_and_missing_member_value(
@@ -202,7 +188,7 @@ def test_package_enums_tolerate_a_missing_package_and_missing_member_value(
     assert bare["items"] == [{
         "original_name": "OFF", "normalized_name": "off",
         "value": None, "value_source": None,
-        "file": bare["items"][0]["file"], "line": 35, "usage_sites": [],
+        "file": bare["items"][0]["file"], "line": 35,
     }]
 
 

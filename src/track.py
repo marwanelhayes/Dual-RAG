@@ -180,7 +180,6 @@ def rtl_metrics(rtl):
         "rtl.bindings": len(bindings),
         "rtl.enums": len(rtl["enums"]),
         "rtl.enum_items": len(items),
-        "rtl.enum_usage_sites": sum(len(item.get("usage_sites", [])) for item in items),
         "rtl.tree_nodes": len(rtl["tree"]),
     })
     for module in modules:

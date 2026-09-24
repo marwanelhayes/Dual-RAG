@@ -65,66 +65,6 @@ def _rtl(*modules):
     }}
 
 
-def _instruction_spec(*names):
-    return {"schema_version": "4", "signals": [{
-        "signal_id": f"spec::instruction::isa::{name.lower().replace('.', '_')}",
-        "original_name": name, "row_kind": "instruction",
-        "document_id": "spec::doc::isa", "section_id": "spec::section::fpu",
-        "section_title": "Floating Point Unit", "chunk_id": "chunk::fpu",
-        "page": 119, "source_file": "spec.pdf",
-    } for name in names]}
-
-
-def _enum_rtl(*members):
-    return {"schema_version": 3, "modules": {}, "enums": [{
-        "enum_id": "rtl::enum::shared_pkg::fpu_operation_t",
-        "original_name": "fpu_operation_t", "package": "shared_pkg",
-        "normalized_name": "fpu_operation_t",
-        "items": [{
-            "original_name": name, "normalized_name": name.lower(),
-            "value": value, "value_source": f"5'h{value:x}",
-            "file": "rtl/shared_pkg.sv", "line": 239 + value,
-            "usage_sites": ([{"module": "fpu_decoder", "construct_type": "ALWAYS_COMB",
-                              "file": "rtl/fpu_decoder.sv", "line": 63}] if used else []),
-        } for name, value, used in members],
-    }]}
-
-
-def test_instruction_rows_align_to_identically_named_enum_members():
-    artifact = bridge.build_bridge(
-        _instruction_spec("FADD.S", "FSQRT.S"),
-        _enum_rtl(("FADD_S", 0, True), ("FSUB_S", 1, True)), _hierarchy())
-    aligned = artifact["enum_alignments"]
-
-    assert [row["spec_original_name"] for row in aligned] == ["FADD.S"]
-    assert aligned[0]["rtl_member_name"] == "FADD_S"
-    assert aligned[0]["rtl_member_value"] == 0
-    assert aligned[0]["rtl_enum_name"] == "fpu_operation_t"
-    assert aligned[0]["confidence_level"] in {bridge.STRONG, bridge.MEDIUM}
-    assert artifact["summary"]["enum_alignments"] == 1
-    assert artifact["summary"]["unaligned_instructions"] == 1
-
-
-def test_enum_alignment_records_whether_the_member_is_implemented():
-    artifact = bridge.build_bridge(
-        _instruction_spec("FADD.S", "FSUB.S"),
-        _enum_rtl(("FADD_S", 0, True), ("FSUB_S", 1, False)), _hierarchy())
-    by_name = {row["spec_original_name"]: row for row in artifact["enum_alignments"]}
-
-    assert by_name["FADD.S"]["component_evidence"]["implementation"]["score"] == 1.0
-    assert by_name["FSUB.S"]["component_evidence"]["implementation"]["score"] == 0.0
-    assert by_name["FADD.S"]["provenance"]["rtl"]["usage_sites"]
-
-
-def test_instruction_rows_never_enter_signal_alignment():
-    artifact = bridge.build_bridge(
-        _instruction_spec("FADD.S"),
-        _enum_rtl(("FADD_S", 0, True)), _hierarchy())
-
-    assert artifact["signal_alignments"] == []
-    assert artifact["unresolved_signals"] == []
-
-
 def _hierarchy():
     return {
         "schema_version": "1.0",
@@ -280,7 +220,7 @@ def test_full_artifact_maps_sections_from_title_context_and_child_signals():
 
     assert set(artifact) == {
         "schema_version", "source_fingerprints", "signal_alignments",
-        "unresolved_signals", "enum_alignments", "module_alignments", "summary",
+        "unresolved_signals", "module_alignments", "summary",
     }
     assert artifact["signal_alignments"][0]["rtl_signal_id"] == "rtl::signal::rm"
     module = artifact["module_alignments"][0]
@@ -441,3 +381,10 @@ def test_the_bridge_has_no_tiny_model_resolver_or_lookup_helpers():
 def test_the_bridge_infers_no_module_roles():
     assert not any(hasattr(bridge, name) for name in (
         "module_roles", "with_module_roles", "expected_direction", "_source_role"))
+
+
+def test_the_bridge_writes_no_enum_alignment():
+    artifact = bridge.build_bridge(_spec(), _rtl(), _hierarchy())
+
+    assert "enum_alignments" not in artifact
+    assert not any(key.startswith("enum") for key in artifact["summary"])

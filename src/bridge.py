@@ -25,7 +25,6 @@ WEAK = "WEAK"
 UNRESOLVED = "UNRESOLVED"
 PORT_ROW = "port"
 REGISTER_FIELD_ROW = "register_field"
-INSTRUCTION_ROW = "instruction"
 
 _DIRECTION_TOKENS = frozenset({"i", "in", "input", "o", "out", "output"})
 _NAMESPACE_PREFIXES = frozenset({
@@ -157,10 +156,10 @@ def _row_kind(value):
         value: Raw row-kind field.
 
     Returns:
-        One of the three known row kinds, defaulting to ``port``.
+        ``register_field`` when stated, otherwise ``port``.
     """
     folded = str(value or "").strip().lower()
-    return (folded if folded in (PORT_ROW, REGISTER_FIELD_ROW, INSTRUCTION_ROW)
+    return (folded if folded in (PORT_ROW, REGISTER_FIELD_ROW)
             else PORT_ROW)
 
 
@@ -463,81 +462,6 @@ def rtl_signals(rtl):
             signal["net_id"] = nets.get((signal["module_name"], signal["original_name"]))
             rows.append(signal)
     return sorted(rows, key=lambda signal: signal["signal_id"])
-
-def enum_members(rtl):
-    """Flatten every declared enumeration member into a comparable row.
-
-    Args:
-        rtl: Decoded RTL artifact.
-
-    Returns:
-        Member rows ordered by enumeration identifier and member name.
-    """
-    rows = []
-    for enum in rtl.get("enums", []):
-        for item in enum["items"]:
-            original = str(item["original_name"])
-            rows.append({
-                "enum_id": enum.get("enum_id"),
-                "enum_name": enum.get("original_name"),
-                "original_name": original,
-                "normalized_name": str(item.get("normalized_name") or "")
-                                   or normalize_identifier(original),
-                "normalized_tokens": identifier_tokens(original),
-                "value": item.get("value"),
-                "file": item.get("file"),
-                "line": item.get("line"),
-                "usage_sites": item.get("usage_sites", []),
-            })
-    return sorted(rows, key=lambda row: (str(row["enum_id"]), row["original_name"]))
-
-
-def align_enum(spec, members):
-    """Align one specification instruction row to an identically named member.
-
-    Specification mnemonics and RTL enumeration members normalize onto the same
-    identifier, so identity decides the mapping and no rival candidate is ranked.
-
-    Args:
-        spec: Canonical specification instruction row.
-        members: Enumeration member rows from ``enum_members``.
-
-    Returns:
-        An enumeration alignment record, or None when no member matches.
-    """
-    match = next((member for member in members
-                  if member["normalized_name"] == spec["normalized_name"]), None)
-    if match is None:
-        return None
-    implemented = 1.0 if match["usage_sites"] else 0.0
-    components = {
-        "name": _component(1.0, 0.7, True, "normalized instruction identity"),
-        "implementation": _component(
-            implemented, 0.3, True, f"{len(match['usage_sites'])} usage site(s)"),
-    }
-    score = _round(_weighted_components(components))
-    return {
-        "alignment_id": "bridge::enum::" + content_hash(
-            spec["signal_id"], str(match["enum_id"]), match["original_name"]),
-        "spec_signal_id": spec["signal_id"],
-        "spec_original_name": spec["original_name"],
-        "spec_normalized_name": spec["normalized_name"],
-        "rtl_enum_id": match["enum_id"],
-        "rtl_enum_name": match["enum_name"],
-        "rtl_member_name": match["original_name"],
-        "rtl_member_value": match["value"],
-        "confidence": score,
-        "confidence_level": confidence_level(score),
-        "methods": _unique(["normalized_name"] +
-                           (["implementing_site"] if match["usage_sites"] else [])),
-        "component_evidence": components,
-        "provenance": {"spec": _spec_provenance(spec), "rtl": {
-            "file": match["file"], "line": match["line"],
-            "usage_site_count": len(match["usage_sites"]),
-            "usage_sites": match["usage_sites"][:cfg.BRIDGE_PROVENANCE_SITES],
-        }},
-    }
-
 
 def cheap_name_evidence(spec, rtl):
     """Measure every deterministic layer-one name probe for one signal pair.
@@ -1197,13 +1121,7 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, source_finger
     Returns:
         The complete ``bridge.json`` payload with its summary counts.
     """
-    every_spec = spec_signals(spec_data)
-    instructions = [row for row in every_spec if row["row_kind"] == INSTRUCTION_ROW]
-    specs = [row for row in every_spec if row["row_kind"] != INSTRUCTION_ROW]
-    members = enum_members(rtl_data)
-    enum_alignments = [record for record in
-                       (align_enum(spec, members) for spec in instructions)
-                       if record is not None]
+    specs = spec_signals(spec_data)
     rtl_rows = rtl_signals(rtl_data)
     modules = rtl_modules(rtl_data)
     alignments, unresolved = [], []
@@ -1222,13 +1140,9 @@ def build_bridge(spec_data, rtl_data, hierarchy_data, scorer=None, source_finger
         "source_fingerprints": fingerprints,
         "signal_alignments": sorted(alignments, key=lambda item: item["spec_signal_id"]),
         "unresolved_signals": sorted(unresolved, key=lambda item: item["spec_signal_id"]),
-        "enum_alignments": sorted(enum_alignments, key=lambda item: item["spec_signal_id"]),
         "module_alignments": module_alignments,
         "summary": {
             "spec_signals": len(specs), "rtl_signals": len(rtl_rows),
-            "spec_instructions": len(instructions), "enum_members": len(members),
-            "enum_alignments": len(enum_alignments),
-            "unaligned_instructions": len(instructions) - len(enum_alignments),
             "signal_alignments": len(alignments), "unresolved_signals": len(unresolved),
             "module_alignments": sum(item["rtl_module_id"] is not None
                                      for item in module_alignments),
