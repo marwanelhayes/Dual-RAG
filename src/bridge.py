@@ -578,7 +578,7 @@ def _link(spec, rtl, method, prefix):
     Args:
         spec: Canonical specification signal.
         rtl: Canonical RTL signal.
-        method: ``identity`` or ``interface_prefix``.
+        method: ``identity``, ``interface_prefix``, or ``same_net``.
         prefix: Learned prefix for ``interface_prefix``, else None.
 
     Returns:
@@ -618,12 +618,26 @@ def link_signals(specs, rtl_rows):
             if spec not in rows:
                 rows.append(spec)
     prefixes = interface_prefixes(set(by_flat), rtl_rows)
-    links = []
+    links, pairs = [], set()
     for rtl in rtl_rows:
         found = _match(rtl, by_flat, prefixes)
         if found:
             flat, method, prefix = found
-            links.extend(_link(spec, rtl, method, prefix) for spec in by_flat[flat])
+            for spec in by_flat[flat]:
+                links.append(_link(spec, rtl, method, prefix))
+                pairs.add((spec["signal_id"], rtl["signal_id"]))
+    # A port on the same elaborated net as a linked port is the same wire, renamed or not.
+    nets = {}
+    for rtl in rtl_rows:
+        if rtl["net_id"]:
+            nets.setdefault(rtl["net_id"], []).append(rtl)
+    specs_by_id = {spec["signal_id"]: spec for spec in specs}
+    rtl_by_id = {rtl["signal_id"]: rtl for rtl in rtl_rows}
+    for spec_id, rtl_id in sorted(pairs):
+        for member in nets.get(rtl_by_id[rtl_id]["net_id"], []):
+            if (spec_id, member["signal_id"]) not in pairs:
+                links.append(_link(specs_by_id[spec_id], member, "same_net", None))
+                pairs.add((spec_id, member["signal_id"]))
     linked = {link["spec_signal_id"] for link in links}
     unresolved = [{
         "spec_signal_id": spec["signal_id"],

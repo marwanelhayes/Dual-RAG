@@ -241,3 +241,72 @@ def test_the_bridge_writes_no_enum_alignment():
 
     assert "enum_alignments" not in artifact
     assert not any(key.startswith("enum") for key in artifact["summary"])
+
+
+def _port(name, width=1, direction="output"):
+    return _rtl_signal(name, f"rtl::port::cache::{name}", width, direction, "")
+
+
+def test_a_prefix_shared_by_a_modules_ports_links_them_to_spec_names():
+    rtl = _rtl(("cache", _module("cache", "rtl::module::cache", [
+        _port("MAWValid"), _port("MAWAddr", 32)])))
+
+    links = _links(_specs("AWVALID", "AWADDR"), rtl)
+
+    assert links == [("AWADDR", "MAWAddr", "cache", "interface_prefix", "m"),
+                     ("AWVALID", "MAWValid", "cache", "interface_prefix", "m")]
+
+
+def test_a_lone_prefixed_port_is_not_linked():
+    rtl = _rtl(("cache", _module("cache", "rtl::module::cache", [
+        _port("MAWValid"), _port("Ready")])))
+
+    assert _links(_specs("AWVALID"), rtl) == []
+
+
+def test_a_port_links_to_the_longest_spec_name_behind_its_prefix():
+    rtl = _rtl(("cache", _module("cache", "rtl::module::cache", [
+        _port("MARValid"), _port("MARAddr", 32), _port("MRRValid", direction="input"),
+        _port("MRRData", 32, "input")])))
+
+    links = _links(_specs("ARVALID", "ARADDR", "RVALID", "RDATA"), rtl)
+
+    assert ("ARVALID", "MARValid", "cache", "interface_prefix", "m") in links
+    assert ("RVALID", "MARValid", "cache", "interface_prefix", "ma") not in links
+    assert ("RVALID", "MRRValid", "cache", "interface_prefix", "mr") in links
+
+
+def test_a_width_mismatch_is_stated_not_rejected():
+    rtl = _rtl(("cache", _module("cache", "rtl::module::cache", [
+        _port("MARSize", 4), _port("MAWSize", 4)])))
+
+    artifact = bridge.build_bridge(
+        _specs("ARSIZE", "AWSIZE", widths={"ARSIZE": 3, "AWSIZE": "SIZE_WIDTH"}), rtl,
+        _hierarchy())
+    widths = {row["spec_original_name"]: row["width"] for row in artifact["signal_alignments"]}
+
+    assert widths["ARSIZE"] == {"spec": 3, "rtl": 4, "status": "conflict"}
+    assert widths["AWSIZE"]["status"] == "symbolic"
+
+
+def test_a_spec_signal_no_rtl_signal_states_is_unresolved():
+    rtl = _rtl(("fpu", _module("fpu", "rtl::module::fpu", [_rtl_signal("opcode_i", "op")])))
+
+    artifact = bridge.build_bridge(_specs("AWNSAID"), rtl, _hierarchy())
+
+    assert artifact["signal_alignments"] == []
+    assert artifact["unresolved_signals"][0]["confidence_level"] == bridge.UNRESOLVED
+
+
+def test_a_renamed_wire_on_a_linked_net_is_linked_through_the_net():
+    cache = _module("cache", "rtl::module::cache", [_port("MAWBurst", 2), _port("MAWValid")])
+    stage = _module("fetch_stage", "rtl::module::fetch_stage", [
+        _rtl_signal("burst_to_bus", "rtl::port::fetch_stage::burst_to_bus", 2, "output", "")])
+    stage["instances"] = [{"target_module": "cache", "bindings": [
+        {"parent_module": "fetch_stage", "formal_name": "MAWBurst",
+         "actual_signals": ["burst_to_bus"], "direction": "output"}]}]
+    rtl = _rtl(("cache", cache), ("fetch_stage", stage))
+
+    links = _links(_specs("AWBURST", "AWVALID"), rtl)
+
+    assert ("AWBURST", "burst_to_bus", "fetch_stage", "same_net", None) in links
