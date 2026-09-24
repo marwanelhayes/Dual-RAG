@@ -17,12 +17,10 @@ from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier, normalize_module_name
 
 
-SCHEMA_VERSION = "4.0"
+SCHEMA_VERSION = "5.0"
 STRONG = "STRONG"
 MEDIUM = "MEDIUM"
 UNRESOLVED = "UNRESOLVED"
-PORT_ROW = "port"
-REGISTER_FIELD_ROW = "register_field"
 
 _DIRECTION_TOKENS = frozenset({"i", "in", "input", "o", "out", "output"})
 _TEXT_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_$]*")
@@ -131,20 +129,6 @@ def _direction(value):
     return _DIRECTIONS.get(str(value or "").strip().lower())
 
 
-def _row_kind(value):
-    """Normalize the declaration class a specification row describes.
-
-    Args:
-        value: Raw row-kind field.
-
-    Returns:
-        ``register_field`` when stated, otherwise ``port``.
-    """
-    folded = str(value or "").strip().lower()
-    return (folded if folded in (PORT_ROW, REGISTER_FIELD_ROW)
-            else PORT_ROW)
-
-
 def _width(value, expression=None):
     """Parse a concrete bit width when one is directly available.
 
@@ -245,26 +229,19 @@ def _canonical_spec_signal(raw):
         raw: One ``spec_signals.json`` row.
 
     Returns:
-        A canonical specification signal record.
+        A canonical specification signal record; ``width`` is the cell parsed to bits
+        when it states an integer or range, ``width_cell`` the cell as written.
     """
-    original = raw["original_name"]
+    name = raw["name"]
     return {
         "signal_id": raw["signal_id"],
-        "original_name": original,
-        "normalized_name": raw.get("normalized_name") or normalize_identifier(original),
-        "normalized_tokens": _unique(str(token).lower() for token in
-                                     raw.get("normalized_tokens") or identifier_tokens(original)),
+        "original_name": name,
         "width": _width(raw.get("width")),
         "width_cell": raw.get("width"),
-        "row_kind": _row_kind(raw.get("row_kind")),
-        "description": raw.get("description") or "",
-        "document_id": raw.get("document_id"),
-        "section_id": raw.get("section_id"),
-        "section_title": raw.get("section_title"),
-        "subsection_id": raw.get("subsection_id"),
-        "subsection_title": raw.get("subsection_title"),
+        "document_id": raw["document_id"],
+        "hierarchy_id": raw["hierarchy_id"],
+        "section_path": raw["section_path"],
         "table_id": raw.get("table_id"),
-        "table_title": raw.get("table_caption"),
         "chunk_id": raw.get("chunk_id"),
         "page": raw.get("page"),
         "source_file": raw.get("source_file"),
@@ -281,18 +258,6 @@ def spec_signals(data):
     """
     return sorted((_canonical_spec_signal(raw) for raw in data["signals"]),
                   key=lambda row: row["signal_id"])
-
-def _module_blocks(module):
-    """Collect a module's structural blocks.
-
-    Args:
-        module: ``rtl.json`` module record.
-
-    Returns:
-        Its always, function/task, assignment-group, and other blocks.
-    """
-    return [block for key in ("always_blocks", "functions_tasks", "assignment_groups",
-                              "other_blocks") for block in module.get(key, [])]
 
 def _canonical_rtl_signal(raw, module):
     """Adapt one module-local RTL declaration into the bridge's internal shape.
@@ -445,8 +410,8 @@ def _spec_provenance(spec):
         The stated provenance fields, omitting those the signal leaves unset.
     """
     return {key: spec.get(key) for key in (
-        "document_id", "section_id", "section_title", "subsection_id", "subsection_title",
-        "table_id", "chunk_id", "page", "source_file") if spec.get(key) is not None}
+        "document_id", "hierarchy_id", "section_path", "table_id", "chunk_id", "page",
+        "source_file") if spec.get(key) is not None}
 
 
 def interface_prefixes(spec_flats, rtl_rows):
@@ -745,8 +710,8 @@ def derive_module_alignments(hierarchy, modules, alignments, specs):
     rows = []
     for raw in _section_rows(hierarchy):
         section = _canonical_section(raw)
-        scoped = {spec["signal_id"] for spec in specs if section["section_id"] in
-                  {spec.get("section_id"), spec.get("subsection_id")}}
+        scoped = {spec["signal_id"] for spec in specs
+                  if spec["hierarchy_id"] == section["section_id"]}
         counts = {}
         for link in alignments:
             if link["spec_signal_id"] in scoped and link.get("rtl_module_id"):

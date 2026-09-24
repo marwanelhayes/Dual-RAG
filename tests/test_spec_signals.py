@@ -17,36 +17,35 @@ def table_chunk(columns, rows):
         "table_id": "fpu_spec::table::2.1", "table_ids": ["fpu_spec::table::2.1"],
         "table_label": "2.1", "caption": "Interface signals", "page": 4,
         "columns": columns, "rows": rows, "row_start": 0,
+        "hierarchy_id": "fpu_spec::sec::0001",
+        "section_path": ["Floating Point Unit", "Interface"],
     }
 
 
-def test_signal_rows_keep_original_name_and_structured_context():
+def test_signal_rows_keep_their_name_cells_and_structured_context():
     records = [table_chunk(
-        ["Signal", "Width", "Direction", "Description"],
-        [["rm_i", "3", "input", "selects IEEE rounding mode"],
-         ["fpResultO", "[31:0]", "out", "floating-point result"]])]
+        ["Signal", "Width", "Description"],
+        [["rm_i", "3", "selects IEEE rounding mode"],
+         ["fpResultO", "[31:0]", "floating-point result"]])]
 
     signals = spec_signals.build_spec_signals(records)
 
-    assert [signal["original_name"] for signal in signals] == ["rm_i", "fpResultO"]
+    assert [signal["name"] for signal in signals] == ["rm_i", "fpResultO"]
     assert signals[0]["normalized_name"] == "rm_i"
     assert signals[0]["normalized_tokens"] == ["rounding", "mode", "input"]
-    assert signals[0]["width"] == 3 and signals[0]["direction"] == "input"
+    assert signals[0]["width"] == "3" and signals[1]["width"] == "[31:0]"
     assert signals[1]["normalized_name"] == "fp_result_o"
-    assert signals[1]["width"] == 32 and signals[1]["direction"] == "output"
-    assert signals[1]["section_title"] == "Floating Point Unit"
-    assert signals[1]["subsection_title"] == "Interface"
     assert signals[1]["table_id"] == "fpu_spec::table::2.1"
     assert signals[1]["page"] == 4 and signals[1]["source_file"] == "fpu.pdf"
 
 
-def test_unknown_width_and_non_direction_are_preserved_without_inference():
+def test_width_and_source_cells_are_stored_as_written():
     signals = spec_signals.build_spec_signals([table_chunk(
-        ["Name", "Width", "Direction", "Meaning"],
-        [["result", "DATA_WIDTH", "Manager", "result bus"]])])
+        ["Name", "Width", "Source", "Meaning"],
+        [["result", "DATA_WIDTH", "Tx", "result bus"]])])
 
     assert signals[0]["width"] == "DATA_WIDTH"
-    assert signals[0]["direction"] is None
+    assert signals[0]["source"] == "Tx"
     assert signals[0]["description"] == "result bus"
 
 
@@ -85,7 +84,7 @@ def test_build_and_save_are_idempotent(tmp_path):
     assert first == second
     assert path.read_bytes() == first_bytes
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == spec_signals.SCHEMA_VERSION == 5
+    assert payload["schema_version"] == spec_signals.SCHEMA_VERSION == 6
     assert payload["signals"] == first
 
 
@@ -99,8 +98,7 @@ def test_register_address_listings_yield_register_field_rows():
 
     signals = spec_signals.build_spec_signals([listing])
 
-    assert [signal["original_name"] for signal in signals] == ["mimpid", "mstatus"]
-    assert {signal["row_kind"] for signal in signals} == {spec_signals.REGISTER_FIELD_ROW}
+    assert [signal["name"] for signal in signals] == ["mimpid", "mstatus"]
     assert signals[0]["description"] == "Implementation ID."
 
 
@@ -137,7 +135,7 @@ def test_bit_slices_and_dotted_names_are_not_signals():
         ["Signal", "Width"],
         [["ACADDR[51]", "1"], ["vsew[2:0]", "3"], ["mstatus.MIE", "1"], ["AWVALID", "1"]])])
 
-    assert [signal["original_name"] for signal in signals] == ["AWVALID"]
+    assert [signal["name"] for signal in signals] == ["AWVALID"]
 
 
 def test_an_address_table_row_without_an_address_is_a_group_label():
@@ -147,7 +145,7 @@ def test_an_address_table_row_without_an_address_is_a_group_label():
 
     signals = spec_signals.build_spec_signals([listing])
 
-    assert [signal["original_name"] for signal in signals] == ["sstatus"]
+    assert [signal["name"] for signal in signals] == ["sstatus"]
 
 
 def test_a_signal_caption_alone_does_not_admit_a_name_only_table():
@@ -182,3 +180,16 @@ def test_a_name_repeated_across_windows_of_one_table_keeps_every_row():
     assert [(signal["name"], signal["row_index"]) for signal in signals] == [
         ("AWID", 1), ("AWLEN", 2), ("AWID", 3)]
     assert signals[2]["signal_id"] == signals[0]["signal_id"] + "::2"
+
+
+def test_signal_records_follow_the_consolidated_contract():
+    signal = spec_signals.build_spec_signals([table_chunk(
+        ["Signal", "Width", "Source", "Description"],
+        [["AWID", "[3:0]", "Manager", "Write id"]])])[0]
+
+    assert signal["name"] == "AWID" and signal["width"] == "[3:0]"
+    assert signal["source"] == "Manager"
+    assert signal["hierarchy_id"] == "fpu_spec::sec::0001"
+    assert signal["section_path"] == ["Floating Point Unit", "Interface"]
+    assert not {"id", "original_name", "row_kind", "direction", "source_role",
+                "source_role_source", "section_title", "subsection_title"} & set(signal)

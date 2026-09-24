@@ -143,8 +143,7 @@ def signal_metrics(signals, gold_names):
         metrics[f"signals.{doc}.unique_names"] = len(found)
     metrics["signals.unique_names"] = sum(len(found) for found in names.values())
     metrics["signals.tables_admitted"] = len({signal["table_id"] for signal in signals})
-    # source_role_source is the raw Source cell until consolidation renames it source.
-    for metric, key in (("with_width", "width"), ("with_source", "source_role_source"),
+    for metric, key in (("with_width", "width"), ("with_source", "source"),
                         ("with_description", "description")):
         metrics[f"signals.{metric}"] = sum(signal.get(key) is not None for signal in signals)
     extracted = set().union(*names.values())

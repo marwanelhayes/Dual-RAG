@@ -56,7 +56,7 @@ def test_chunk_metrics_count_tokens_tables_and_leaks():
 
 def _signal(doc, table, name, width=None, source=None, description=None):
     return {"document_id": doc, "table_id": f"{doc}::table::{table}",
-            "normalized_name": name, "width": width, "source_role_source": source,
+            "normalized_name": name, "width": width, "source": source,
             "description": description}
 
 

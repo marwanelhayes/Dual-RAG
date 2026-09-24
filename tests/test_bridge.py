@@ -13,13 +13,12 @@ def _spec(name="rounding_mode", width=3, direction="input", description="select 
         "schema_version": "1.0",
         "signals": [{
             "signal_id": f"spec::signal::{name}",
-            "original_name": name,
+            "name": name,
             "width": width,
-            "direction": direction,
             "description": description,
             "document_id": "spec::doc::isa",
-            "section_id": "spec::section::fpu",
-            "section_title": "Floating Point Unit",
+            "hierarchy_id": "spec::section::fpu",
+            "section_path": ["Floating Point Unit"],
             "table_id": "table::interface",
             "chunk_id": "chunk::fpu",
             "page": 12,
@@ -95,7 +94,7 @@ def _specs(*names, widths=None):
     """Return a spec artifact with one port row per name."""
     rows = _spec()["signals"][0]
     return {"signals": [{**rows, "signal_id": f"spec::signal::axi::A1::{name.lower()}",
-                         "original_name": name, "normalized_name": None,
+                         "name": name, "normalized_name": None,
                          "width": (widths or {}).get(name)} for name in names]}
 
 
