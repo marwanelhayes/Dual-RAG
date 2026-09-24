@@ -1,5 +1,6 @@
 """Central configuration for every ChipVer pipeline stage."""
 
+import os
 from pathlib import Path
 
 from naming import set_abbreviation_aliases
@@ -24,10 +25,11 @@ EMBED_BATCH = 64
 # BGE's asymmetric training requires this prefix only on queries.
 EMBED_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
-# Character limits keep ingestion independent of any model tokenizer.
-MAX_CHUNK_CHARS = 800
-# Row windows stay under the encoder's 512 tokens at the densest observed table.
-MAX_TABLE_CHUNK_CHARS = 640
+# Chunk caps are counted in encoder tokens; the environment overrides them for sweeps.
+MAX_CHUNK_TOKENS = int(os.environ.get("MAX_CHUNK_TOKENS", 256))
+MAX_TABLE_CHUNK_TOKENS = int(os.environ.get("MAX_TABLE_CHUNK_TOKENS", 256))
+# Header plus body must fit the encoder window; a longer chunk fails the run.
+ENCODER_MAX_TOKENS = 512
 OVERLAP_SENTENCES = 2
 REVISION_SCAN_PAGES = 4
 

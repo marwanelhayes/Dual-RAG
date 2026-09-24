@@ -5,6 +5,7 @@ Run ``python src/ingest.py`` to read ``Ingest/*.pdf`` and write
 """
 
 import collections
+import functools
 import hashlib
 import json
 import re
@@ -837,23 +838,26 @@ def rows_to_markdown(rows):
     return "\n".join(out)
 
 
-def table_row_windows(columns, rows, max_chars=cfg.MAX_TABLE_CHUNK_CHARS):
+def table_row_windows(columns, rows, max_tokens=None):
     """Split a long table's rows into windows that each restate the header row.
 
     Args:
         columns: The table's header cells, repeated into every window.
         rows: The table's data rows, in source order.
-        max_chars: Soft character cap per window, header included.
+        max_tokens: Encoder-token cap per window, header row included; defaults to
+            ``cfg.MAX_TABLE_CHUNK_TOKENS``.
 
     Returns:
         List of ``(row_start, window_rows)`` pairs covering every row exactly once.
     """
+    max_tokens = max_tokens or cfg.MAX_TABLE_CHUNK_TOKENS
     windows, start = [], 0
     while start < len(rows):
         end = start
         while end < len(rows):
             # Measure the real rendering, so the cap can never drift from the markdown.
-            if end > start and len(rows_to_markdown([columns] + rows[start:end + 1])) > max_chars:
+            if (end > start and count_tokens(rows_to_markdown([columns] + rows[start:end + 1]))
+                    > max_tokens):
                 break
             end += 1
         # Always admit one row so a single oversized row cannot stall the loop.
@@ -979,24 +983,52 @@ def enrich_spec_record(record):
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
-def _line_pieces(text, max_chars):
+@functools.lru_cache(maxsize=1)
+def _tokenizer():
+    """Load the embedding model's tokenizer once.
+
+    Returns:
+        The Hugging Face tokenizer of ``cfg.EMBED_MODEL``.
+    """
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(cfg.EMBED_MODEL)
+    tokenizer.model_max_length = 10 ** 6  # measure past 512 instead of warning
+    return tokenizer
+
+
+def count_tokens(text):
+    """Count the encoder tokens of one text, special tokens excluded.
+
+    Args:
+        text: Text to measure.
+
+    Returns:
+        Number of tokens the embedding model sees for the text.
+    """
+    return len(_tokenizer()(text, add_special_tokens=False)["input_ids"])
+
+
+def _line_pieces(text, max_tokens):
     """Pack a text's lines into whitespace-normalised pieces within the cap.
 
     Args:
         text: Text whose line breaks are the only safe cut points.
-        max_chars: Soft character cap per piece; a longer single line stays whole.
+        max_tokens: Token cap per piece; a longer line is cut between words.
 
     Returns:
         Pieces in order, together holding every line once.
     """
     pieces = []
-    for line in (" ".join(line.split()) for line in text.splitlines()):
-        if not line:
-            continue
-        if pieces and len(pieces[-1]) + 1 + len(line) <= max_chars:
-            pieces[-1] += " " + line
-        else:
-            pieces.append(line)
+    for line in text.splitlines():
+        # A single line over the cap is cut between words, so no word is lost.
+        for word in line.split() if count_tokens(line) > max_tokens else [" ".join(line.split())]:
+            if not word:
+                continue
+            if pieces and count_tokens(pieces[-1] + " " + word) <= max_tokens:
+                pieces[-1] += " " + word
+            else:
+                pieces.append(word)
     return pieces
 
 
@@ -1017,42 +1049,44 @@ def split_sentences(text):
         if not part:
             continue
         # A unit over the cap with no sentence end (a code listing) splits at its lines.
-        if len(part) > cfg.MAX_CHUNK_CHARS:
-            sentences.extend(_line_pieces(raw, cfg.MAX_CHUNK_CHARS))
+        if count_tokens(part) > cfg.MAX_CHUNK_TOKENS:
+            sentences.extend(_line_pieces(raw, cfg.MAX_CHUNK_TOKENS))
             continue
         # Abbreviations and bare initials/digits are false sentence endings.
         if sentences:
             tail = sentences[-1].rstrip(".")
             last_word = tail.split()[-1] if tail.split() else ""
-            if last_word in cfg.ABBREVIATIONS or re.fullmatch(r"[A-Z0-9]", last_word):
+            if ((last_word in cfg.ABBREVIATIONS or re.fullmatch(r"[A-Z0-9]", last_word))
+                    and count_tokens(sentences[-1] + " " + part) <= cfg.MAX_CHUNK_TOKENS):
                 sentences[-1] = sentences[-1] + " " + part
                 continue
         sentences.append(part)
     return sentences
 
 
-def sliding_window_chunks(sentences, max_chars=cfg.MAX_CHUNK_CHARS, overlap=cfg.OVERLAP_SENTENCES):
+def sliding_window_chunks(sentences, max_tokens=None, overlap=cfg.OVERLAP_SENTENCES):
     """Pack sentences into chunks, sliding back a few sentences between chunks.
 
     Args:
         sentences: list of sentences from one section.
-        max_chars: soft character cap per chunk.
+        max_tokens: encoder-token cap per chunk; defaults to ``cfg.MAX_CHUNK_TOKENS``.
         overlap: how many trailing sentences of chunk N also open chunk N+1.
 
     Returns:
         list of chunks, each a list of sentences.
     """
+    max_tokens = max_tokens or cfg.MAX_CHUNK_TOKENS
+    sizes = [count_tokens(item[0] if isinstance(item, tuple) else item) for item in sentences]
     chunks = []
     i = 0
     while i < len(sentences):
         j = i
         size = 0
         while j < len(sentences):
-            value = sentences[j][0] if isinstance(sentences[j], tuple) else sentences[j]
             # Always admit the first sentence so an oversized sentence cannot stall.
-            if j > i and size + len(value) > max_chars:
+            if j > i and size + sizes[j] > max_tokens:
                 break
-            size += len(value) + 1
+            size += sizes[j]
             j += 1
         chunks.append(sentences[i:j])
         if j >= len(sentences):
@@ -1169,6 +1203,13 @@ def ingest_pdf(path):
                 "extraction": table["extraction"],
                 "text": markdown,
             }))
+
+    # The encoder silently truncates past its window, so an oversized chunk fails the run.
+    over = [record["chunk_id"] for record in records
+            if count_tokens(record["context_header"] + "\n\n" + record["text"]) + 2
+            > cfg.ENCODER_MAX_TOKENS]
+    if over:
+        raise ValueError(f"{len(over)} chunks over the encoder limit: {over[:5]}")
 
     # Document role needs the whole document, so it is stamped once every chunk exists.
     document_scores = roles.document_role_scores(record["text"] for record in records)

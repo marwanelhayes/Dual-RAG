@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 import configure as cfg
 import ingest
 
@@ -126,9 +128,14 @@ def test_table_chunk_lists_itself_in_table_ids():
     assert record["page"] == 4
 
 
+def _words(monkeypatch):
+    """Count tokens as whitespace words, so caps are easy to reason about in tests."""
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: len(text.split()))
+
+
 def test_sliding_window_preserves_sentence_page_pairs():
     chunks = ingest.sliding_window_chunks(
-        [("first sentence", 19), ("second sentence", 20)], max_chars=100, overlap=0)
+        [("first sentence", 19), ("second sentence", 20)], max_tokens=100, overlap=0)
 
     assert chunks == [[("first sentence", 19), ("second sentence", 20)]]
 
@@ -296,12 +303,13 @@ def test_a_short_table_stays_in_one_unsplit_window():
     assert ingest.table_row_windows(columns, rows) == [(0, rows)]
 
 
-def test_a_long_table_splits_into_windows_that_cover_every_row_once():
+def test_a_long_table_splits_into_windows_that_cover_every_row_once(monkeypatch):
+    _words(monkeypatch)
     columns = ["Signal", "Width", "Description"]
     rows = [[f"signal_{index}", "32", "a description long enough to force windowing"]
             for index in range(40)]
 
-    windows = ingest.table_row_windows(columns, rows, max_chars=300)
+    windows = ingest.table_row_windows(columns, rows, max_tokens=80)
 
     assert len(windows) > 1
     assert [row for _, window in windows for row in window] == rows
@@ -310,33 +318,37 @@ def test_a_long_table_splits_into_windows_that_cover_every_row_once():
         for index in range(1, len(windows))]
 
 
-def test_every_window_of_a_split_table_restates_the_header_row():
+def test_every_window_of_a_split_table_restates_the_header_row(monkeypatch):
+    _words(monkeypatch)
     columns = ["Signal", "Width"]
     rows = [[f"sig_{index}", "8"] for index in range(30)]
 
-    windows = ingest.table_row_windows(columns, rows, max_chars=120)
+    windows = ingest.table_row_windows(columns, rows, max_tokens=30)
     rendered = [ingest.rows_to_markdown([columns] + window) for _, window in windows]
 
     assert len(rendered) > 1
     assert all(text.startswith("| Signal | Width |") for text in rendered)
 
 
-def test_a_single_oversized_row_is_admitted_rather_than_stalling():
+def test_a_single_oversized_row_is_admitted_rather_than_stalling(monkeypatch):
+    _words(monkeypatch)
     columns = ["Signal", "Description"]
-    rows = [["wide_signal", "x" * 500], ["narrow", "y"]]
+    rows = [["wide_signal", " ".join(["x"] * 200)], ["narrow", "y"]]
 
-    windows = ingest.table_row_windows(columns, rows, max_chars=100)
+    windows = ingest.table_row_windows(columns, rows, max_tokens=20)
 
     assert [row for _, window in windows for row in window] == rows
     assert windows[0][1] == [rows[0]]
 
 
-def test_windowed_table_chunks_stay_under_the_configured_character_cap():
+def test_windowed_table_chunks_stay_under_the_configured_token_cap(monkeypatch):
+    _words(monkeypatch)
+    monkeypatch.setattr(ingest.cfg, "MAX_TABLE_CHUNK_TOKENS", 40)
     columns = ["Signal", "Width"]
     rows = [[f"sig_{index}", "8"] for index in range(60)]
 
     for _, window in ingest.table_row_windows(columns, rows):
-        assert len(ingest.rows_to_markdown([columns] + window)) <= cfg.MAX_TABLE_CHUNK_CHARS
+        assert ingest.count_tokens(ingest.rows_to_markdown([columns] + window)) <= 40
 
 
 def test_caption_titled_by_a_lowercase_register_name_is_a_caption():
@@ -634,11 +646,50 @@ def test_cells_stacked_to_the_same_depth_still_split_into_rows():
 
 
 def test_a_code_listing_over_the_cap_splits_at_its_line_breaks(monkeypatch):
-    monkeypatch.setattr(ingest.cfg, "MAX_CHUNK_CHARS", 60)
+    _words(monkeypatch)
+    monkeypatch.setattr(ingest.cfg, "MAX_CHUNK_TOKENS", 10)
     listing = "\n".join(f"reg[{index}] <= data_in" for index in range(12))
 
     units = ingest.split_sentences("Intro sentence ends here. " + listing)
 
     assert units[0] == "Intro sentence ends here."
-    assert all(len(unit) <= 60 for unit in units)
+    assert all(ingest.count_tokens(unit) <= 10 for unit in units)
     assert " ".join(units[1:]) == " ".join(listing.split())
+
+
+def test_prose_windows_are_capped_in_encoder_tokens(monkeypatch):
+    _words(monkeypatch)
+    units = [(f"one two three {index}.", 1) for index in range(10)]
+
+    chunks = ingest.sliding_window_chunks(units, max_tokens=8, overlap=0)
+
+    assert all(sum(ingest.count_tokens(text) for text, _ in chunk) <= 8 for chunk in chunks)
+    assert [unit for chunk in chunks for unit in chunk] == units
+
+
+def test_a_chunk_over_the_encoder_limit_fails_the_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(ingest.cfg, "ENCODER_MAX_TOKENS", 5)
+
+    with pytest.raises(ValueError, match="over the encoder limit"):
+        ingest.ingest_pdf(_tiny_pdf(tmp_path))
+
+
+def test_a_single_line_over_the_cap_splits_at_spaces(monkeypatch):
+    _words(monkeypatch)
+    monkeypatch.setattr(ingest.cfg, "MAX_CHUNK_TOKENS", 10)
+    line = " ".join(f"x{index};" for index in range(35))
+
+    units = ingest.split_sentences(line)
+
+    assert all(ingest.count_tokens(unit) <= 10 for unit in units)
+    assert " ".join(units) == line
+
+
+def test_rejoining_a_false_sentence_end_never_passes_the_cap(monkeypatch):
+    _words(monkeypatch)
+    monkeypatch.setattr(ingest.cfg, "MAX_CHUNK_TOKENS", 10)
+    text = "one two three four five six seven eight nine A. " + " ".join(["w"] * 9) + "."
+
+    units = ingest.split_sentences(text)
+
+    assert all(ingest.count_tokens(unit) <= 10 for unit in units)
