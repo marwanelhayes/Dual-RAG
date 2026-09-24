@@ -619,3 +619,15 @@ def test_a_table_continued_on_the_next_page_keeps_its_rows(tmp_path):
 
     assert tables["1.1"]["rows"] == [["CELLAWID", "Manager"], ["CELLAWLEN", "Manager"]]
     assert "CELLAWLEN" not in prose and "resumes here" in prose
+
+
+def test_a_wrapped_description_joins_its_row_instead_of_repeating_the_name():
+    row = ["[5:4]", "CBIE", "Cache Block Invalidate instruction Enable.\nEnables the execution"]
+
+    assert ingest.unstack_row(row) == [
+        ["[5:4]", "CBIE", "Cache Block Invalidate instruction Enable. Enables the execution"]]
+
+
+def test_cells_stacked_to_the_same_depth_still_split_into_rows():
+    assert ingest.unstack_row(["AWID\nAWADDR", "Manager\nManager", "Write id"]) == [
+        ["AWID", "Manager", "Write id"], ["AWADDR", "Manager", "Write id"]]

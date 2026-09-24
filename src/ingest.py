@@ -719,10 +719,11 @@ def unstack_row(row):
     Returns:
         list of rows; a single-element list when there was nothing to split.
     """
-    # Equal newline depths indicate several logical rows collapsed into each cell.
+    # Several cells at one newline depth are collapsed rows; one multi-line cell just wraps.
     parts = [c.split("\n") for c in row]
-    counts = {len(p) for p in parts if len(p) > 1}
-    if len(counts) != 1:
+    depths = [len(p) for p in parts if len(p) > 1]
+    counts = set(depths)
+    if len(depths) < 2 or len(counts) != 1:
         return [[c.replace("\n", " ").strip() for c in row]]
     depth = counts.pop()
     return [[(p[i].strip() if len(p) > 1 else p[0].strip()) for p in parts] for i in range(depth)]
