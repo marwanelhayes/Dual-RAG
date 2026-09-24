@@ -329,7 +329,7 @@ def test_an_unresolved_signal_keeps_suggested_candidates_that_are_not_links():
 
 
 def test_a_csr_links_to_the_enum_member_that_declares_it():
-    rtl = _rtl()
+    rtl = _rtl(("csr_file", _module("csr_file", "rtl::module::csr_file", [])))
     rtl["enums"] = [{"enum_id": "rtl::enum::csr_pkg::csr_index_t", "original_name": "csr_index_t",
                      "package": "csr_pkg", "items": [
                          {"original_name": "mstatus", "value": 0, "file": "csr_defs.sv",

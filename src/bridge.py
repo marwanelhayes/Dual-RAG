@@ -795,7 +795,7 @@ def _module_candidate(section, module, scoped_alignments, scoped_specs):
     context_available = bool(spec_context and module_context)
     context_score = _jaccard(spec_context, module_context)
     child = [alignment for alignment in scoped_alignments
-             if alignment["rtl_module_id"] == module["module_id"]]
+             if alignment.get("rtl_module_id") == module["module_id"]]
     child_score = len(child) / len(scoped_alignments) if scoped_alignments else 0.0
     components = {
         "normalized_title": _component(name_score, cfg.BRIDGE_MODULE_WEIGHTS["name"], True,
