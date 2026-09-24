@@ -106,6 +106,14 @@ def chunk_metrics(records, count_tokens, limit=TOKEN_LIMIT):
         label not in labels[record["document_id"]]
         for record in prose for label in dict.fromkeys(_TABLE_REF.findall(record["text"])))
     metrics["ingest.header_leaks"] = sum(bool(_HEADER_LEAK.search(r["text"])) for r in prose)
+    headers = collections.defaultdict(set)
+    for record in records:
+        columns = [cell for cell in record.get("columns", []) if cell.strip()]
+        if record["chunk_type"] == "table" and len(columns) >= 2:
+            headers[record["document_id"]].add(" ".join(" ".join(columns).split()))
+    metrics["ingest.prose_table_overlap"] = sum(
+        any(header in " ".join(record["text"].split())
+            for header in headers[record["document_id"]]) for record in prose)
     metrics["ingest.chunks_over_limit"] = sum(
         count > limit for counts in tokens.values() for count in counts)
     for chunk_type, counts in tokens.items():

@@ -534,7 +534,21 @@ def is_heading_block(text, title):
     return " ".join(text.replace("-\n", "-").split()) == " ".join(title.split())
 
 
-def section_page_texts(doc, sec, furniture, bands=(None, None)):
+def _in_region(block, regions):
+    """Tell whether a text block's centre lies inside one of a page's table bodies.
+
+    Args:
+        block: ``get_text("blocks")`` tuple.
+        regions: Table body bboxes on the block's page.
+
+    Returns:
+        True when the block belongs to a table.
+    """
+    x, y = (block[0] + block[2]) / 2, (block[1] + block[3]) / 2
+    return any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in regions)
+
+
+def section_page_texts(doc, sec, furniture, bands=(None, None), regions=None):
     """Extract a section as ``(page, text)`` spans cut at outline destination points.
 
     Args:
@@ -542,6 +556,7 @@ def section_page_texts(doc, sec, furniture, bands=(None, None)):
         sec: Section node carrying its start and own-end ``(page, y)`` points.
         furniture: Repeated header and footer lines to remove.
         bands: Header and footer band edges from ``furniture_bands``.
+        regions: One-based page to table body bboxes; their blocks are not prose.
 
     Returns:
         Non-empty ``(one-based page, cleaned text)`` spans in page order, without the
@@ -555,7 +570,8 @@ def section_page_texts(doc, sec, furniture, bands=(None, None)):
         # The breadcrumb names the section, so its printed heading block is not repeated.
         skip_heading = number == sec["own_start_page"]
         for block in doc[number - 1].get_text("blocks"):
-            if block[6] != 0 or _is_furniture(block, bands):
+            if (block[6] != 0 or _is_furniture(block, bands)
+                    or _in_region(block, (regions or {}).get(number, ()))):
                 continue
             # A block belongs to the section whose point sits at or just above its top.
             at = (number, block[1] + cfg.HEADING_POINT_SLACK)
@@ -752,30 +768,34 @@ def extract_table(page, caption_bbox, next_page=None):
         next_page: following fitz.Page, used when a caption ends its own page.
 
     Returns:
-        (rows, method) where rows is a list of row lists and method names the
-        strategy that worked; rows is empty if no strategy found anything.
+        (rows, method, region) where rows is a list of row lists, method names the
+        strategy that worked, and region is ``(page offset, bbox)`` of the table body
+        (offset 1 when it sits on ``next_page``); rows is empty and region None if no
+        strategy found anything.
     """
     # Prefer ruled extraction because RISC-V's per-column blocks defeat alignment.
     table = nearest_ruled_table(page, caption_bbox)
     if table is not None:
         rows = _table_rows(table)
         if len(rows) > 1:
-            return rows, "lines"
+            return rows, "lines", (0, tuple(table.bbox))
 
     # A caption low on the page introduces a table that starts on the next one.
     if next_page is not None and caption_bbox[3] > page.rect.height * cfg.CAPTION_PAGE_BREAK:
         carried = _ruled_tables(next_page)
         if carried:
-            rows = _table_rows(min(carried, key=lambda item: item.bbox[1]))
+            first = min(carried, key=lambda item: item.bbox[1])
+            rows = _table_rows(first)
             if len(rows) > 1:
-                return rows, "lines_page_break"
+                return rows, "lines_page_break", (1, tuple(first.bbox))
 
     # Fall back to alignment for unruled ARM tables.
     region = table_region(page, caption_bbox)
     if region is None:
-        return [], "none"
+        return [], "none", None
     rows = rows_by_alignment(page, region)
-    return (rows, "alignment") if len(rows) > 1 else ([], "none")
+    return ((rows, "alignment", (0, tuple(region))) if len(rows) > 1
+            else ([], "none", None))
 
 
 def rows_to_markdown(rows):
@@ -837,7 +857,7 @@ def build_tables(doc, doc_id, doc_name, nodes):
     for label, cap in build_caption_index(doc).items():
         page = doc[cap["page"] - 1]
         following = doc[cap["page"]] if cap["page"] < doc.page_count else None
-        rows, method = extract_table(page, cap["bbox"], next_page=following)
+        rows, method, region = extract_table(page, cap["bbox"], next_page=following)
         # Ordered outlines make the latest section start the table's owner.
         owner = None
         for node in nodes:
@@ -865,6 +885,8 @@ def build_tables(doc, doc_id, doc_name, nodes):
             "rows": data_rows,
             "n_rows": len(data_rows),
             "extraction": method,
+            # One-based page and bbox of the body, so prose can leave it out.
+            "regions": [(cap["page"] + region[0], region[1])] if region else [],
             "markdown": rows_to_markdown(rows) if rows else "",
         }
     return tables
@@ -1001,12 +1023,16 @@ def ingest_pdf(path):
     # Build structure first so every chunk inherits deterministic hierarchy metadata.
     nodes = build_sections(doc, doc_id, doc_name)
     tables = build_tables(doc, doc_id, doc_name, nodes)
+    regions = collections.defaultdict(list)
+    for table in tables.values():
+        for page, bbox in table["regions"]:
+            regions[page].append(bbox)
 
     records = []
     for sec in nodes:
         if sec["section_name"].strip().lower() in cfg.SKIP_TITLES:
             continue
-        page_texts = section_page_texts(doc, sec, furniture, bands)
+        page_texts = section_page_texts(doc, sec, furniture, bands, regions)
         if not page_texts:
             continue
         # Breadcrumbs disambiguate otherwise context-free paragraphs for embedding.

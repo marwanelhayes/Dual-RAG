@@ -27,9 +27,10 @@ def _prose(doc, text, header="h"):
     return {"document_id": doc, "chunk_type": "prose", "context_header": header, "text": text}
 
 
-def _table(doc, label, rows):
+def _table(doc, label, rows, columns=()):
     return {"document_id": doc, "chunk_type": "table", "context_header": "h", "text": "t",
-            "table_id": f"{doc}::table::{label}", "table_label": label, "table_rows": rows}
+            "table_id": f"{doc}::table::{label}", "table_label": label, "table_rows": rows,
+            "columns": list(columns)}
 
 
 def test_chunk_metrics_count_tokens_tables_and_leaks():
@@ -147,3 +148,16 @@ def test_rtl_chunk_metrics_count_records_line_coverage_and_over_limit():
     assert metrics["rtl.embedded_line_coverage"] == 2 / 3
     assert metrics["rtl.chunks_over_limit"] == 1
     assert metrics["rtl.construct.chunk_tokens_max"] == 9
+
+
+def test_prose_table_overlap_counts_prose_repeating_a_table_header():
+    records = [
+        _prose("axi", "Signal Source Description AWID Manager Write id"),
+        _prose("axi", "Ordinary prose about Signal and Source."),
+        _prose("riscv", "Signal Source Description"),
+        _table("axi", "A2.1", 2, columns=["Signal", "Source", "Description"]),
+    ]
+
+    metrics = track.chunk_metrics(records, lambda text: 1)
+
+    assert metrics["ingest.prose_table_overlap"] == 1

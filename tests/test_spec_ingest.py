@@ -89,7 +89,7 @@ def test_tables_persist_raw_columns_and_rows_but_are_not_hierarchy_nodes(monkeyp
         "2.1": {"page": 4, "caption": "Interface", "bbox": (0, 0, 1, 1)}})
     monkeypatch.setattr(ingest, "extract_table", lambda page, bbox, next_page=None: (
         [["Signal", "Width", "Description"],
-         ["rm_i", "3", "IEEE rounding mode"]], "lines"))
+         ["rm_i", "3", "IEEE rounding mode"]], "lines", (0, (0, 1, 1, 2))))
 
     tables = ingest.build_tables(PageSequence(20), "fpu_spec", "fpu.pdf", sections)
     table = tables["2.1"]
@@ -162,7 +162,7 @@ def test_equally_close_tables_resolve_to_the_one_below_the_caption():
     below = FakeTable(210, 300, [["c", "d"], ["3", "4"]])
     page = FakePage([above, below])
 
-    rows, method = ingest.extract_table(page, (0, 190, 500, 200))
+    rows, method, _ = ingest.extract_table(page, (0, 190, 500, 200))
 
     assert method == "lines"
     assert rows == [["c", "d"], ["3", "4"]]
@@ -173,7 +173,7 @@ def test_the_closer_table_wins_even_when_it_sits_above_the_caption():
     below = FakeTable(240, 300, [["c", "d"], ["3", "4"]])
     page = FakePage([above, below])
 
-    rows, method = ingest.extract_table(page, (0, 190, 500, 200))
+    rows, method, _ = ingest.extract_table(page, (0, 190, 500, 200))
 
     assert method == "lines"
     assert rows == [["a", "b"], ["1", "2"]]
@@ -183,7 +183,7 @@ def test_caption_printed_under_its_table_still_binds_to_that_table():
     above = FakeTable(100, 180, [["a", "b"], ["1", "2"]])
     page = FakePage([above])
 
-    rows, method = ingest.extract_table(page, (0, 190, 500, 200))
+    rows, method, _ = ingest.extract_table(page, (0, 190, 500, 200))
 
     assert method == "lines"
     assert rows == [["a", "b"], ["1", "2"]]
@@ -193,7 +193,7 @@ def test_caption_ending_a_page_binds_to_the_table_carried_onto_the_next():
     page = FakePage([])
     carried = FakePage([FakeTable(40, 120, [["e", "f"], ["5", "6"]])])
 
-    rows, method = ingest.extract_table(page, (0, 700, 500, 720), next_page=carried)
+    rows, method, _ = ingest.extract_table(page, (0, 700, 500, 720), next_page=carried)
 
     assert method == "lines_page_break"
     assert rows == [["e", "f"], ["5", "6"]]
@@ -202,7 +202,7 @@ def test_caption_ending_a_page_binds_to_the_table_carried_onto_the_next():
 def test_a_table_far_from_the_caption_is_not_treated_as_its_body():
     page = FakePage([FakeTable(600, 700, [["a", "b"], ["1", "2"]])])
 
-    rows, method = ingest.extract_table(page, (0, 100, 500, 120))
+    rows, method, _ = ingest.extract_table(page, (0, 100, 500, 120))
 
     assert (rows, method) == ([], "none")
 
@@ -510,3 +510,40 @@ def test_heading_block_matches_title_across_wrapped_lines():
     assert ingest.is_heading_block("Chapter 24. BFloat16-precision Floating-\nPoint, V1\n",
                                    "Chapter 24. BFloat16-precision Floating-Point, V1")
     assert not ingest.is_heading_block("Alpha body says AWVALID.\n", "1 Alpha")
+
+
+def _ruled_table_pdf(tmp_path):
+    """Write one page: prose, a captioned ruled 2x3 table, then more prose."""
+    import fitz
+
+    path = tmp_path / "ruled.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "The write channel carries the address. It is described below.",
+                     fontsize=10)
+    page.insert_text((72, 140), "Table 1.1: Channel signals", fontsize=10)
+    left, top, width, height = 72, 160, 300, 20
+    for row in range(4):
+        page.draw_line((left, top + row * height), (left + width, top + row * height))
+    for column in range(3):
+        page.draw_line((left + column * width / 2, top), (left + column * width / 2, top + 60))
+    for row, cells in enumerate([("Signal", "Source"), ("CELLAWID", "Manager"),
+                                 ("CELLAWLEN", "Manager")]):
+        for column, text in enumerate(cells):
+            page.insert_text((left + 4 + column * width / 2, top + 14 + row * height), text,
+                             fontsize=9)
+    page.insert_text((72, 260), "After the table the prose continues with more words.",
+                     fontsize=10)
+    doc.set_toc([[1, "1 Channels", 1]])
+    doc.save(path)
+    return path
+
+
+def test_table_cells_never_enter_prose(tmp_path):
+    _, _, records = ingest.ingest_pdf(_ruled_table_pdf(tmp_path))
+    prose = " ".join(record["text"] for record in records if record["chunk_type"] == "prose")
+    table = " ".join(record["text"] for record in records if record["chunk_type"] == "table")
+
+    assert "CELLAWID" in table
+    assert "CELLAWID" not in prose and "Signal Source" not in prose
+    assert "prose continues" in prose
