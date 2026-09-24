@@ -218,6 +218,22 @@ def test_module_text_names_the_peer_modules_its_ports_are_wired_to(tmp_path):
     assert "reads: StallD <- hazard_unit" in text["rtl:fetch_stage"]
 
 
+def test_two_readers_of_one_net_do_not_read_from_each_other(tmp_path):
+    source = tmp_path / "decode_stage.sv"
+    rtl = {"modules": {name: _module(name, source)
+                       for name in ("decode_stage", "control_unit", "reg_file")}}
+    rtl["modules"]["decode_stage"]["instances"] = [
+        {"target_module": target, "bindings": [
+            {"parent_module": "decode_stage", "formal_name": "Rs2",
+             "actual_signals": ["Rs2D"], "direction": "input"}]}
+        for target in ("control_unit", "reg_file")
+    ]
+
+    text = {record["chunk_id"]: record["text"] for record in re_.retrieval_records(rtl)}
+
+    assert "reads:" not in text["rtl:control_unit"]
+    assert "reads:" not in text["rtl:reg_file"]
+
 def test_main_embeds_on_every_run_and_writes_the_manifest(monkeypatch, tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")

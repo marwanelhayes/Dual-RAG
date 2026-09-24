@@ -143,7 +143,8 @@ def port_connections(rtl):
     """Map every module port to the peer modules bound to the same parent-scope net.
 
     Naming conventions cannot be trusted to say which stage a port serves, but the
-    elaborated netlist can: two instances sharing one actual signal are wired together.
+    elaborated netlist can: on one parent-scope net, an ``output`` binding drives every
+    other binding, and a non-output binding reads only from ``output`` bindings.
 
     Args:
         rtl: Parsed ``rtl.json`` payload.
@@ -162,12 +163,13 @@ def port_connections(rtl):
     links = {}
     for endpoints in scoped.values():
         for target, formal, direction in endpoints:
-            peers = [peer for peer, _, _ in endpoints if peer != target]
-            if not peers:
-                continue
+            # A driver feeds every non-driver on the net; a reader hears only drivers.
             side = "drives" if direction == "output" else "reads"
-            links.setdefault(target, {}).setdefault(side, []).extend(
-                (formal, peer) for peer in peers)
+            peers = [peer for peer, _, peer_direction in endpoints
+                     if peer != target and (peer_direction == "output") == (side == "reads")]
+            if peers:
+                links.setdefault(target, {}).setdefault(side, []).extend(
+                    (formal, peer) for peer in peers)
     return links
 
 
