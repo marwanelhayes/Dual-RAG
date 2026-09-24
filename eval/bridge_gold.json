@@ -1,0 +1,189 @@
+{
+ "description": "AXI channel signals the RTL implements: spec name, RTL port (D/I-prefixed aliases on riscv_processor), and the module(s) whose output drives it. Hand-checked against rtl/*.sv on 2026-09-24.",
+ "signals": [
+  {
+   "spec_name": "AWADDR",
+   "rtl_port": "MAWAddr",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "AWBURST",
+   "rtl_port": "MAWBurst",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "AWLEN",
+   "rtl_port": "MAWLen",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "AWREADY",
+   "rtl_port": "MAWReady",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "AWSIZE",
+   "rtl_port": "MAWSize",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "AWVALID",
+   "rtl_port": "MAWValid",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "WDATA",
+   "rtl_port": "MWData",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "WLAST",
+   "rtl_port": "MWLast",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "WREADY",
+   "rtl_port": "MWReady",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "WSTRB",
+   "rtl_port": "MWStrb",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "WVALID",
+   "rtl_port": "MWValid",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "BREADY",
+   "rtl_port": "MBReady",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "BRESP",
+   "rtl_port": "MBResp",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "BVALID",
+   "rtl_port": "MBValid",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "ARADDR",
+   "rtl_port": "MARAddr",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "ARBURST",
+   "rtl_port": "MARBurst",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "ARLEN",
+   "rtl_port": "MARLen",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "ARREADY",
+   "rtl_port": "MARReady",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "ARSIZE",
+   "rtl_port": "MARSize",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "ARVALID",
+   "rtl_port": "MARValid",
+   "driven_by": [
+    "cache"
+   ]
+  },
+  {
+   "spec_name": "RDATA",
+   "rtl_port": "MRRData",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "RLAST",
+   "rtl_port": "MRRLast",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "RRESP",
+   "rtl_port": "MRRResp",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "RVALID",
+   "rtl_port": "MRRValid",
+   "driven_by": [
+    "risc_data_memory",
+    "risc_instruction_memory"
+   ]
+  },
+  {
+   "spec_name": "RREADY",
+   "rtl_port": "MRReady",
+   "driven_by": [
+    "cache"
+   ]
+  }
+ ]
+}

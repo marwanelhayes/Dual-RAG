@@ -161,3 +161,26 @@ def test_prose_table_overlap_counts_prose_repeating_a_table_header():
     metrics = track.chunk_metrics(records, lambda text: 1)
 
     assert metrics["ingest.prose_table_overlap"] == 1
+
+
+def test_bridge_metrics_score_axi_links_against_the_gold_ports():
+    gold = [{"spec_name": "AWVALID", "rtl_port": "MAWValid"},
+            {"spec_name": "RDATA", "rtl_port": "MRRData"}]
+    link = lambda name, port, doc="axi_spec", method="identity": {
+        "spec_signal_id": f"spec::signal::{doc}::A1::{name.lower()}",
+        "spec_original_name": name, "rtl_original_name": port, "method": method}
+    bridge = {
+        "signal_alignments": [link("AWVALID", "MAWValid"), link("AWVALID", "DMAWValid"),
+                              link("AWNSAID", "MAWValid", method="interface_prefix"),
+                              link("mstatus", "mstatus", doc="riscv_privileged")],
+        "unresolved_signals": [{"reason": "no link"}, {"reason": "no link"}],
+        "module_alignments": [{"rtl_module_id": "m"}],
+    }
+
+    metrics = track.bridge_metrics(bridge, gold)
+
+    assert metrics["bridge.axi_recall"] == 0.5
+    assert metrics["bridge.axi_precision"] == 2 / 3
+    assert metrics["bridge.links.identity"] == 3
+    assert metrics["bridge.links.interface_prefix"] == 1
+    assert metrics["bridge.unresolved.no link"] == 2

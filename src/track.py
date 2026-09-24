@@ -19,6 +19,8 @@ TOKEN_LIMIT = 512
 CHUNK_SAMPLE_LINES = 200
 # AXI Tables B1.1-B1.7 read from the PDF, independent of ingest.
 AXI_CHANNEL_GOLD = cfg.ROOT / "eval" / "axi_channel_signals.json"
+# The AXI channel signals the RTL implements, with their RTL ports, read from rtl/*.sv.
+BRIDGE_GOLD = cfg.ROOT / "eval" / "bridge_gold.json"
 
 _TABLE_REF = re.compile(r"\bTable\s+([A-Z]?\d+(?:[.-]\d+)*)")
 _HEADER_LEAK = re.compile(r"\| Page \d+|Chapter [A-Z]\d+\.")
@@ -239,6 +241,37 @@ def rtl_chunk_metrics(records, rtl, count_tokens, limit=TOKEN_LIMIT):
     return dict(metrics)
 
 
+def bridge_metrics(bridge, gold):
+    """Score AXI spec-to-RTL links against the gold ports and count the rest.
+
+    Args:
+        bridge: Decoded ``bridge.json``.
+        gold: ``{spec_name, rtl_port}`` rows; a port's ``D``/``I`` aliases also count.
+
+    Returns:
+        Recall (gold names linked to their port), precision (AXI link rows that are
+        correct), links per method, unresolved per reason, and module alignments.
+    """
+    ports = {row["spec_name"]: {row["rtl_port"], "D" + row["rtl_port"], "I" + row["rtl_port"]}
+             for row in gold}
+    links = bridge.get("signal_alignments", [])
+    axi = [link for link in links if "::axi_spec::" in link["spec_signal_id"]]
+    correct = [link for link in axi
+               if link["rtl_original_name"] in ports.get(link["spec_original_name"], ())]
+    metrics = collections.Counter({
+        "bridge.axi_recall": len({link["spec_original_name"] for link in correct}) / len(ports),
+        "bridge.axi_precision": len(correct) / len(axi) if axi else 0.0,
+        "bridge.signal_alignments": len(links),
+        "bridge.unresolved_signals": len(bridge.get("unresolved_signals", [])),
+        "bridge.module_alignments": len(bridge.get("module_alignments", [])),
+    })
+    for link in links:
+        metrics[f"bridge.links.{link.get('method', 'scored')}"] += 1
+    for row in bridge.get("unresolved_signals", []):
+        metrics[f"bridge.unresolved.{row['reason']}"] += 1
+    return dict(metrics)
+
+
 def _git(*args):
     """Return one git command's trimmed stdout, run from the project root.
 
@@ -298,8 +331,8 @@ def pipeline_metrics():
     metrics.update(rtl_chunk_metrics(rtl_records, rtl, count_tokens))
     with open(cfg.BRIDGE_PATH, encoding="utf-8") as handle:
         bridge = json.load(handle)
-    metrics.update({f"bridge.{key}": len(value) for key, value in bridge.items()
-                    if isinstance(value, list)})
+    with open(BRIDGE_GOLD, encoding="utf-8") as handle:
+        metrics.update(bridge_metrics(bridge, json.load(handle)["signals"]))
     if cfg.RETRIEVAL_PATH.exists():
         with open(cfg.RETRIEVAL_PATH, encoding="utf-8") as handle:
             metrics.update(flatten("retrieval", json.load(handle)["metrics"]["overall"]))
