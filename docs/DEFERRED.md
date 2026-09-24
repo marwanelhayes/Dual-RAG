@@ -183,3 +183,26 @@ as the edge signal tested by the block's first `if`, from the AST.
 Why not now: no consumer reads the roles.
 
 Reopen when: a query needs "which clock / reset drives X".
+
+## DF-12: Initial blocks and stray `other_blocks`
+
+Decided 2026-09-24. Current choice: `other_blocks` (3 `initial` memory/CSR inits, one a
+`$readmemb` of an absolute path, and 2 constant `assign`s) are not RTL records.
+
+Deferred option: embed them as construct records like the other blocks.
+
+Why not now: simulation-only initialisation; no question asks about it.
+
+Reopen when: a question asks how memory or CSR state is initialised.
+
+## DF-13: Package and non-module file headers
+
+Decided 2026-09-24. Current choice: `preamble` (rt9a) is taken for modules only; headers of
+`shared_pkg.sv` and `csr_defs.sv` (28 and 25 comment lines) are not embedded.
+
+Deferred option: one record per package with its header comment and enum/typedef names.
+
+Why not now: packages are not modules in `rtl.json`; enums reach the bridge separately.
+
+Reopen when: a question about a package-level definition (CSR addresses, shared enums)
+misses in the RTL lane.

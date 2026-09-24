@@ -3,8 +3,9 @@
 Handoff from the 2026-09-21/23 simplification sessions. Method and session prompt:
 [`docs/SIMPLIFICATION_METHOD.md`](SIMPLIFICATION_METHOD.md). Decided specs and queues:
 [`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md),
-[`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md).
-Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-11).
+[`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md),
+[`docs/specs/rtl_embed.md`](specs/rtl_embed.md).
+Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-13).
 
 ## Where we are
 
@@ -76,13 +77,11 @@ test PDFs have points but no printed heading, and it would delete body text.
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
 ending "... going for rtl_embed.py".
 
-1. **Walk `rtl_embed.py`** (next in `build.py` stage order). Carry-overs from the
-   `rtl_ingest` walk, done in the same steps as their readers:
-   - RTL file paths become POSIX paths relative to `RTL_DIR` (`rtl_ingest` writes them;
-     `rtl_embed.py:309` and `:488` open them).
-   - Drop the lines copying `clock`, `reset`, `content_hash` into chunk metadata
-     (`rtl_embed.py:177`, `:366`, `:457-459`); `rtl.json` no longer has them.
-   - Fix the fixture binding at `tests/test_rtl_embed.py:89` (still `formal` / `actual_refs`).
+1. **Execute the `rtl_embed` queue rt0-rt11** in [`docs/specs/rtl_embed.md`](specs/rtl_embed.md)
+   (walked 2026-09-24). Decision metric for these steps: `retrieval.rtl.exact_id_recall_at_k`
+   (0.4); guards RTL section recall 1.0, spec section recall 0.633. Carry-overs from the
+   `rtl_ingest` walk are folded in (rt2 fixture, rt4 `clock`/`reset`/`content_hash`, rt5
+   relative paths).
 2. Ingest steps 10-15 in `docs/specs/ingest.md` (10 prose excludes tables, 11 table owner by
    position, 12 continuations, 12b wrapped cells, 13 code-line split, 14 token caps, 15
    sweep). Step 13 uses the newlines step 9 keeps; step 14 also closes DF-09 (52 chunks over
@@ -104,8 +103,7 @@ is revisited at the `retrieve.py` walk.
 
 ## Pending consolidation (embed / rtl, by consumer walk)
 
-- `rtl_embed`: RTL paths relative to `RTL_DIR`; drop `clock` / `reset` / `content_hash`
-  copies; alias pairs `file` / `file_path`, `line` / `start_line`, `symbol_name` /
+- `rtl_embed`: queued as rt0-rt11 (see its spec). Alias pairs `file` / `file_path`, `line` / `start_line`, `symbol_name` /
   `original_name`, `instance_id` / `construct_id` (also bridge, agent).
 - `bridge`: `enum_usage` moves here or is dropped; `naming.py` judged here.
 - `retrieve`: `langchain_core.documents.Document` as hit type; `VectorStore.load(records)`.
