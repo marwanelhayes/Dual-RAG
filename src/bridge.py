@@ -47,41 +47,6 @@ _DIRECTIONS = {**_PORT_DIRECTIONS, "io": "inout", "inout": "inout",
                "internal": "internal"}
 
 
-def _as_list(value):
-    """Return a schema field as a list without splitting scalar strings.
-
-    Args:
-        value: Field value of any shape.
-
-    Returns:
-        The value as a list; a scalar becomes a one-element list.
-    """
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    return [value]
-
-
-def _first(record, *names, default=None):
-    """Return the first present, non-null field from a mapping.
-
-    Args:
-        record: Mapping to read.
-        *names: Field names tried in preference order.
-        default: Value returned when no name is present and non-null.
-
-    Returns:
-        The first non-null field value, or ``default``.
-    """
-    for name in names:
-        if name in record and record[name] is not None:
-            return record[name]
-    return default
-
-
 def _unique(values):
     """Keep non-empty values once in encounter order.
 
@@ -324,141 +289,62 @@ def _path_fingerprint(path):
     return digest.hexdigest()
 
 
-def _spec_signal_rows(data):
-    """Return signal rows from the canonical object or reasonable migration aliases.
+def _canonical_spec_signal(raw):
+    """Adapt one specification signal row into the bridge's internal shape.
 
     Args:
-        data: Decoded specification signal artifact.
-
-    Returns:
-        The raw signal rows, or an empty list when none are present.
-    """
-    if isinstance(data, list):
-        return data
-    if not isinstance(data, dict):
-        return []
-    for key in ("signals", "spec_signals", "entities", "records"):
-        if isinstance(data.get(key), list):
-            return data[key]
-    return []
-
-
-def _canonical_spec_signal(raw, ordinal):
-    """Adapt one specification signal into the bridge's stable internal shape.
-
-    Args:
-        raw: One raw specification signal row.
-        ordinal: Row position, used only for the fallback identifier.
+        raw: One ``spec_signals.json`` row.
 
     Returns:
         A canonical specification signal record.
     """
-    original = str(_first(raw, "original_name", "name", "signal_name", "display", default=""))
-    normalized = str(_first(raw, "normalized_name", default="") or
-                     normalize_identifier(original))
-    raw_tokens = _first(raw, "normalized_tokens", "tokens")
-    tokens = _as_list(raw_tokens) if raw_tokens is not None else identifier_tokens(original)
-    section_id = _first(raw, "section_id", "section")
-    subsection_id = _first(raw, "subsection_id")
-    table_id = _first(raw, "table_id", "table", "table_label")
-    fallback = content_hash(str(_first(raw, "document_id", "doc_id", "source_file", default="")),
-                            str(section_id or subsection_id or table_id or ""), original,
-                            str(ordinal))
-    signal_id = str(_first(raw, "signal_id", "entity_id", "id",
-                           default=f"spec::signal::{fallback}"))
+    original = raw["original_name"]
     return {
-        "signal_id": signal_id,
+        "signal_id": raw["signal_id"],
         "original_name": original,
-        "normalized_name": normalized,
-        "normalized_tokens": _unique(str(token).lower() for token in tokens),
-        "width": _width(_first(raw, "width", "bit_width"),
-                        _first(raw, "width_expression", "range", "bit_range")),
-        "width_expression": _first(raw, "width_expression", "range", "bit_range"),
-        "direction": _direction(_first(raw, "direction", "dir")),
-        "source_role": _source_role(_first(raw, "source_role", "source", "driven_by")),
-        "row_kind": _row_kind(_first(raw, "row_kind", "kind")),
-        "description": str(_first(raw, "description", "details", "text", default="")),
-        "document_id": _first(raw, "document_id", "doc_id"),
-        "section_id": section_id,
-        "section_title": _first(raw, "section_title", "section_name"),
-        "subsection_id": subsection_id,
-        "subsection_title": _first(raw, "subsection_title", "subsection_name"),
-        "table_id": table_id,
-        "table_title": _first(raw, "table_title", "table_caption", "caption"),
-        "chunk_id": _first(raw, "chunk_id", "source_chunk_id"),
-        "page": _first(raw, "page", "start_page"),
-        "source_file": _first(raw, "source_file", "file", "doc_name"),
+        "normalized_name": raw.get("normalized_name") or normalize_identifier(original),
+        "normalized_tokens": _unique(str(token).lower() for token in
+                                     raw.get("normalized_tokens") or identifier_tokens(original)),
+        "width": _width(raw.get("width")),
+        "direction": _direction(raw.get("direction")),
+        "source_role": _source_role(raw.get("source_role")),
+        "row_kind": _row_kind(raw.get("row_kind")),
+        "description": raw.get("description") or "",
+        "document_id": raw.get("document_id"),
+        "section_id": raw.get("section_id"),
+        "section_title": raw.get("section_title"),
+        "subsection_id": raw.get("subsection_id"),
+        "subsection_title": raw.get("subsection_title"),
+        "table_id": raw.get("table_id"),
+        "table_title": raw.get("table_caption"),
+        "chunk_id": raw.get("chunk_id"),
+        "page": raw.get("page"),
+        "source_file": raw.get("source_file"),
     }
-
 
 def spec_signals(data):
     """Return canonical specification signals sorted by stable identity.
 
     Args:
-        data: Decoded specification signal artifact.
+        data: Decoded ``spec_signals.json``.
 
     Returns:
-        Named canonical signals ordered by signal identifier.
+        Canonical signals ordered by signal identifier.
     """
-    rows = [_canonical_spec_signal(raw, ordinal)
-            for ordinal, raw in enumerate(_spec_signal_rows(data)) if isinstance(raw, dict)]
-    return sorted((row for row in rows if row["original_name"]),
+    return sorted((_canonical_spec_signal(raw) for raw in data["signals"]),
                   key=lambda row: row["signal_id"])
 
-
-def _module_rows(rtl):
-    """Return ``(fallback_name, module)`` pairs from dict- or list-shaped RTL artifacts.
-
-    Args:
-        rtl: Decoded RTL artifact.
-
-    Returns:
-        ``(fallback name, raw module)`` pairs, empty when the shape is unknown.
-    """
-    raw = rtl.get("modules", {}) if isinstance(rtl, dict) else {}
-    if isinstance(raw, dict):
-        return [(str(name), module) for name, module in raw.items() if isinstance(module, dict)]
-    if isinstance(raw, list):
-        return [(str(_first(module, "original_name", "name", "module_name", default="")),
-                 module) for module in raw if isinstance(module, dict)]
-    return []
-
-
-def _site_rows(signal, *names):
-    """Collect unique read/write site mappings from compatible field aliases.
-
-    Args:
-        signal: Raw RTL declaration.
-        *names: Field names holding site lists.
-
-    Returns:
-        Unique site mappings in encounter order.
-    """
-    rows = []
-    for name in names:
-        for site in _as_list(signal.get(name)):
-            if isinstance(site, dict) and site not in rows:
-                rows.append(site)
-    return rows
-
-
 def _module_blocks(module):
-    """Collect structural blocks without depending on one upstream grouping spelling.
+    """Collect a module's structural blocks.
 
     Args:
-        module: Raw RTL module record.
+        module: ``rtl.json`` module record.
 
     Returns:
-        Unique structural block mappings in encounter order.
+        Its always, function/task, assignment-group, and other blocks.
     """
-    blocks = []
-    for key in ("always_blocks", "functions_tasks", "assignment_groups", "other_blocks",
-                "blocks", "structural_blocks"):
-        for block in _as_list(module.get(key)):
-            if isinstance(block, dict) and block not in blocks:
-                blocks.append(block)
-    return blocks
-
+    return [block for key in ("always_blocks", "functions_tasks", "assignment_groups",
+                              "other_blocks") for block in module.get(key, [])]
 
 def _signal_usage(signal, module):
     """Render bounded deterministic usage context for one RTL signal.
@@ -477,99 +363,78 @@ def _signal_usage(signal, module):
     if signal["writer_sites"]:
         parts.append("written or driven by RTL logic")
     for block in _module_blocks(module):
-        reads = _as_list(_first(block, "signals_read", "reads", "inputs", default=[]))
-        writes = _as_list(_first(block, "signals_written", "writes", "outputs", default=[]))
-        if name not in reads and name not in writes:
+        if (name not in block.get("signals_read", [])
+                and name not in block.get("signals_written", [])):
             continue
-        parts.extend(str(value) for value in (
-            _first(block, "construct_type", "kind"),
-            _first(block, "original_name", "name"),
-        ) if value)
+        parts.extend(value for value in (block.get("construct_type"),
+                                         block.get("original_name")) if value)
         if len(parts) >= 8:
             break
     return " ".join(_unique(part for part in parts if part))[:cfg.BRIDGE_CONTEXT_CHARS]
 
 
-def _canonical_rtl_signal(raw, module, fallback_name, ordinal):
-    """Adapt one module-local RTL declaration into the bridge's stable shape.
+def _canonical_rtl_signal(raw, module):
+    """Adapt one module-local RTL declaration into the bridge's internal shape.
 
     Args:
-        raw: One raw RTL declaration.
-        module: Raw RTL module owning it.
-        fallback_name: Module name used when the record states none.
-        ordinal: Declaration position, used only for the fallback identifier.
+        raw: One ``rtl.json`` port or signal declaration.
+        module: ``rtl.json`` module owning it.
 
     Returns:
         A canonical RTL signal record including its usage context.
     """
-    module_name = str(_first(module, "original_name", "name", "module_name",
-                             default=fallback_name))
-    original = str(_first(raw, "original_name", "name", "signal_name", "symbol_name",
-                          default=""))
-    normalized = str(_first(raw, "normalized_name", default="") or
-                     normalize_identifier(original))
-    raw_tokens = _first(raw, "normalized_tokens", "tokens")
-    tokens = _as_list(raw_tokens) if raw_tokens is not None else identifier_tokens(original)
-    signal_id = str(_first(raw, "signal_id", "symbol_id", "record_id", "id",
-                           default=f"rtl::signal::{module_name}::{original}::{ordinal}"))
-    readers = _site_rows(raw, "reader_sites", "read_sites", "readers", "reads")
-    writers = _site_rows(raw, "writer_sites", "write_sites", "drivers", "writes")
+    module_name = module["original_name"]
+    original = raw["original_name"]
     canonical = {
-        "signal_id": signal_id,
+        "signal_id": raw["signal_id"],
         "original_name": original,
-        "normalized_name": normalized,
-        "normalized_tokens": _unique(str(token).lower() for token in tokens),
-        "width": _width(_first(raw, "width", "bit_width"),
-                        _first(raw, "width_expression", "range", "bit_range")),
-        "width_expression": _first(raw, "width_expression", "range", "bit_range"),
-        "direction": _direction(_first(raw, "direction", "dir")) or "internal",
-        "description": str(_first(raw, "description", "comment", "summary", default="")),
-        "module_id": str(_first(module, "module_id", "id",
-                                default=f"rtl::mod::{module_name}")),
+        "normalized_name": raw.get("normalized_name") or normalize_identifier(original),
+        "normalized_tokens": _unique(str(token).lower() for token in
+                                     raw.get("normalized_tokens") or identifier_tokens(original)),
+        "width": _width(raw.get("width"), raw.get("width_expression")),
+        "width_expression": raw.get("width_expression"),
+        "direction": _direction(raw.get("direction")) or "internal",
+        "description": raw.get("description", ""),
+        "module_id": module["module_id"],
         "module_name": module_name,
-        "module_normalized_name": str(_first(module, "normalized_name", default="") or
-                                      normalize_module_name(module_name)),
+        "module_normalized_name": (module.get("normalized_name")
+                                   or normalize_module_name(module_name)),
         "module_tokens": _unique(str(token).lower() for token in
-                                 (_as_list(_first(module, "normalized_tokens", "tokens")) or
-                                  identifier_tokens(module_name))),
-        "file": _first(raw, "file", "file_path", default=_first(module, "file", "file_path")),
-        "start_line": _first(raw, "start_line", "line"),
-        "end_line": _first(raw, "end_line", default=_first(raw, "start_line", "line")),
-        "reader_sites": readers,
-        "writer_sites": writers,
+                                 module.get("normalized_tokens") or identifier_tokens(module_name)),
+        "file": raw["file_path"],
+        "start_line": raw.get("start_line"),
+        "end_line": raw.get("end_line", raw.get("start_line")),
+        "reader_sites": raw.get("reader_sites", []),
+        "writer_sites": raw.get("writer_sites", []),
     }
     canonical["usage"] = _signal_usage(canonical, module)
     return canonical
 
-
 def rtl_modules(rtl):
-    """Return canonical module records with compatible structural field aliases.
+    """Return canonical module records.
 
     Args:
-        rtl: Decoded RTL artifact.
+        rtl: Decoded ``rtl.json``.
 
     Returns:
         Canonical module records ordered by module identifier.
     """
     modules = []
-    for fallback_name, raw in _module_rows(rtl):
-        name = str(_first(raw, "original_name", "name", "module_name", default=fallback_name))
-        raw_tokens = _first(raw, "normalized_tokens", "tokens")
-        tokens = _as_list(raw_tokens) if raw_tokens is not None else identifier_tokens(name)
+    for raw in rtl["modules"].values():
+        name = raw["original_name"]
         modules.append({
-            "module_id": str(_first(raw, "module_id", "id", default=f"rtl::mod::{name}")),
+            "module_id": raw["module_id"],
             "original_name": name,
-            "normalized_name": str(_first(raw, "normalized_name", default="") or
-                                   normalize_module_name(name)),
-            "normalized_tokens": _unique(str(token).lower() for token in tokens),
-            "description": str(_first(raw, "description", "summary", "comments", default="")),
-            "file": _first(raw, "file", "file_path"),
-            "start_line": _first(raw, "start_line", "line"),
-            "end_line": _first(raw, "end_line"),
+            "normalized_name": raw.get("normalized_name") or normalize_module_name(name),
+            "normalized_tokens": _unique(str(token).lower() for token in
+                                         raw.get("normalized_tokens") or identifier_tokens(name)),
+            "description": "",
+            "file": raw["file"],
+            "start_line": raw.get("start_line"),
+            "end_line": raw.get("end_line"),
             "raw": raw,
         })
     return sorted(modules, key=lambda module: module["module_id"])
-
 
 def port_nets(rtl):
     """Group ports that the elaborated netlist shows are one signal threaded through modules.
@@ -584,22 +449,17 @@ def port_nets(rtl):
     Returns:
         ``(module_name, port_name)`` to a stable net identifier, for threaded ports only.
     """
-    owned = {}
-    for fallback, module in _module_rows(rtl):
-        name = str(_first(module, "original_name", "name", "module_name", default=fallback))
-        owned[name] = {str(_first(port, "original_name", "name", "symbol_name", default=""))
-                       for port in _as_list(module.get("ports"))}
+    owned = {module["original_name"]: {port["original_name"] for port in module.get("ports", [])}
+             for module in rtl["modules"].values()}
     groups = []
-    for _, module in _module_rows(rtl):
+    for module in rtl["modules"].values():
         scoped = {}
-        for instance in _as_list(module.get("instances")):
-            target = instance.get("target_module")
-            for binding in _as_list(instance.get("bindings")):
-                formal = binding.get("formal_name")
-                if not target or not formal:
-                    continue
-                parent = str(binding.get("parent_module") or "")
-                for actual in _as_list(binding.get("actual_signals")):
+        for instance in module.get("instances", []):
+            target = instance["target_module"]
+            for binding in instance["bindings"]:
+                formal = binding["formal_name"]
+                parent = binding["parent_module"]
+                for actual in binding["actual_signals"]:
                     members = scoped.setdefault((parent, str(actual)), set())
                     members.add((str(target), str(formal)))
                     # A parent port used as the actual continues the same net one level up.
@@ -624,28 +484,19 @@ def rtl_signals(rtl):
     """Flatten module-local ports and signals into canonical scoped declarations.
 
     Args:
-        rtl: Decoded RTL artifact.
+        rtl: Decoded ``rtl.json``.
 
     Returns:
-        Canonical RTL signals, deduplicated and ordered by signal identifier.
+        Canonical RTL signals ordered by signal identifier.
     """
-    rows = []
-    seen = set()
     nets = port_nets(rtl)
-    for fallback_name, module in _module_rows(rtl):
-        candidates = []
-        for key in ("ports", "signals", "declarations", "symbol_records"):
-            candidates.extend(item for item in _as_list(module.get(key)) if isinstance(item, dict))
-        for ordinal, raw in enumerate(candidates):
-            signal = _canonical_rtl_signal(raw, module, fallback_name, ordinal)
-            if not signal["original_name"] or signal["signal_id"] in seen:
-                continue
-            signal["net_id"] = nets.get(
-                (signal["module_name"], signal["original_name"]))
-            seen.add(signal["signal_id"])
+    rows = []
+    for module in rtl["modules"].values():
+        for raw in [*module.get("ports", []), *module.get("signals", [])]:
+            signal = _canonical_rtl_signal(raw, module)
+            signal["net_id"] = nets.get((signal["module_name"], signal["original_name"]))
             rows.append(signal)
     return sorted(rows, key=lambda signal: signal["signal_id"])
-
 
 def enum_members(rtl):
     """Flatten every declared enumeration member into a comparable row.
@@ -657,12 +508,8 @@ def enum_members(rtl):
         Member rows ordered by enumeration identifier and member name.
     """
     rows = []
-    for enum in _as_list(rtl.get("enums")) if isinstance(rtl, dict) else []:
-        if not isinstance(enum, dict):
-            continue
-        for item in _as_list(enum.get("items")):
-            if not isinstance(item, dict) or not item.get("original_name"):
-                continue
+    for enum in rtl.get("enums", []):
+        for item in enum["items"]:
             original = str(item["original_name"])
             rows.append({
                 "enum_id": enum.get("enum_id"),
@@ -674,7 +521,7 @@ def enum_members(rtl):
                 "value": item.get("value"),
                 "file": item.get("file"),
                 "line": item.get("line"),
-                "usage_sites": _as_list(item.get("usage_sites")),
+                "usage_sites": item.get("usage_sites", []),
             })
     return sorted(rows, key=lambda row: (str(row["enum_id"]), row["original_name"]))
 
@@ -1294,65 +1141,35 @@ def align_signal(spec, rtl_rows, scorer=None):
 
 
 def _section_rows(hierarchy):
-    """Return section rows from canonical hierarchy or legacy node aliases.
+    """Return every section row of the hierarchy artifact.
 
     Args:
-        hierarchy: Decoded specification hierarchy artifact.
+        hierarchy: Decoded ``spec_hierarchy.json``.
 
     Returns:
-        Raw section rows, deduplicated by their stated identity.
+        Section rows in document order.
     """
-    if isinstance(hierarchy, list):
-        return hierarchy
-    if not isinstance(hierarchy, dict):
-        return []
-    rows = [section for section in _as_list(hierarchy.get("sections"))
-            if isinstance(section, dict)]
-    for document in _as_list(hierarchy.get("documents")):
-        if not isinstance(document, dict):
-            continue
-        for section in _as_list(document.get("sections")):
-            if not isinstance(section, dict):
-                continue
-            merged = dict(section)
-            for key in ("document_id", "source_file", "doc_name"):
-                if document.get(key) is not None:
-                    merged.setdefault(key, document[key])
-            rows.append(merged)
-    rows.extend(node for node in _as_list(hierarchy.get("nodes"))
-                if isinstance(node, dict) and
-                str(node.get("type", "section")).lower() == "section")
-    unique = {}
-    for ordinal, row in enumerate(rows):
-        identity = str(_first(row, "node_id", "id", "section_id", default=ordinal))
-        unique.setdefault(identity, row)
-    return list(unique.values())
-
+    return [section for document in hierarchy["documents"]
+            for section in document["sections"]]
 
 def _canonical_section(raw):
     """Adapt one hierarchy section into the module-alignment surface.
 
     Args:
-        raw: One raw hierarchy section row.
+        raw: One ``spec_hierarchy.json`` section row.
 
     Returns:
         A canonical section record with its title, path, and provenance.
     """
-    section_id = str(_first(raw, "node_id", "id", "section_id", default=""))
-    title = str(_first(raw, "subsection_title", "section_name", "section_title", "title",
-                       "raw_title", "name",
-                       default=""))
-    path = _first(raw, "section_path", "path", "breadcrumb", default=[])
     return {
-        "section_id": section_id,
-        "title": title,
-        "path": [str(value) for value in _as_list(path)],
-        "description": str(_first(raw, "description", "summary", "text", default="")),
-        "document_id": _first(raw, "document_id", "doc_id"),
-        "page": _first(raw, "page", "start_page"),
-        "source_file": _first(raw, "source_file", "file", "doc_name"),
+        "section_id": raw["node_id"],
+        "title": raw.get("subsection_title") or raw["section_name"],
+        "path": list(raw["path"]),
+        "description": "",
+        "document_id": raw.get("document_id"),
+        "page": raw["start_page"],
+        "source_file": raw["doc_name"],
     }
-
 
 def _module_candidate(section, module, scoped_alignments, scoped_specs):
     """Score one section-to-module candidate using names, context, and child mappings.
@@ -1377,9 +1194,8 @@ def _module_candidate(section, module, scoped_alignments, scoped_specs):
     spec_context = _tokens(" ".join([*section["path"], section["description"],
                                       *(spec.get("description", "") for spec in scoped_specs)]))
     module_signal_text = " ".join(
-        str(_first(signal, "original_name", "name", "signal_name", default=""))
-        for key in ("ports", "signals") for signal in _as_list(module["raw"].get(key))
-        if isinstance(signal, dict))
+        signal["original_name"] for key in ("ports", "signals")
+        for signal in module["raw"].get(key, []))
     module_context = _tokens(" ".join((module["normalized_name"], module["description"],
                                        module_signal_text)))
     context_available = bool(spec_context and module_context)
@@ -1429,8 +1245,6 @@ def derive_module_alignments(hierarchy, modules, alignments, specs):
     by_spec_id = {spec["signal_id"]: spec for spec in specs}
     results = []
     for raw in _section_rows(hierarchy):
-        if not isinstance(raw, dict):
-            continue
         section = _canonical_section(raw)
         if not section["section_id"] or not section["title"]:
             continue

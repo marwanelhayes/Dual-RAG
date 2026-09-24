@@ -35,7 +35,7 @@ def _rtl_signal(name, signal_id, width=3, direction="input", description="select
         "width": width,
         "direction": direction,
         "description": description,
-        "file": "rtl/fpu.sv",
+        "file_path": "rtl/fpu.sv",
         "start_line": 7,
         "end_line": 7,
         "reader_sites": [{"file": "rtl/fpu.sv", "line": 19}],
@@ -132,13 +132,13 @@ def _hierarchy():
             "document_id": "spec::doc::isa",
             "source_file": "spec.pdf",
             "sections": [{
-                "section_id": "spec::section::fpu",
-                "section_title": "Floating Point Unit",
-                "parent_id": None,
-                "children_ids": [],
-                "prev_id": None,
-                "next_id": None,
-                "page": 12,
+                "node_id": "spec::section::fpu",
+                "section_name": "Floating Point Unit",
+                "subsection_title": None,
+                "path": ["Floating Point Unit"],
+                "doc_name": "spec.pdf",
+                "document_id": "spec::doc::isa",
+                "start_page": 12,
             }],
         }],
     }
@@ -296,7 +296,8 @@ def test_full_artifact_maps_sections_from_title_context_and_child_signals():
 def test_module_alignment_normalizes_plural_and_container_nouns():
     rtl = _rtl(("cache", _module("cache", "rtl::module::cache", [])))
     hierarchy = {"documents": [{"document_id": "axi", "sections": [{
-        "node_id": "axi::caches", "section_name": "Caches", "parent_id": None,
+        "node_id": "axi::caches", "section_name": "Caches", "path": [],
+        "doc_name": "axi.pdf", "start_page": 1,
     }]}]}
 
     artifact = bridge.build_bridge({"signals": []}, rtl, hierarchy)
@@ -307,26 +308,11 @@ def test_module_alignment_normalizes_plural_and_container_nouns():
     }
 
 
-def test_schema_aliases_and_lookup_helpers_survive_upstream_migration(tmp_path):
-    specs = {"records": [{
-        "id": "legacy::rm", "display": "rounding_mode", "bit_width": "3",
-        "dir": "input", "section": "legacy::fpu", "section_name": "FPU",
-    }]}
-    rtl = {"modules": [{
-        "id": "legacy::module::fpu", "name": "fpu", "file_path": "rtl/fpu.sv",
-        "declarations": [{
-            "symbol_id": "legacy::rtl::rm", "symbol_name": "rm_i",
-            "bit_width": 3, "dir": "input", "line": 9,
-        }],
-    }]}
-    hierarchy = {"nodes": [{"node_id": "legacy::fpu", "title": "FPU", "type": "section"}]}
-
-    artifact = bridge.build_bridge(specs, rtl, hierarchy)
-
-    assert artifact["signal_alignments"][0]["rtl_signal_id"] == "legacy::rtl::rm"
-    assert artifact["signal_alignments"][0]["spec_signal_id"] == "legacy::rm"
-    assert artifact["module_alignments"][0]["rtl_module_id"] == "legacy::module::fpu"
-
+def test_inputs_are_read_by_their_schema_keys_only():
+    with pytest.raises(KeyError):
+        bridge.spec_signals({"records": _spec()["signals"]})
+    assert bridge.rtl_signals(_rtl(("fpu", _module("fpu", "rtl::module::fpu", [
+        _rtl_signal("rm_i", "rtl::signal::rm")]))))[0]["file"] == "rtl/fpu.sv"
 
 def test_source_fingerprints_hash_the_three_current_inputs(tmp_path, monkeypatch):
     paths = {}
@@ -349,11 +335,14 @@ def test_source_fingerprints_hash_the_three_current_inputs(tmp_path, monkeypatch
 
 def test_nested_ingest_hierarchy_keeps_each_subsection_identity_and_own_title():
     hierarchy = {"documents": [{"document_id": "doc", "sections": [
-        {"node_id": "sec::root", "section_id": "sec::root",
-         "section_title": "Floating Point Unit", "section_name": "Floating Point Unit"},
+        {"node_id": "sec::root", "section_id": "sec::root", "path": ["Floating Point Unit"],
+         "section_title": "Floating Point Unit", "section_name": "Floating Point Unit",
+         "doc_name": "doc.pdf", "start_page": 1},
         {"node_id": "sec::round", "section_id": "sec::root",
+         "path": ["Floating Point Unit", "Rounding Control"],
          "section_title": "Floating Point Unit", "subsection_id": "sec::round",
-         "subsection_title": "Rounding Control", "section_name": "Rounding Control"},
+         "subsection_title": "Rounding Control", "section_name": "Rounding Control",
+         "doc_name": "doc.pdf", "start_page": 2},
     ]}]}
 
     sections = [bridge._canonical_section(row) for row in bridge._section_rows(hierarchy)]
