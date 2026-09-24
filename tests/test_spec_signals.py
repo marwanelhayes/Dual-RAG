@@ -130,3 +130,11 @@ def test_table_chunk_missing_a_contract_field_fails_loudly():
 
     with pytest.raises(KeyError):
         spec_signals.build_spec_signals([record])
+
+
+def test_bit_slices_and_dotted_names_are_not_signals():
+    signals = spec_signals.build_spec_signals([table_chunk(
+        ["Signal", "Width"],
+        [["ACADDR[51]", "1"], ["vsew[2:0]", "3"], ["mstatus.MIE", "1"], ["AWVALID", "1"]])])
+
+    assert [signal["original_name"] for signal in signals] == ["AWVALID"]
