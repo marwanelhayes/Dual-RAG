@@ -123,3 +123,19 @@ def test_saved_index_holds_no_metadata_and_hits_are_hydrated_from_records(tmp_pa
     assert stored["metadatas"] == [None, None]
     assert sorted(stored["documents"]) == ["Spec > 1 Intro\n\nalpha body",
                                            "Spec > 1 Intro\n\nbeta body"]
+
+
+def test_manifest_detects_missing_fresh_and_changed_surfaces(tmp_path):
+    records = [_record("a", "first body"), _record("b", "second body")]
+    index_dir = tmp_path / "index"
+    manifest_path = tmp_path / "manifest.json"
+    index_dir.mkdir()
+
+    assert embed.index_manifest_status(
+        records, index_dir, manifest_path)["reason"] == "manifest missing"
+    embed.write_manifest(embed.build_manifest(records), manifest_path)
+    assert embed.index_manifest_status(records, index_dir, manifest_path)["fresh"] is True
+    changed = [{**records[0], "text": records[0]["text"] + " changed"}, *records[1:]]
+    status = embed.index_manifest_status(changed, index_dir, manifest_path)
+    assert status["fresh"] is False
+    assert status["changed_ids"] == ["a"]

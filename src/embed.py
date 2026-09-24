@@ -5,6 +5,7 @@ and freshness manifest configured in ``configure.py``.
 """
 
 import json
+from pathlib import Path
 
 import configure as cfg
 from ingest import content_hash, load_chunks
@@ -266,6 +267,70 @@ def write_manifest(manifest, path=cfg.MANIFEST_PATH):
     """
     with open(path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
+
+
+def index_manifest_status(records, index_dir, manifest_path):
+    """Compare current module/structure embedding surfaces with the saved manifest.
+
+    Args:
+        records: Current retrieval records.
+        index_dir: Directory expected to hold the RTL Chroma index.
+        manifest_path: Path of the manifest written beside that index.
+
+    Returns:
+        Status mapping with ``fresh``, a human ``reason``, and the id deltas.
+    """
+    records = list(records)
+    seen, duplicate_ids = set(), set()
+    for record in records:
+        if record["chunk_id"] in seen:
+            duplicate_ids.add(record["chunk_id"])
+        seen.add(record["chunk_id"])
+    current = build_manifest(records)
+    status = {
+        "fresh": False,
+        "reason": "",
+        "index_dir": str(index_dir),
+        "manifest_path": str(manifest_path),
+        "current_count": len(current),
+        "manifest_count": 0,
+        "added_ids": [],
+        "removed_ids": [],
+        "changed_ids": [],
+    }
+    if not records:
+        status["reason"] = "source records empty"
+        return status
+    if duplicate_ids:
+        status.update(reason="duplicate chunk ids", duplicate_ids=sorted(duplicate_ids))
+        return status
+    if not Path(index_dir).is_dir():
+        status["reason"] = "index missing"
+        return status
+    if not Path(manifest_path).is_file():
+        status["reason"] = "manifest missing"
+        return status
+    try:
+        saved = read_manifest(Path(manifest_path))
+    except (OSError, ValueError, TypeError) as exc:
+        status.update(reason="manifest unreadable", error=f"{type(exc).__name__}: {exc}")
+        return status
+    if (not isinstance(saved, dict)
+            or any(not isinstance(key, str) or not isinstance(value, str)
+                   for key, value in saved.items())):
+        status["reason"] = "manifest invalid"
+        return status
+    current_ids, saved_ids = set(current), set(saved)
+    status.update(
+        manifest_count=len(saved),
+        added_ids=sorted(current_ids - saved_ids),
+        removed_ids=sorted(saved_ids - current_ids),
+        changed_ids=sorted(chunk_id for chunk_id in current_ids & saved_ids
+                           if current[chunk_id] != saved[chunk_id]),
+    )
+    status["fresh"] = current == saved
+    status["reason"] = "fresh" if status["fresh"] else "manifest mismatch"
+    return status
 
 
 def main():

@@ -1,10 +1,12 @@
 """Run exact-first hybrid retrieval over one domain-local vector index."""
 
+import json
 import re
 
 import configure as cfg
 from embed import Embedder, VectorStore, available_device, record_to_document
 from ingest import load_chunks
+from naming import identifier_tokens, normalize_identifier
 
 
 TOKEN_RE = re.compile(r"[a-z0-9_.]+")
@@ -14,6 +16,15 @@ IDENTIFIER_RE = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.]+)\b")
 # These describe the question's domain, not a specific hardware identity.
 CONTEXT_TERMS = frozenset({"RTL", "SPEC", "AXI", "FPU"})
+_IDENTIFIER = re.compile(
+    r"0[xX][0-9A-Fa-f]+|[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+)*"
+)
+_QUERY_STOP_WORDS = frozenset({
+    "the", "and", "for", "from", "into", "what", "where", "which", "who",
+    "does", "how", "this", "that", "with", "begin", "end", "else", "case",
+    "module", "input", "output", "wire", "logic", "assign", "always", "initial",
+    "function", "task", "return", "when", "then", "transfer",
+})
 
 
 def tokenize(text):
@@ -307,6 +318,277 @@ class Retriever:
         pinned_ids = {document.metadata["chunk_id"] for document, _ in pinned}
         remaining = [pair for pair in ranked if pair[0].metadata["chunk_id"] not in pinned_ids]
         return pinned + remaining[:top_k - len(pinned)]
+
+
+def load_records(path=cfg.RTL_CHUNKS_PATH):
+    """Load persisted retrieval records, or return an empty list when absent.
+
+    Args:
+        path: JSONL path written by this module.
+
+    Returns:
+        Retrieval records in file order, empty when the file cannot be read.
+    """
+    try:
+        with open(path, encoding="utf-8") as source:
+            return [json.loads(line) for line in source if line.strip()]
+    except OSError:
+        return []
+
+
+def _query_terms(query):
+    """Extract sufficiently distinctive identifier-like query terms.
+
+    Args:
+        query: Raw retrieval question.
+
+    Returns:
+        Identifier-shaped terms, excluding short words and RTL stop words.
+    """
+    return [term for term in _IDENTIFIER.findall(query)
+            if (term.lower().startswith("0x") or len(term) >= 3)
+            and term.casefold() not in _QUERY_STOP_WORDS]
+
+
+def _term_strength(query_terms, candidates):
+    """Score exact, case-folded, then normalized candidate-name matches.
+
+    Args:
+        query_terms: Identifier-like terms taken from the query.
+        candidates: Candidate names this record can be addressed by.
+
+    Returns:
+        ``0``, ``1``, or ``2`` for decreasing match strength, else None.
+    """
+    exact = set(query_terms)
+    folded = {term.casefold() for term in query_terms}
+    normalized = {normalize_identifier(term) for term in query_terms}
+    candidates = [str(candidate) for candidate in candidates if candidate]
+    if exact.intersection(candidates):
+        return 0
+    if folded.intersection(candidate.casefold() for candidate in candidates):
+        return 1
+    if normalized.intersection(normalize_identifier(candidate) for candidate in candidates):
+        return 2
+    return None
+
+
+def _phrase_strength(query_tokens, normalized_name):
+    """Score a multi-token module name spelled out verbatim inside the query.
+
+    Args:
+        query_tokens: Normalized tokens of the whole query.
+        normalized_name: Space-joined normalized module name.
+
+    Returns:
+        ``3`` when the name appears as a contiguous token run, else None.
+    """
+    tokens = str(normalized_name or "").split()
+    if len(tokens) < 2:
+        return None
+    span = len(tokens)
+    return 3 if any(query_tokens[start:start + span] == tokens
+                    for start in range(len(query_tokens) - span + 1)) else None
+
+
+def exact_lookup(query, records, k=None):
+    """Resolve module/function names and module-owned signals before dense search.
+
+    Args:
+        query: Raw retrieval question.
+        records: Module-first RTL retrieval records.
+        k: Optional maximum number of documents to return.
+
+    Returns:
+        LangChain documents ordered by match strength, signal hits annotated.
+    """
+    query_terms = _query_terms(query)
+    query_tokens = identifier_tokens(query)
+    # Exact hits are pinned first, so plain words colliding with a signal name cannot earn one.
+    signal_terms = [term for term in query_terms
+                    if term != term.casefold() or not term.isalpha()]
+    found = []
+    for position, record in enumerate(records):
+        strength = _term_strength(query_terms, record.get("lookup_terms", []))
+        if strength is None:
+            strength = _phrase_strength(query_tokens, record.get("normalized_name"))
+        # A record the query names by name outranks one that only shares a signal name.
+        named = strength is not None
+        matched_signal = None
+        if record.get("source_type") == "module":
+            signal_matches = []
+            for signal in record.get("signal_metadata", []):
+                signal_strength = _term_strength(
+                    signal_terms,
+                    [signal.get("original_name"), signal.get("normalized_name")])
+                if signal_strength is not None:
+                    signal_matches.append((signal_strength, signal))
+            if signal_matches:
+                signal_matches.sort(key=lambda item: (
+                    item[0], item[1].get("original_name", "").casefold(),
+                    item[1].get("signal_id", "")))
+                signal_strength, matched_signal = signal_matches[0]
+                if strength is None or signal_strength < strength:
+                    strength = signal_strength
+        if strength is None:
+            continue
+        type_order = 0 if matched_signal else 1 if record.get("source_type") == "module" else 2
+        found.append((strength, not named, type_order, record.get("record_id", ""),
+                      position, record, matched_signal))
+    found.sort(key=lambda item: item[:5])
+    documents = []
+    for _, _, _, _, _, record, matched_signal in found:
+        document = record_to_document(record)
+        if matched_signal:
+            document.metadata["exact_match_type"] = "signal"
+            document.metadata["matched_signal"] = matched_signal
+            document.metadata["symbol_name"] = matched_signal.get("original_name")
+            document.metadata["roles"] = (
+                (["driver"] if matched_signal.get("writer_sites") else [])
+                + (["reader"] if matched_signal.get("reader_sites") else [])
+                or ["reference"])
+        documents.append(document)
+    return documents[:k] if k is not None else documents
+
+
+class RTLRetriever:
+    """Keep compiler-metadata exact lookup ahead of hybrid semantic retrieval."""
+
+    def __init__(self, records, store=None, hybrid=None):
+        """Create a lazy RTL retriever.
+
+        Args:
+            records: Module-first RTL retrieval records.
+            store: Optional dense-store test adapter.
+            hybrid: Optional generic hybrid retriever adapter.
+
+        Returns:
+            None.
+        """
+        self.records = list(records)
+        self.store = store
+        self.hybrid = hybrid
+
+    def _hybrid(self):
+        """Load BM25, Chroma, and cross-encoder adapters only when exact lookup is short.
+
+        Returns:
+            The shared hybrid retriever, constructed on first use.
+        """
+        if self.hybrid is None:
+            self.hybrid = Retriever.load(
+                records=self.records, index_dir=cfg.RTL_INDEX_DIR)
+        return self.hybrid
+
+    def search(self, query, top_k=None, k=None):
+        """Return exact module/signal hits, then hybrid-reranked module/block rows.
+
+        Args:
+            query: RTL retrieval question.
+            top_k: Maximum result count used by the generic retriever protocol.
+            k: Equivalent maximum used by the existing RTL API.
+
+        Returns:
+            LangChain documents in final rank order.
+        """
+        wanted = top_k or k or cfg.AGENT_SEARCH_K
+        exact = exact_lookup(query, self.records)
+        signal_exact = [document for document in exact
+                        if document.metadata.get("exact_match_type") == "signal"]
+        structures = []
+        if signal_exact:
+            modules = {document.metadata.get("module") for document in signal_exact}
+            for record in self.records:
+                if (record.get("source_type") != "construct"
+                        or record.get("module") not in modules):
+                    continue
+                names = {str(name).casefold() for name in [
+                    *record.get("signals_read", []),
+                    *record.get("signals_written", []),
+                ]}
+                if any(str(document.metadata.get("symbol_name", "")).casefold()
+                       in names for document in signal_exact):
+                    structures.append(record_to_document(record))
+        if structures:
+            signal_names = {str(document.metadata.get("symbol_name", "")).casefold()
+                            for document in signal_exact}
+            structures.sort(key=lambda document: (
+                not bool(signal_names.intersection(
+                    str(name).casefold()
+                    for name in document.metadata.get("signals_written", []))),
+                document.metadata.get("module", ""),
+                document.metadata.get("start_line", 0),
+            ))
+        if len(exact) >= wanted:
+            if structures:
+                structure_count = 0 if wanted == 1 else min(len(structures), wanted // 2)
+                selected = signal_exact[:wanted - structure_count]
+                selected_structures = structures[:structure_count]
+                output = [item for pair in zip(selected, selected_structures)
+                          for item in pair]
+                output.extend(selected[len(selected_structures):])
+                used = {document.metadata.get("chunk_id") for document in output}
+                output.extend(document for document in exact
+                              if document.metadata.get("chunk_id") not in used)
+                if output:
+                    return output[:wanted]
+            return exact[:wanted]
+        if structures:
+            exact_ids = {document.metadata.get("chunk_id") for document in exact}
+            output = [*exact, *(document for document in structures
+                                if document.metadata.get("chunk_id") not in exact_ids)]
+            if len(output) >= wanted:
+                return output[:wanted]
+        hybrid = None
+        if self.store is not None:
+            ranked = self.store.search(query, k=wanted + len(exact))
+        else:
+            hybrid = self._hybrid()
+            ranked = hybrid.search(query, top_k=wanted + len(exact))
+        output = list(exact)
+        seen = {document.metadata.get("chunk_id") for document in exact}
+        for hit in ranked:
+            document = hit[0] if isinstance(hit, tuple) else hit
+            chunk_id = document.metadata.get("chunk_id")
+            if chunk_id in seen:
+                continue
+            output.append(document)
+            seen.add(chunk_id)
+            if len(output) >= wanted:
+                break
+        modules = {document.metadata.get("module") for document in output
+                   if document.metadata.get("source_type") == "module"}
+        owned = [record_to_document(record) for record in self.records
+                 if record.get("source_type") == "construct"
+                 and record.get("module") in modules
+                 and record.get("chunk_id") not in seen]
+        if hybrid is not None and owned and getattr(hybrid, "reranker", None):
+            reranked = [document for document, _ in hybrid.reranker.rank(
+                query, [*output, *owned])]
+            exact_ids = {document.metadata.get("chunk_id") for document in exact}
+            pinned = [document for document in reranked
+                      if document.metadata.get("chunk_id") in exact_ids][
+                          :max(1, wanted // 2)]
+            pinned_ids = {document.metadata.get("chunk_id") for document in pinned}
+            output = [*pinned, *(document for document in reranked
+                                 if document.metadata.get("chunk_id") not in pinned_ids)]
+        return output[:wanted]
+
+
+def search(query, k=None, records=None, store=None):
+    """Return exact RTL metadata followed by a hybrid-reranked bounded fill.
+
+    Args:
+        query: RTL retrieval question.
+        k: Maximum result count.
+        records: Optional records; defaults to the persisted RTL records.
+        store: Optional dense-store test adapter.
+
+    Returns:
+        LangChain documents in final rank order.
+    """
+    available = load_records() if records is None else records
+    return RTLRetriever(available, store=store).search(query, k=k)
 
 
 def main():

@@ -1312,11 +1312,11 @@ class Runtime:
             Retriever result sequence.
         """
         if self._spec_retriever is None:
-            import rtl_embed
+            from embed import index_manifest_status
             from retrieve import Retriever
 
             records = self.get_spec_records()
-            status = rtl_embed.index_manifest_status(
+            status = index_manifest_status(
                 records, cfg.INDEX_DIR, cfg.MANIFEST_PATH)
             if not status["fresh"]:
                 raise ArtifactFreshnessError(
@@ -1337,14 +1337,16 @@ class Runtime:
         """
         if self._rtl_retriever is None:
             import rtl_embed
+            from embed import index_manifest_status
+            from retrieve import RTLRetriever
 
             records = rtl_embed.retrieval_records(self.get_rtl())
-            status = rtl_embed.index_manifest_status(
+            status = index_manifest_status(
                 records, cfg.RTL_INDEX_DIR, cfg.RTL_MANIFEST_PATH)
             if not status["fresh"]:
                 raise ArtifactFreshnessError(
                     f"RTL index is stale ({status['reason']}); run python src/rtl_embed.py")
-            self._rtl_retriever = rtl_embed.RTLRetriever(records)
+            self._rtl_retriever = RTLRetriever(records)
         adapter = self._rtl_retriever
         if callable(adapter):
             try:
