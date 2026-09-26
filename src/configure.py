@@ -153,7 +153,6 @@ LOCAL_LLM_MODEL = "qwen3:4b"
 LOCAL_LLM_HOST = "http://localhost:11434"
 
 # Agent budgets fit retrieved evidence in one 4,096-token window.
-AGENT_MODEL = "qwen3:4b"
 AGENT_NUM_CTX = 4096
 AGENT_TIMEOUT_S = 300
 AGENT_SEARCH_K = 3
@@ -161,11 +160,6 @@ AGENT_SEARCH_K = 3
 AGENT_RTL_SEARCH_K = 8
 # Sentence-overlap chunking splits one spec passage across neighbours, so a section needs slots.
 AGENT_SPEC_SEARCH_K = 8
-# Sentence-overlap chunking emits near-identical neighbours, so over-fetch and drop them.
-AGENT_SPEC_OVERFETCH = 3
-AGENT_DEDUP_SHINGLE = 8
-# Overlapping chunks may carry different rules; drop only fully covered content.
-AGENT_DEDUP_MAX_OVERLAP = 1.0
 AGENT_RTL_BLOCKS = 6
 # Cross-encoders rate prose above code, so each lane's floor is calibrated per domain.
 AGENT_LANE_SAMPLE = 3
@@ -176,7 +170,6 @@ LANE_FLOOR_FALLBACK = -6.0
 # A lane below the floor keeps a small slice, so weak-but-real evidence stays inspectable.
 AGENT_WEAK_LANE_SHARE = 0.25
 AGENT_REVERSE_TERMS = 6
-AGENT_ABSENCE_TERMS = 6
 AGENT_CONTEXT_CHARS = 12500
 AGENT_SPEC_CONTEXT_CHARS = 4500
 AGENT_RTL_CONTEXT_CHARS = 5500

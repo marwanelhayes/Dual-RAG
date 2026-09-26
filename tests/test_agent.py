@@ -87,26 +87,6 @@ def test_classifier_exposes_exactly_three_routes():
         agent.COMPARISON
 
 
-def test_dedup_preserves_overlapping_requirements_and_hardware_distinctions():
-    shared = "The register holds the trap vector base address and mode. "
-    texts = [shared + "Direct mode uses BASE.",
-             shared + "Vectored mode uses BASE plus four times cause.",
-             "Ready = count < 32;", "Ready = count > 32;",
-             "Ready = count < 64;", "ready = count < 32;"]
-    records = [agent._hit_record(_doc(str(i), text), "spec")
-               for i, text in enumerate(texts)]
-    assert agent.drop_near_duplicates(records) == records
-    assert agent.drop_near_duplicates([*records, dict(records[0], id="copy")]) == records
-
-
-def test_dedup_keeps_a_larger_chunk_that_adds_requirements():
-    text = "A manager must not wait for ready before asserting valid."
-    short = agent._hit_record(_doc("short", text), "spec")
-    long = agent._hit_record(_doc("long", text + " Valid stays high until acceptance."), "spec")
-    assert agent.drop_near_duplicates([short, long]) == [short, long]
-    assert agent.drop_near_duplicates([long, short]) == [long]
-
-
 def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     calls = []
     records, hierarchy, signals, rtl, bridge = _runtime_data()
@@ -146,7 +126,6 @@ def test_requested_route_is_separate_from_observed_evidence():
 
     assert state["route_prior"] == agent.SPEC
     assert state["query_type"] == agent.SPEC
-    assert state["observed_query_type"] == agent.RTL
     assert state["answer_status"] == "insufficient_evidence"
     assert state["lane_credible"] == {"spec": False, "rtl": True}
 
@@ -208,13 +187,6 @@ def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     assert model_calls == []
     assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
     assert state["trace"][-1] == {"event": "answer", "model_called": False}
-
-
-def test_retrieval_absence_is_never_presented_as_corpus_absence():
-    context = agent.merge_evidence({"question": "mimpid?", "query_type": agent.SPEC,
-                                   "absent_terms": ["mimpid"]})
-    assert "absent from" not in context
-    assert not hasattr(agent, "absent_spec_terms")
 
 
 def test_weak_lane_keeps_only_a_slice_of_the_context_budget():
@@ -511,36 +483,6 @@ def test_trace_report_exposes_query_type_and_structured_events():
     assert '"final_context": "bounded evidence"' in report
 
 
-def test_sliding_window_near_duplicates_collapse_to_one_passage():
-    """Drop chunks that merely re-open the previous chunk's sentences."""
-    shared = ("The handshake has the following sequence of events: the master puts "
-              "the address on AWADDR and asserts AWVALID in clock cycle two. ")
-    records = [
-        {"domain": "spec", "id": "a", "text": shared + "It completes on cycle four."},
-        {"domain": "spec", "id": "b", "text": "Preamble sentence. " + shared},
-        {"domain": "spec", "id": "c", "text": "Credited transport uses a wholly "
-                                              "different crediting mechanism for AW."},
-    ]
-
-    kept = agent.drop_near_duplicates(records, size=8, threshold=0.25)
-
-    assert [item["id"] for item in kept] == ["a", "c"]
-
-
-def test_near_duplicate_filter_keeps_distinct_chunks_from_one_section():
-    """Preserve neighbouring chunks that share only ordinary vocabulary."""
-    records = [
-        {"domain": "spec", "id": "a", "text": "For transactions on the write channels "
-                                              "the manager must not wait for AWREADY."},
-        {"domain": "spec", "id": "b", "text": "For transactions on the read channels "
-                                              "the subordinate drives RVALID and RLAST."},
-    ]
-
-    kept = agent.drop_near_duplicates(records, size=8, threshold=0.25)
-
-    assert [item["id"] for item in kept] == ["a", "b"]
-
-
 def test_alignment_rows_state_how_the_identity_was_found_not_a_verdict():
     """Name the link's method so it cannot read as a behavioural verdict."""
     matches = [{"spec_original_name": "AWVALID", "rtl_original_name": "MAWValid",
@@ -574,3 +516,8 @@ def test_query_recovery_is_gone():
         assert not hasattr(agent, name)
     assert not hasattr(retrieve, "reciprocal_rank_fusion")
     assert "query_recovery" not in inspect.signature(agent.build_graph).parameters
+
+
+def test_dead_agent_helpers_are_gone():
+    for name in ("observed_route", "ask", "drop_near_duplicates", "_shingles"):
+        assert not hasattr(agent, name)
