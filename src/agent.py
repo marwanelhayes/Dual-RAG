@@ -612,11 +612,8 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                        or item.get("metadata", {}).get("start_page")
                        for item in hits],
                 sections=list(dict.fromkeys(
-                    item.get("metadata", {}).get("subsection_id")
-                    or item.get("metadata", {}).get("section_id")
-                    for item in hits
-                    if (item.get("metadata", {}).get("subsection_id")
-                        or item.get("metadata", {}).get("section_id")))),
+                    item["metadata"].get("hierarchy_id") for item in hits
+                    if item["metadata"].get("hierarchy_id"))),
                 signals=[item.get("name") or item.get("original_name")
                          for item in signals]),
         }

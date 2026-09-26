@@ -65,14 +65,9 @@ def test_spec_chunk_contract_contains_every_required_provenance_field():
         "chunk_id": "axi_spec#0001#000",
         "chunk_type": "prose",
         "document_id": "axi_spec",
-        "doc_name": "AXI spec.pdf",
         "source_file": "AXI spec.pdf",
         "context_header": "AXI > Write address",
         "hierarchy_id": "axi_spec::sec::0001",
-        "section_id": "axi_spec::sec::0000",
-        "section_title": "Channels",
-        "subsection_id": "axi_spec::sec::0001",
-        "subsection_title": "Write address",
         "start_page": 12,
         "end_page": 12,
         "table_ids": ["axi_spec::table::A3.2"],
@@ -81,10 +76,9 @@ def test_spec_chunk_contract_contains_every_required_provenance_field():
 
     assert record["record_id"] == "spec::chunk::axi_spec#0001#000"
     assert record["document_id"] == "axi_spec"
-    assert record["section_id"] == "axi_spec::sec::0000"
-    assert record["section_title"] == "Channels"
-    assert record["subsection_id"] == "axi_spec::sec::0001"
-    assert record["subsection_title"] == "Write address"
+    assert record["source_id"] == "axi_spec::sec::0001"
+    assert not {"section_id", "section_title", "subsection_id", "subsection_title",
+                "doc_name"} & set(record)
     assert record["page"] == 12
     assert record["table_ids"] == ["axi_spec::table::A3.2"]
     assert record["source_file"] == "AXI spec.pdf"

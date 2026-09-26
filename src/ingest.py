@@ -961,20 +961,13 @@ def enrich_spec_record(record):
         *record.get("table_ids", []),
         *([own_table_id] if own_table_id else []),
     ]))
-    section_title = record.get("section_title") or record.get("section_name")
     record.update({
         "record_id": f"spec::chunk::{record['chunk_id']}",
-        "source_id": (own_table_id if is_table else
-                      record.get("hierarchy_id") or record.get("subsection_id")
-                      or record.get("section_id")),
+        "source_id": own_table_id if is_table else record.get("hierarchy_id"),
         "document_id": document_id,
-        "section_id": record.get("section_id"),
-        "section_title": section_title,
-        "subsection_id": record.get("subsection_id"),
-        "subsection_title": record.get("subsection_title"),
         "page": record.get("page", record.get("start_page")),
         "table_ids": table_ids,
-        "source_file": record.get("source_file") or record.get("doc_name"),
+        "source_file": record.get("source_file"),
         "content_hash": content_hash(record.get("context_header", ""), text),
     })
     return record
@@ -1139,14 +1132,9 @@ def ingest_pdf(path):
                 "chunk_id": f"{doc_id}#{sec['index']:04d}#{k:03d}",
                 "chunk_type": "prose",
                 "document_id": doc_id,
-                "doc_name": doc_name,
                 "source_file": doc_name,
                 "revision": revision,
                 "hierarchy_id": sec["node_id"],
-                "section_id": sec["section_id"],
-                "section_title": sec["section_title"],
-                "subsection_id": sec["subsection_id"],
-                "subsection_title": sec["subsection_title"],
                 "section_number": sec["section_number"],
                 "section_name": sec["section_name"],
                 "section_path": sec["path"],
@@ -1156,7 +1144,6 @@ def ingest_pdf(path):
                 "start_page": min(chunk_pages),
                 "end_page": max(chunk_pages),
                 "page": min(chunk_pages),
-                "chunk_index": k,
                 "table_ids": find_table_refs(body, tables),
                 "text": body,
             }))
@@ -1174,14 +1161,9 @@ def ingest_pdf(path):
                 "chunk_id": f"{doc_id}#table#{table['label']}{suffix}",
                 "chunk_type": "table",
                 "document_id": doc_id,
-                "doc_name": doc_name,
                 "source_file": doc_name,
                 "revision": revision,
                 "hierarchy_id": table["hierarchy_id"],
-                "section_id": table["section_id"],
-                "section_title": table["section_title"],
-                "subsection_id": table["subsection_id"],
-                "subsection_title": table["subsection_title"],
                 "section_number": table["section_number"],
                 "section_name": table["subsection_title"] or table["section_title"],
                 "section_path": table["section_path"],

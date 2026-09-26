@@ -192,4 +192,5 @@ def test_signal_records_follow_the_consolidated_contract():
     assert signal["hierarchy_id"] == "fpu_spec::sec::0001"
     assert signal["section_path"] == ["Floating Point Unit", "Interface"]
     assert not {"id", "original_name", "row_kind", "direction", "source_role",
-                "source_role_source", "section_title", "subsection_title"} & set(signal)
+                "source_role_source", "section_title", "subsection_title",
+                "section_id", "subsection_id"} & set(signal)

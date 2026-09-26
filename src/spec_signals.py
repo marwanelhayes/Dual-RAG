@@ -104,8 +104,6 @@ def _signal_record(record, signal_id, name, row_index, **stated):
         "document_id": record["document_id"],
         "hierarchy_id": record["hierarchy_id"],
         "section_path": record["section_path"],
-        "section_id": record.get("section_id"),
-        "subsection_id": record.get("subsection_id"),
         "table_id": None,
         "table_label": None,
         "table_caption": None,
