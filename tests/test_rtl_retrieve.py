@@ -17,8 +17,7 @@ def test_exact_signal_lookup_returns_owning_module_metadata_not_a_signal_vector(
     assert hit.metadata["source_type"] == "module"
     assert hit.metadata["module"] == "fpu_decoder"
     assert hit.metadata["exact_match_type"] == "signal"
-    assert hit.metadata["matched_signal"]["signal_id"] == "rtl::sig::fpu_decoder::FPUValidD"
-    assert hit.metadata["roles"] == ["driver"]
+    assert hit.metadata["symbol_name"] == "FPUValidD"
 
 
 def test_exact_lookup_resolves_a_module_named_in_expanded_words(tmp_path):
@@ -64,7 +63,7 @@ def test_exact_signal_search_fills_with_ast_blocks_using_that_signal(tmp_path):
     source.write_text("module fpu_decoder; endmodule\n")
     records = re_.retrieval_records(_rtl(source))
 
-    hits = retrieve.search("Where is FPUValidD written?", k=2, records=records)
+    hits = retrieve.RTLRetriever(records).search("Where is FPUValidD written?", top_k=2)
 
     assert hits[0].metadata["exact_match_type"] == "signal"
     assert hits[1].metadata["source_type"] == "construct"
@@ -85,8 +84,8 @@ def test_exact_signal_search_prioritizes_writer_block_across_owning_modules(tmp_
     }]
     rtl["modules"]["child"] = reader
 
-    hits = retrieve.search("Where is FPUValidD written?", k=3,
-                      records=re_.retrieval_records(rtl))
+    hits = retrieve.RTLRetriever(re_.retrieval_records(rtl)).search(
+        "Where is FPUValidD written?", top_k=3)
 
     assert hits[-1].metadata["module"] == "fpu_decoder"
     assert "FPUValidD" in hits[-1].metadata["signals_written"]
@@ -103,9 +102,9 @@ def test_exact_lookup_runs_before_loading_the_dense_model(monkeypatch, tmp_path)
                         lambda *args, **kwargs: (_ for _ in ()).throw(
                             AssertionError("embedder loaded")))
 
-    hit = retrieve.search("FPUValidD", k=1, records=records)[0]
+    hit = retrieve.RTLRetriever(records).search("FPUValidD", top_k=1)[0]
 
-    assert hit.metadata["matched_signal"]["original_name"] == "FPUValidD"
+    assert hit.metadata["symbol_name"] == "FPUValidD"
 
 
 def test_ast_signal_blocks_precede_dense_fill_after_exact(tmp_path):
@@ -116,13 +115,14 @@ def test_ast_signal_blocks_precede_dense_fill_after_exact(tmp_path):
                      metadata={"chunk_id": "rtl:other", "module": "other",
                                "source_type": "module"})
 
-    class FakeStore:
-        def search(self, query, k):
+    class FakeHybrid:
+        def search(self, query, top_k):
             return [(dense, 0.9)]
 
-    hits = retrieve.search("FPUValidD behavior", k=2, records=records, store=FakeStore())
+    hits = retrieve.RTLRetriever(records, hybrid=FakeHybrid()).search(
+        "FPUValidD behavior", top_k=2)
 
-    assert hits[0].metadata["matched_signal"]["original_name"] == "FPUValidD"
+    assert hits[0].metadata["symbol_name"] == "FPUValidD"
     assert hits[1].metadata["module"] == "fpu_decoder"
     assert "FPUValidD" in hits[1].metadata["signals_written"]
 
@@ -144,7 +144,7 @@ def test_non_exact_fill_uses_domain_hybrid_reranking(monkeypatch, tmp_path):
     monkeypatch.setattr(retrieve.Retriever, "load",
                         lambda records, index_dir: FakeHybrid())
 
-    hits = retrieve.search("pipeline forwarding behavior", k=1, records=records)
+    hits = retrieve.RTLRetriever(records).search("pipeline forwarding behavior", top_k=1)
 
     assert calls == [("pipeline forwarding behavior", 1)]
     assert hits == [document]
@@ -231,12 +231,12 @@ def test_window_hits_fold_into_one_hit_for_their_record():
     window = {**base, "chunk_id": "rtl:m:w1", "text": "comments: stall logic"}
     other = {**base, "chunk_id": "rtl:n", "module": "n", "text": "module n"}
 
-    class Store:
-        def search(self, query, k):
+    class Hybrid:
+        def search(self, query, top_k):
             return [(retrieve.record_to_document(record), 0.9)
                     for record in (window, base, other)]
 
-    hits = retrieve.RTLRetriever([base, window, other], store=Store()).search(
+    hits = retrieve.RTLRetriever([base, window, other], hybrid=Hybrid()).search(
         "where is the stall logic", top_k=2)
 
     assert [hit.metadata["chunk_id"] for hit in hits] == ["rtl:m", "rtl:n"]

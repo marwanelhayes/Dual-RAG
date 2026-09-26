@@ -3,7 +3,6 @@
 from langchain_core.documents import Document
 
 import retrieve
-from embed import available_device
 
 
 def _doc(chunk_id, text):
@@ -79,12 +78,6 @@ def test_rtl_candidates_are_ranked_without_any_authority_shift():
     documents = [_doc("rtl:a", "one"), _doc("rtl:b", "two")]
 
     assert retrieve.apply_authority(documents, [2.0, 1.0], weight=5.0) == [2.0, 1.0]
-
-
-def test_model_device_preserves_cpu_and_falls_back_without_cuda():
-    assert available_device("cpu", cuda_available=False) == "cpu"
-    assert available_device("cuda", cuda_available=True) == "cuda"
-    assert available_device("cuda:1", cuda_available=False) == "cpu"
 
 
 def test_tokenizer_keeps_hardware_punctuation_inside_tokens():
@@ -203,3 +196,9 @@ def test_graph_store_and_graph_sentence_helpers_are_gone():
     assert not hasattr(retrieve, "GraphStore")
     assert not hasattr(retrieve, "node_sentence")
     assert not hasattr(retrieve, "edge_sentence")
+
+
+def test_dead_retrieval_entry_points_are_gone():
+    assert not hasattr(retrieve, "search")
+    assert not hasattr(retrieve, "load_records")
+    assert not hasattr(retrieve, "main")

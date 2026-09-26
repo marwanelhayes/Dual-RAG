@@ -1,11 +1,9 @@
 """Run exact-first hybrid retrieval over one domain-local vector index."""
 
-import json
 import re
 
 import configure as cfg
 from embed import Embedder, VectorStore, available_device, record_to_document
-from ingest import load_chunks
 from naming import identifier_tokens, normalize_identifier
 
 from langchain_core.documents import Document
@@ -256,12 +254,11 @@ class Retriever:
         self.reranker = reranker
 
     @classmethod
-    def load(cls, records=None, index_dir=cfg.INDEX_DIR, embedder=None,
-             reranker=None):
+    def load(cls, records, index_dir=cfg.INDEX_DIR, embedder=None, reranker=None):
         """Load a complete hybrid retriever for one domain-local corpus.
 
         Args:
-            records: Optional records; defaults to specification chunks.
+            records: Domain records the index was built from.
             index_dir: Directory containing the matching Chroma index.
             embedder: Optional shared embedding adapter.
             reranker: Optional cross-encoder adapter.
@@ -269,7 +266,6 @@ class Retriever:
         Returns:
             A fully assembled retriever.
         """
-        records = load_chunks() if records is None else records
         documents = {record["chunk_id"]: record_to_document(record) for record in records}
         embedder = embedder or Embedder()
         store = VectorStore.load(index_dir, records, embedder=embedder)
@@ -322,22 +318,6 @@ class Retriever:
         pinned_ids = {document.metadata["chunk_id"] for document, _ in pinned}
         remaining = [pair for pair in ranked if pair[0].metadata["chunk_id"] not in pinned_ids]
         return pinned + remaining[:top_k - len(pinned)]
-
-
-def load_records(path=cfg.RTL_CHUNKS_PATH):
-    """Load persisted retrieval records, or return an empty list when absent.
-
-    Args:
-        path: JSONL path written by this module.
-
-    Returns:
-        Retrieval records in file order, empty when the file cannot be read.
-    """
-    try:
-        with open(path, encoding="utf-8") as source:
-            return [json.loads(line) for line in source if line.strip()]
-    except OSError:
-        return []
 
 
 def _query_terms(query):
@@ -445,12 +425,7 @@ def exact_lookup(query, records, k=None):
         document = record_to_document(record)
         if matched_signal:
             document.metadata["exact_match_type"] = "signal"
-            document.metadata["matched_signal"] = matched_signal
             document.metadata["symbol_name"] = matched_signal.get("original_name")
-            document.metadata["roles"] = (
-                (["driver"] if matched_signal.get("writer_sites") else [])
-                + (["reader"] if matched_signal.get("reader_sites") else [])
-                or ["reference"])
         documents.append(document)
     return documents[:k] if k is not None else documents
 
@@ -476,19 +451,17 @@ def _fold_window(document):
 class RTLRetriever:
     """Keep compiler-metadata exact lookup ahead of hybrid semantic retrieval."""
 
-    def __init__(self, records, store=None, hybrid=None):
+    def __init__(self, records, hybrid=None):
         """Create a lazy RTL retriever.
 
         Args:
             records: Module-first RTL retrieval records.
-            store: Optional dense-store test adapter.
             hybrid: Optional generic hybrid retriever adapter.
 
         Returns:
             None.
         """
         self.records = list(records)
-        self.store = store
         self.hybrid = hybrid
 
     def _hybrid(self):
@@ -502,18 +475,17 @@ class RTLRetriever:
                 records=self.records, index_dir=cfg.RTL_INDEX_DIR)
         return self.hybrid
 
-    def search(self, query, top_k=None, k=None):
+    def search(self, query, top_k=cfg.AGENT_SEARCH_K):
         """Return exact module/signal hits, then hybrid-reranked module/block rows.
 
         Args:
             query: RTL retrieval question.
-            top_k: Maximum result count used by the generic retriever protocol.
-            k: Equivalent maximum used by the existing RTL API.
+            top_k: Maximum result count.
 
         Returns:
             LangChain documents in final rank order.
         """
-        wanted = top_k or k or cfg.AGENT_SEARCH_K
+        wanted = top_k
         exact = exact_lookup(query, self.records)
         signal_exact = [document for document in exact
                         if document.metadata.get("exact_match_type") == "signal"]
@@ -561,12 +533,8 @@ class RTLRetriever:
                                 if document.metadata.get("chunk_id") not in exact_ids)]
             if len(output) >= wanted:
                 return output[:wanted]
-        hybrid = None
-        if self.store is not None:
-            ranked = self.store.search(query, k=wanted + len(exact))
-        else:
-            hybrid = self._hybrid()
-            ranked = hybrid.search(query, top_k=wanted + len(exact))
+        hybrid = self._hybrid()
+        ranked = hybrid.search(query, top_k=wanted + len(exact))
         output = list(exact)
         seen = {document.metadata.get("chunk_id") for document in exact}
         for hit in ranked:
@@ -588,7 +556,7 @@ class RTLRetriever:
                     and document.metadata["chunk_id"] not in seen):
                 owned.setdefault(document.metadata["chunk_id"], document)
         owned = list(owned.values())
-        if hybrid is not None and owned and getattr(hybrid, "reranker", None):
+        if owned and getattr(hybrid, "reranker", None):
             reranked = [document for document, _ in hybrid.reranker.rank(
                 query, [*output, *owned])]
             exact_ids = {document.metadata.get("chunk_id") for document in exact}
@@ -599,43 +567,3 @@ class RTLRetriever:
             output = [*pinned, *(document for document in reranked
                                  if document.metadata.get("chunk_id") not in pinned_ids)]
         return output[:wanted]
-
-
-def search(query, k=None, records=None, store=None):
-    """Return exact RTL metadata followed by a hybrid-reranked bounded fill.
-
-    Args:
-        query: RTL retrieval question.
-        k: Maximum result count.
-        records: Optional records; defaults to the persisted RTL records.
-        store: Optional dense-store test adapter.
-
-    Returns:
-        LangChain documents in final rank order.
-    """
-    available = load_records() if records is None else records
-    return RTLRetriever(available, store=store).search(query, k=k)
-
-
-def main():
-    """Load the specification index and run one inspectable smoke query.
-
-    Returns:
-        None.
-    """
-    records = load_chunks()
-    if not records:
-        raise SystemExit(f"no chunks in {cfg.CHUNKS_PATH}; run src/ingest.py first")
-    if not cfg.INDEX_DIR.exists():
-        raise SystemExit(f"no index at {cfg.INDEX_DIR}; run src/embed.py first")
-    retriever = Retriever.load(records)
-    query = "What does AWVALID indicate on the AXI write address channel?"
-    candidate_ids = retriever.candidates(query)
-    hits = retriever.search(query)
-    print(f"====  {len(candidate_ids)} candidates -> top {len(hits)}:")
-    for document, score in hits:
-        print(f"  {score:+.3f}  {document.metadata['context_header']}")
-
-
-if __name__ == "__main__":
-    main()

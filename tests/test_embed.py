@@ -139,3 +139,9 @@ def test_manifest_detects_missing_fresh_and_changed_surfaces(tmp_path):
     status = embed.index_manifest_status(changed, index_dir, manifest_path)
     assert status["fresh"] is False
     assert status["changed_ids"] == ["a"]
+
+
+def test_model_device_preserves_cpu_and_falls_back_without_cuda():
+    assert embed.available_device("cpu", cuda_available=False) == "cpu"
+    assert embed.available_device("cuda", cuda_available=True) == "cuda"
+    assert embed.available_device("cuda:1", cuda_available=False) == "cpu"
