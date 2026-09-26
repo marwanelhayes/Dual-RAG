@@ -46,14 +46,12 @@ def test_comparison_requires_quotes_from_both_domains():
         "missing_domain_citations"]
 
 
-def test_truncated_or_unknown_location_passages_cannot_authorize_quotes():
+def test_unknown_location_passages_cannot_authorize_quotes():
     item = {"id": "s1", "text": "AWVALID must remain asserted.", "metadata": {"start_page": 12}}
     state = {"spec_evidence": [item]}
-    context = agent._spec_context([item], [])
-    assert "[spec:s1 p.12]" in agent.citable_evidence(state, context)
-    assert agent.citable_evidence(state, context[:-5]) == {}
+    assert "[spec:s1 p.12]" in agent.citable_evidence(state)
     item["metadata"] = {}
-    assert agent.citable_evidence(state, agent._spec_context([item], [])) == {}
+    assert agent.citable_evidence(state) == {}
 
 
 @pytest.mark.parametrize("empty_lane", ["spec", "rtl"])

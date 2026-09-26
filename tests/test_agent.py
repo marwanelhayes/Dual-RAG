@@ -180,23 +180,21 @@ def test_empty_spec_selection_does_not_return_unrelated_bridge_rows():
     assert matches == [] and modules == []
 
 
-def test_merged_context_is_bounded_and_separates_domains(monkeypatch):
-    monkeypatch.setattr(agent.cfg, "AGENT_CONTEXT_CHARS", 500, raising=False)
+def test_merged_context_keeps_every_passage_whole_and_separates_domains():
     state = {
         "question": "Does this match?", "query_type": agent.COMPARISON,
-        "spec_evidence": [{"id": "s", "text": "s" * 500,
-                           "metadata": {"start_page": 1}}],
+        "spec_evidence": [{"id": f"s{i}", "text": str(i) * 5000,
+                           "metadata": {"start_page": 1}} for i in range(2)],
         "spec_signals": [], "bridge_matches": [], "module_matches": [],
-        "rtl_evidence": [{"id": "r", "text": "r" * 500,
+        "rtl_evidence": [{"id": "r", "text": "r" * 5000,
                           "metadata": {"file": "r.sv", "line": 2}}],
-        "rtl_blocks": [],
     }
 
     context = agent.merge_evidence(state)
 
-    assert len(context) <= 500
+    assert all(text * 5000 in context for text in ("0", "1", "r"))
     assert "SPEC EVIDENCE" in context and "RTL EVIDENCE" in context
-    assert context.endswith("[TRUNCATED]")
+    assert "[TRUNCATED]" not in context
 
 
 def test_trace_report_exposes_query_type_and_structured_events():

@@ -335,22 +335,6 @@ def _resolved_fields(mapping):
     return {key: value for key, value in mapping.items() if key != "candidates"}
 
 
-def _bounded(text, limit):
-    """Truncate evidence at a deterministic character boundary.
-
-    Args:
-        text: Evidence text.
-        limit: Maximum characters.
-
-    Returns:
-        Original or visibly truncated text.
-    """
-    text = str(text or "")
-    if len(text) <= limit:
-        return text
-    return text[:max(0, limit - 15)].rstrip() + "\n[TRUNCATED]"
-
-
 def _spec_context(evidence, signals):
     """Render bounded, citable specification evidence.
 
@@ -476,51 +460,32 @@ def _rtl_context(evidence):
 def merge_evidence(state):
     """Build the only context that the local answer model is allowed to see.
 
+    Passages are never cut: a partial passage cannot be cited, so the context size is set
+    by how many passages each lane retrieves.
+
     Args:
         state: Current graph state.
 
     Returns:
-        Bounded final context string.
+        The question, its route, and every retrieved passage and alignment row.
     """
-    total_limit = int(cfg.AGENT_CONTEXT_CHARS)
-    has_spec = bool(state.get("spec_evidence"))
-    has_rtl = bool(state.get("rtl_evidence"))
-    has_bridge = bool(state.get("bridge_matches") or state.get("module_matches"))
-    active = int(has_spec) + int(has_rtl) + int(has_bridge)
-    overhead = min(350, max(100, total_limit // 4))
-    available = max(total_limit - overhead, active * 48)
-    if has_spec and has_rtl:
-        spec_share, rtl_share = 0.40, 0.45
-    else:
-        spec_share, rtl_share = 0.85, 0.85
-    bridge_share = max(0.10, 1.0 - spec_share - rtl_share)
-    spec_limit = min(int(cfg.AGENT_SPEC_CONTEXT_CHARS),
-                     max(48, int(available * spec_share)))
-    rtl_limit = min(int(cfg.AGENT_RTL_CONTEXT_CHARS),
-                    max(48, int(available * rtl_share)))
-    bridge_limit = min(int(cfg.AGENT_BRIDGE_CONTEXT_CHARS),
-                       max(48, int(available * bridge_share)))
     sections = [f"QUESTION:\n{state['question']}", f"QUERY TYPE:\n{state['query_type']}"]
     if state.get("spec_evidence"):
-        sections.append("SPEC EVIDENCE:\n" + _bounded(
-            _spec_context(state["spec_evidence"], state.get("spec_signals", [])),
-            spec_limit))
+        sections.append("SPEC EVIDENCE:\n" + _spec_context(
+            state["spec_evidence"], state.get("spec_signals", [])))
     if state.get("bridge_matches") or state.get("module_matches"):
-        sections.append("CROSS-DOMAIN ALIGNMENTS:\n" + _bounded(
-            _bridge_context(state.get("bridge_matches", []),
-                            state.get("module_matches", [])), bridge_limit))
+        sections.append("CROSS-DOMAIN ALIGNMENTS:\n" + _bridge_context(
+            state.get("bridge_matches", []), state.get("module_matches", [])))
     if state.get("rtl_evidence"):
-        sections.append("RTL EVIDENCE:\n" + _bounded(
-            _rtl_context(state["rtl_evidence"]),
-            rtl_limit))
-    return _bounded("\n\n".join(sections), total_limit)
+        sections.append("RTL EVIDENCE:\n" + _rtl_context(state["rtl_evidence"]))
+    return "\n\n".join(sections)
 
 
-def citable_evidence(state, context):
-    """Catalog complete visible passages with usable source locations.
+def citable_evidence(state):
+    """Catalog the context's passages that carry a usable source location.
 
-    A retrieved ID alone is insufficient: truncated or ambiguously labeled passages
-    cannot authorize a citation. The model never chooses the source location.
+    Passages without a location, or sharing a label with different text, cannot authorize
+    a citation. The model never chooses the source location.
     """
     catalog, ambiguous = {}, set()
     groups = (("spec", state.get("spec_evidence", [])),
@@ -536,8 +501,6 @@ def citable_evidence(state, context):
                 continue
             rendered = (_spec_context([item], []) if kind == "spec" else
                         _rtl_context([item]))
-            if rendered not in context:
-                continue
             citation = rendered.split("]", 1)[0] + "]"
             text = rendered.split("\n", 1)[1]
             value = {"domain": "spec" if kind == "spec" else "rtl", "text": text,
@@ -841,7 +804,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         }
 
     def merge_node(state):
-        """Merge evidence under hard character budgets.
+        """Merge every retrieved passage into the model's context.
 
         Args:
             state: Current graph state.
@@ -850,11 +813,8 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             State update with the merged context and its trace event.
         """
         context = merge_evidence(state)
-        return {"final_context": context, "citable_evidence": citable_evidence(state, context),
-                "trace": _append_trace(
-                    state, "evidence_merge", characters=len(context),
-                    limit=int(cfg.AGENT_CONTEXT_CHARS),
-                    truncated="[TRUNCATED]" in context)}
+        return {"final_context": context, "citable_evidence": citable_evidence(state),
+                "trace": _append_trace(state, "evidence_merge", characters=len(context))}
 
     def answer_node(state):
         """Ask the model only when every domain the route requires has a citable passage.
