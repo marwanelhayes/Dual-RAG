@@ -32,7 +32,6 @@ class State(TypedDict, total=False):
     final_context: str
     trace: list
     answer: str
-    spec_rankings: list
     citable_evidence: dict
     answer_status: str
     answer_validation: dict
@@ -257,36 +256,6 @@ def credible_lanes(scores, floors):
     fallback = float(cfg.LANE_FLOOR_FALLBACK)
     return {lane: score is not None and score >= floors.get(lane, fallback)
             for lane, score in scores.items()}
-
-
-def reverse_bridge_terms(rtl_evidence, bridge, limit=None):
-    """Return spec-side names aligned to the modules the RTL lane already reached.
-
-    Args:
-        rtl_evidence: RTL retrieval records.
-        bridge: Bridge artifact.
-        limit: Optional maximum term count.
-
-    Returns:
-        Spec-side signal and section names for a second spec query.
-    """
-    if limit is None:
-        limit = int(cfg.AGENT_REVERSE_TERMS)
-    modules = {str(item.get("metadata", {}).get("module") or "").casefold()
-               for item in rtl_evidence}
-    modules.discard("")
-    if not modules:
-        return []
-    terms = []
-    for mapping in [*(bridge.get("signal_alignments") or []),
-                    *(bridge.get("module_alignments") or [])]:
-        if str(mapping.get("rtl_module_name") or "").casefold() not in modules:
-            continue
-        for key in ("spec_original_name", "spec_signal", "spec_section_title"):
-            value = mapping.get(key)
-            if value and value not in terms:
-                terms.append(str(value))
-    return terms[:limit]
 
 
 def _hit_record(hit, domain):
@@ -943,7 +912,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             State update carrying the route prior and its trace event.
         """
         prior = classify_query(state["question"])
-        return {"route_prior": prior, "query_type": prior, "spec_rankings": [],
+        return {"route_prior": prior, "query_type": prior,
                 "trace": _append_trace(state, "route_prior", query_type=prior)}
 
     def spec_node(state):
@@ -1031,39 +1000,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                 modules=list(dict.fromkeys(
                     item.get("metadata", {}).get("module") for item in hits
                     if item.get("metadata", {}).get("module")))),
-        }
-
-    def expand_node(state):
-        """Enrich each lane with the alignments the other lane's evidence unlocked.
-
-        Args:
-            state: Current graph state.
-
-        Returns:
-            State update with widened specification evidence and its trace event.
-        """
-        spec_evidence = list(state.get("spec_evidence", []))
-        reranker = runtime.get_reranker()
-        spec_score = lane_strength(reranker, state["question"], spec_evidence)
-        floor = runtime.get_lane_floors().get(
-            "spec", float(cfg.LANE_FLOOR_FALLBACK))
-        terms = []
-        spec_rankings = [spec_evidence]
-        if spec_score is None or spec_score < floor:
-            terms = reverse_bridge_terms(state.get("rtl_evidence", []),
-                                         runtime.get_bridge())
-            if terms:
-                raw = runtime.spec_search(" ".join(terms),
-                                          cfg.AGENT_SEARCH_K)
-                extra = [_hit_record(item, "spec") for item in raw]
-                spec_rankings.append(extra)
-                spec_evidence = _dedupe_evidence([*spec_evidence, *extra])
-        return {
-            "spec_evidence": spec_evidence,
-            "spec_rankings": spec_rankings,
-            "trace": _append_trace(
-                state, "evidence_expansion", reverse_terms=terms,
-                spec_chunks=len(spec_evidence)),
         }
 
     def allocate_node(state):
@@ -1162,7 +1098,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_node("retrieve_spec", spec_node)
     graph.add_node("retrieve_rtl", rtl_node)
     graph.add_node("lookup_bridge", bridge_node)
-    graph.add_node("expand", expand_node)
     graph.add_node("allocate", allocate_node)
     graph.add_node("merge", merge_node)
     graph.add_node("answer", answer_node)
@@ -1171,8 +1106,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_edge("classify", "retrieve_spec")
     graph.add_edge("retrieve_spec", "retrieve_rtl")
     graph.add_edge("retrieve_rtl", "lookup_bridge")
-    graph.add_edge("lookup_bridge", "expand")
-    graph.add_edge("expand", "allocate")
+    graph.add_edge("lookup_bridge", "allocate")
     graph.add_edge("allocate", "merge")
     graph.add_edge("merge", "answer")
     graph.add_edge("answer", END)

@@ -354,7 +354,7 @@ class RTLRetriever:
                 records=self.records, index_dir=cfg.RTL_INDEX_DIR)
         return self.hybrid
 
-    def search(self, query, top_k=cfg.AGENT_SEARCH_K):
+    def search(self, query, top_k=cfg.RETRIEVE_TOP_K):
         """Return exact module/signal hits, then hybrid-reranked module/block rows.
 
         Args:

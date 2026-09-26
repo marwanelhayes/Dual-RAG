@@ -103,7 +103,7 @@ def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     assert calls == ["spec", "rtl"]
     assert [event["event"] for event in state["trace"]] == [
         "route_prior", "spec_retrieval", "rtl_retrieval", "bridge_lookup",
-        "evidence_expansion", "lane_allocation", "evidence_merge", "answer",
+        "lane_allocation", "evidence_merge", "answer",
     ]
 
 
@@ -141,30 +141,6 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
     assert state["query_type"] == agent.COMPARISON
     assert state["answer_status"] == "rejected"
     assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
-
-
-def test_weak_spec_lane_requeries_the_spec_through_reverse_bridge_terms():
-    queries = []
-    records, signals, rtl, bridge = _runtime_data()
-
-    def spec_search(query, k):
-        queries.append(query)
-        if len(queries) == 1:
-            return [_doc("spec#1", "unrelated prose", section_id="sec:fpu")]
-        return [_doc("spec#2", "Rounding mode selects RNE.", section_id="sec:fpu",
-                     subsection_id="sec:round", start_page=12)]
-
-    app = agent.build_graph(
-        spec_search,
-        lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
-                               file="rtl/fpu.sv", line=1)],
-        lambda prompt: "answer", records, signals, rtl, bridge,
-        reranker=_Reranker({"module fpu": 2.0, "Rounding mode": 1.0}, default=-9.0),
-        lane_floors=_FLOORS)
-    state = agent.run(app, "where does the pipeline stall")
-
-    assert len(queries) == 2 and "rounding_mode" in queries[1]
-    assert [item["id"] for item in state["spec_evidence"]] == ["spec#1", "spec#2"]
 
 
 def test_model_is_refused_only_when_no_lane_cleared_the_floor():
@@ -366,3 +342,23 @@ def test_rtl_evidence_is_the_retrieved_records_only():
     assert state["bridge_matches"]
     assert "rtl_blocks" not in state
     assert "always_comb result_o = rm_i;" not in state["final_context"]
+
+
+def test_a_weak_spec_lane_is_not_requeried_through_the_bridge():
+    records, signals, rtl, bridge = _runtime_data()
+    queries = []
+
+    def spec(query, k):
+        queries.append(query)
+        return [_doc("spec#1", "noise", section_id="sec:fpu", start_page=12)]
+
+    app = agent.build_graph(
+        spec_retriever=spec,
+        rtl_retriever=lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
+                                             file="rtl/fpu.sv", line=1)],
+        answer_model=lambda prompt: "answer", spec_records=records, spec_signals=signals,
+        rtl=rtl, bridge=bridge, reranker=_Reranker(default=-9.0), lane_floors=_FLOORS)
+
+    agent.run(app, "What does fpu do?")
+
+    assert len(queries) == 1 and not hasattr(agent, "reverse_bridge_terms")

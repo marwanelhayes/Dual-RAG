@@ -154,7 +154,6 @@ LOCAL_LLM_HOST = "http://localhost:11434"
 # Agent budgets fit retrieved evidence in one 4,096-token window.
 AGENT_NUM_CTX = 4096
 AGENT_TIMEOUT_S = 300
-AGENT_SEARCH_K = 3
 # One RTL answer spans a module row plus its blocks, so this lane needs more than the spec.
 AGENT_RTL_SEARCH_K = 8
 # Sentence-overlap chunking splits one spec passage across neighbours, so a section needs slots.
@@ -167,7 +166,6 @@ LANE_CALIBRATION_QUANTILE = 0.95
 LANE_FLOOR_FALLBACK = -6.0
 # A lane below the floor keeps a small slice, so weak-but-real evidence stays inspectable.
 AGENT_WEAK_LANE_SHARE = 0.25
-AGENT_REVERSE_TERMS = 6
 AGENT_CONTEXT_CHARS = 12500
 AGENT_SPEC_CONTEXT_CHARS = 4500
 AGENT_RTL_CONTEXT_CHARS = 5500
