@@ -339,67 +339,6 @@ def _dedupe_evidence(records):
     return result
 
 
-def expand_spec_hierarchy(hits, hierarchy, records, limit=2):
-    """Add same-section chunks before bounded neighbouring-section context.
-
-    Args:
-        hits: Ranked specification evidence records.
-        hierarchy: Deterministic specification hierarchy artifact.
-        records: All specification chunks.
-        limit: Maximum neighbouring chunks to add.
-
-    Returns:
-        Original hits followed by bounded same-section and hierarchy context.
-    """
-    hierarchy_sections = list(hierarchy.get("sections", []))
-    hierarchy_sections.extend(
-        section for document in hierarchy.get("documents", [])
-        for section in document.get("sections", []))
-    sections = {item.get("node_id") or item.get("section_id"): item
-                for item in hierarchy_sections}
-    chunks_by_section = {}
-    for record in records:
-        section_id = record.get("subsection_id") or record.get("section_id")
-        if section_id:
-            chunks_by_section.setdefault(section_id, []).append(record)
-    by_position = {(section_id, record.get("chunk_index")): record
-                   for section_id, chunks in chunks_by_section.items() for record in chunks
-                   if record.get("chunk_index") is not None}
-    wanted = []
-    adjacent = []
-    for hit in hits:
-        metadata = hit.get("metadata", {})
-        section_id = metadata.get("subsection_id") or metadata.get("section_id")
-        index = metadata.get("chunk_index")
-        if index is not None:
-            adjacent.extend(by_position.get((section_id, index + offset))
-                            for offset in (-1, 1))
-        section = sections.get(section_id, {})
-        wanted.extend([
-            section.get("parent_id"), section.get("prev_id"), section.get("next_id"),
-            *(section.get("children_ids") or []),
-        ])
-    existing = {hit.get("id") for hit in hits}
-    neighbours = []
-    section_neighbours = [chunks_by_section[section_id][0]
-                          for section_id in dict.fromkeys(item for item in wanted if item)
-                          if chunks_by_section.get(section_id)]
-    for record, expansion in [
-            *((record, "same_section_neighbour") for record in adjacent if record),
-            *((record, "section_neighbour") for record in section_neighbours)]:
-        if record.get("chunk_id") in existing:
-            continue
-        existing.add(record["chunk_id"])
-        neighbours.append({
-            "domain": "spec", "id": record["chunk_id"], "score": None,
-            "text": f"{record.get('context_header', '')}\n{record.get('text', '')}",
-            "metadata": dict(record), "expansion": expansion,
-        })
-        if len(neighbours) >= limit:
-            break
-    return _dedupe_evidence([*hits, *neighbours])
-
-
 def _name_tokens(value):
     """Return simple normalized name tokens without requiring model weights.
 
@@ -1027,7 +966,7 @@ class Runtime:
     """Hold lazy retrieval adapters and generated artifacts for one graph instance."""
 
     def __init__(self, spec_retriever=None, rtl_retriever=None, answer_model=None,
-                 spec_records=None, hierarchy=None, spec_signals=None, rtl=None,
+                 spec_records=None, spec_signals=None, rtl=None,
                  bridge=None, reranker=None, lane_floors=None):
         """Create a runtime with optional hermetic test adapters.
 
@@ -1036,7 +975,6 @@ class Runtime:
             rtl_retriever: Optional RTL search adapter or callable.
             answer_model: Optional bounded-context answer callable.
             spec_records: Optional in-memory specification chunks.
-            hierarchy: Optional in-memory spec hierarchy.
             spec_signals: Optional in-memory structured spec signals.
             rtl: Optional in-memory RTL artifact.
             bridge: Optional in-memory bridge artifact.
@@ -1053,7 +991,6 @@ class Runtime:
         self._rtl_retriever = rtl_retriever
         self.answer_model = answer_model or local_answer
         self.spec_records = spec_records
-        self.hierarchy = hierarchy
         self.spec_signals = spec_signals
         self.rtl = rtl
         self.bridge = bridge
@@ -1067,17 +1004,6 @@ class Runtime:
         if self.spec_records is None:
             self.spec_records = _read_jsonl(cfg.CHUNKS_PATH)
         return self.spec_records
-
-    def get_hierarchy(self):
-        """Return cached deterministic specification hierarchy.
-
-        Returns:
-            The artifact, read from disk on first use and cached thereafter.
-        """
-        if self.hierarchy is None:
-            path = cfg.SPEC_HIERARCHY_PATH
-            self.hierarchy = _read_json(path, {"documents": [], "sections": []})
-        return self.hierarchy
 
     def get_spec_signals(self):
         """Return cached table-derived specification signal records.
@@ -1196,7 +1122,7 @@ class Runtime:
         """Search the RTL RAG through the configured adapter.
 
         Args:
-            query: User or bridge-expanded query.
+            query: User question.
             k: Maximum retrieval results.
 
         Returns:
@@ -1219,7 +1145,7 @@ class Runtime:
 
 
 def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
-                spec_records=None, hierarchy=None, spec_signals=None, rtl=None,
+                spec_records=None, spec_signals=None, rtl=None,
                 bridge=None, reranker=None, lane_floors=None):
     """Compile the three-route LangGraph with structurally mandatory evidence lanes.
 
@@ -1228,7 +1154,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         rtl_retriever: Optional RTL retrieval adapter.
         answer_model: Optional answer callable for tests or alternate local models.
         spec_records: Optional in-memory specification records.
-        hierarchy: Optional in-memory hierarchy.
         spec_signals: Optional in-memory structured spec signals.
         rtl: Optional in-memory RTL representation.
         bridge: Optional in-memory bridge artifact.
@@ -1241,7 +1166,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     from langgraph.graph import END, START, StateGraph
 
     runtime = Runtime(spec_retriever, rtl_retriever, answer_model, spec_records,
-                      hierarchy, spec_signals, rtl, bridge, reranker, lane_floors)
+                      spec_signals, rtl, bridge, reranker, lane_floors)
 
     def classify_node(state):
         """Record the wording-based route as a prior; evidence decides the real route.
@@ -1257,7 +1182,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                 "trace": _append_trace(state, "route_prior", query_type=prior)}
 
     def spec_node(state):
-        """Retrieve specification evidence and bounded hierarchy neighbours.
+        """Retrieve specification evidence and the spec signals it supports.
 
         Args:
             state: Current graph state.
@@ -1267,23 +1192,20 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         """
         raw = runtime.spec_search(state["question"], cfg.AGENT_SPEC_SEARCH_K)
         hits = [_hit_record(item, "spec") for item in raw]
-        expanded = expand_spec_hierarchy(
-            hits, runtime.get_hierarchy(), runtime.get_spec_records())
-        signals = select_spec_signals(
-            state["question"], expanded, runtime.get_spec_signals())
+        signals = select_spec_signals(state["question"], hits, runtime.get_spec_signals())
         return {
-            "spec_evidence": expanded,
+            "spec_evidence": hits,
             "spec_signals": signals,
             "trace": _append_trace(
-                state, "spec_retrieval", chunks=len(expanded),
-                chunk_ids=[item["id"] for item in expanded],
+                state, "spec_retrieval", chunks=len(hits),
+                chunk_ids=[item["id"] for item in hits],
                 pages=[item.get("metadata", {}).get("page")
                        or item.get("metadata", {}).get("start_page")
-                       for item in expanded],
+                       for item in hits],
                 sections=list(dict.fromkeys(
                     item.get("metadata", {}).get("subsection_id")
                     or item.get("metadata", {}).get("section_id")
-                    for item in expanded
+                    for item in hits
                     if (item.get("metadata", {}).get("subsection_id")
                         or item.get("metadata", {}).get("section_id")))),
                 signals=[item.get("name") or item.get("original_name")

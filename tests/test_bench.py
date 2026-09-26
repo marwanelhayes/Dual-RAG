@@ -182,7 +182,7 @@ def _retrieval_graph(answer_calls):
     return agent.build_graph(
         spec_retriever=spec_search, rtl_retriever=rtl_search, answer_model=answer_model,
         reranker=_Reranker(), lane_floors={"spec": -6.0, "rtl": -6.0},
-        spec_records=[], hierarchy={"sections": []}, spec_signals=[],
+        spec_records=[], spec_signals=[],
         rtl={"modules": {}}, bridge={"signal_alignments": [], "unresolved_signals": [],
                                      "module_alignments": []})
 

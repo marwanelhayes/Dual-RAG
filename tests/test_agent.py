@@ -32,11 +32,6 @@ def _runtime_data():
         "context_header": "Spec > FPU > Rounding", "text": "Rounding mode selects RNE.",
         "start_page": 12,
     }]
-    hierarchy = {"sections": [
-        {"section_id": "sec:fpu", "parent_id": None, "children_ids": ["sec:round"]},
-        {"section_id": "sec:round", "parent_id": "sec:fpu", "children_ids": [],
-         "prev_id": None, "next_id": None},
-    ]}
     signals = [{
         "signal_id": "specsig:rounding_mode", "name": "rounding_mode",
         "normalized_name": "rounding mode", "width": 3, "direction": "input",
@@ -74,7 +69,7 @@ def _runtime_data():
             "confidence": 0.91, "confidence_level": "STRONG",
         }],
     }
-    return records, hierarchy, signals, rtl, bridge
+    return records, signals, rtl, bridge
 
 
 def test_classifier_exposes_exactly_three_routes():
@@ -89,7 +84,7 @@ def test_classifier_exposes_exactly_three_routes():
 
 def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     calls = []
-    records, hierarchy, signals, rtl, bridge = _runtime_data()
+    records, signals, rtl, bridge = _runtime_data()
 
     def spec_search(query, k):
         calls.append("spec")
@@ -101,7 +96,7 @@ def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
         return [_doc("rtl:fpu", "module fpu", module="fpu", file="rtl/fpu.sv", line=1)]
 
     app = agent.build_graph(
-        spec_search, rtl_search, lambda prompt: "answer", records, hierarchy,
+        spec_search, rtl_search, lambda prompt: "answer", records,
         signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
     state = agent.run(app, "What rounding modes are required?")
 
@@ -113,13 +108,13 @@ def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
 
 
 def test_requested_route_is_separate_from_observed_evidence():
-    records, hierarchy, signals, rtl, bridge = _runtime_data()
+    records, signals, rtl, bridge = _runtime_data()
     reranker = _Reranker({"module fpu": 2.0}, default=-9.0)
     app = agent.build_graph(
         lambda query, k: [_doc("spec#1", "unrelated prose", section_id="sec:fpu")],
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
-        lambda prompt: "answer", records, hierarchy, signals, rtl, bridge,
+        lambda prompt: "answer", records, signals, rtl, bridge,
         reranker=reranker, lane_floors=_FLOORS)
 
     state = agent.run(app, "What causes a stall?")
@@ -131,7 +126,7 @@ def test_requested_route_is_separate_from_observed_evidence():
 
 
 def test_comparison_label_needs_both_lanes_above_the_floor():
-    records, hierarchy, signals, rtl, bridge = _runtime_data()
+    records, signals, rtl, bridge = _runtime_data()
     app = agent.build_graph(
         lambda query, k: [_doc("spec#1", "Rounding modes are required.",
                                section_id="sec:fpu", subsection_id="sec:round",
@@ -139,7 +134,7 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
         lambda prompt: "implemented with cited evidence",
-        records, hierarchy, signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
+        records, signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
@@ -151,7 +146,7 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
 
 def test_weak_spec_lane_requeries_the_spec_through_reverse_bridge_terms():
     queries = []
-    records, hierarchy, signals, rtl, bridge = _runtime_data()
+    records, signals, rtl, bridge = _runtime_data()
 
     def spec_search(query, k):
         queries.append(query)
@@ -164,7 +159,7 @@ def test_weak_spec_lane_requeries_the_spec_through_reverse_bridge_terms():
         spec_search,
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
-        lambda prompt: "answer", records, hierarchy, signals, rtl, bridge,
+        lambda prompt: "answer", records, signals, rtl, bridge,
         reranker=_Reranker({"module fpu": 2.0, "Rounding mode": 1.0}, default=-9.0),
         lane_floors=_FLOORS)
     state = agent.run(app, "where does the pipeline stall")
@@ -175,11 +170,11 @@ def test_weak_spec_lane_requeries_the_spec_through_reverse_bridge_terms():
 
 def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     model_calls = []
-    records, hierarchy, signals, rtl, bridge = _runtime_data()
+    records, signals, rtl, bridge = _runtime_data()
     app = agent.build_graph(
         lambda query, k: [], lambda query, k: [],
         lambda prompt: model_calls.append(prompt) or "unsafe",
-        records, hierarchy, signals, rtl={"modules": {}}, bridge=bridge,
+        records, signals, rtl={"modules": {}}, bridge=bridge,
         reranker=_Reranker(), lane_floors=_FLOORS)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
@@ -238,46 +233,6 @@ def test_credible_lanes_apply_the_floor_of_their_own_domain():
         "spec": False, "rtl": True}
     assert agent.credible_lanes({"spec": None, "rtl": 1.0}, {"spec": -6.0, "rtl": -6.0}) == {
         "spec": False, "rtl": True}
-
-
-def test_section_expansion_uses_only_inline_hierarchy_links():
-    evidence = [{
-        "domain": "spec", "id": "child#1", "text": "child", "metadata": {
-            "section_id": "child",
-        },
-    }]
-    hierarchy = {"sections": [{
-        "section_id": "child", "parent_id": "parent", "prev_id": "previous",
-        "next_id": None, "children_ids": [],
-    }]}
-    records = [
-        {"chunk_id": "parent#1", "section_id": "parent", "text": "parent",
-         "context_header": "Parent"},
-        {"chunk_id": "previous#1", "section_id": "previous", "text": "previous",
-         "context_header": "Previous"},
-    ]
-
-    expanded = agent.expand_spec_hierarchy(evidence, hierarchy, records, limit=2)
-
-    assert [item["id"] for item in expanded] == ["child#1", "parent#1", "previous#1"]
-
-
-def test_section_expansion_prefers_adjacent_chunks_in_the_hit_section():
-    evidence = [{"id": "doc#0010#001", "metadata": {
-        "section_id": "section", "chunk_index": 1,
-    }}]
-    records = [
-        {"chunk_id": f"doc#0010#{index:03d}", "section_id": "section",
-         "chunk_index": index, "text": str(index), "context_header": "Section"}
-        for index in range(3)
-    ]
-
-    expanded = agent.expand_spec_hierarchy(evidence, {"sections": []}, records, limit=2)
-
-    assert [item["id"] for item in expanded] == [
-        "doc#0010#001", "doc#0010#000", "doc#0010#002"]
-    assert all(item.get("expansion") == "same_section_neighbour"
-               for item in expanded[1:])
 
 
 def test_signal_selection_is_grounded_in_retrieved_provenance():
@@ -443,7 +398,7 @@ def test_small_blocks_are_never_excerpted():
 
 
 def test_surrounding_blocks_require_a_target_module_or_signal():
-    _, _, _, rtl, _ = _runtime_data()
+    _, _, rtl, _ = _runtime_data()
 
     hit = agent.surrounding_rtl_blocks(rtl, ["rm_i"], [], limit=2)
     miss = agent.surrounding_rtl_blocks(rtl, ["other"], [], limit=2)
@@ -521,3 +476,19 @@ def test_query_recovery_is_gone():
 def test_dead_agent_helpers_are_gone():
     for name in ("observed_route", "ask", "drop_near_duplicates", "_shingles"):
         assert not hasattr(agent, name)
+
+
+def test_spec_evidence_is_the_retrieved_passages_only():
+    records = [{"chunk_id": f"doc#0010#{index:03d}", "hierarchy_id": "section",
+                "section_id": "section", "chunk_index": index, "text": str(index),
+                "context_header": "Section"} for index in range(3)]
+    app = agent.build_graph(
+        spec_retriever=lambda query, k: [_doc("doc#0010#001", "1", section_id="section",
+                                              chunk_index=1)],
+        rtl_retriever=lambda query, k: [], answer_model=lambda prompt: "answer",
+        spec_records=records, spec_signals=[], rtl={"modules": {}}, bridge={},
+        reranker=_Reranker(), lane_floors=_FLOORS)
+
+    state = agent.run(app, "What rounding modes are required?")
+
+    assert [item["id"] for item in state["spec_evidence"]] == ["doc#0010#001"]

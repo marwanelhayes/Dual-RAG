@@ -69,7 +69,7 @@ def test_comparison_intent_survives_one_weak_lane_and_skips_generation(weak_lane
                                                     "file": "rtl/test.sv", "line": 1})
 
     app = agent.build_graph(lambda q, k: [doc("spec")], lambda q, k: [doc("rtl")],
-                            lambda prompt: calls.append(prompt), [], {"sections": []}, [],
+                            lambda prompt: calls.append(prompt), [], [],
                             {"modules": {}}, {}, reranker=Scorer(),
                             lane_floors={"spec": -6, "rtl": -6})
     state = agent.run(app, "Does the RTL implement every specified behavior?")
@@ -88,7 +88,7 @@ def test_real_graph_accepts_only_source_validated_comparison_excerpts():
     rtl = Document(page_content=CATALOG["[rtl:cache.sv:10]"]["text"],
                    metadata={"chunk_id": "r1", "file": "rtl/cache.sv", "line": 10})
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
-                            lambda prompt: json.dumps(response()), [], {"sections": []}, [],
+                            lambda prompt: json.dumps(response()), [], [],
                             {"modules": {}}, {}, reranker=Scorer(),
                             lane_floors={"spec": -6, "rtl": -6})
     state = agent.run(app, "Does the RTL implement AWVALID?")
@@ -107,7 +107,7 @@ def test_strong_other_lane_cannot_promote_a_spec_request_into_comparison():
     rtl = Document(page_content="assign MAWValid = pending;",
                    metadata={"chunk_id": "r1", "file": "rtl/cache.sv", "line": 10})
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
-                            lambda prompt: response(["[spec:s1 p.12]"]), [], {"sections": []}, [],
+                            lambda prompt: response(["[spec:s1 p.12]"]), [], [],
                             {"modules": {}}, {}, reranker=Scorer(),
                             lane_floors={"spec": -6, "rtl": -6})
     state = agent.run(app, "What does AWVALID indicate?")
