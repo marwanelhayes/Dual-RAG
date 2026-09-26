@@ -70,10 +70,9 @@ Moved: `test_model_device_preserves_cpu_and_falls_back_without_cuda` → `tests/
 
 ## Pending consolidation (agent walk)
 
-- `reciprocal_rank_fusion`, `RETRIEVE_RRF_K`: only `agent.fuse_recovery` (also rerank-sorted).
-- Hit type: `Document` → chunk dict `(record, score)`; reranker text built inline; fold
-  `VectorStore.load(records)` duplicate documents dict; uninstall `langchain-core`.
-- `agent._hit_record` `isinstance(hit, tuple)` branch dead after q8.
+Resolved at the agent walk ([`agent.md`](agent.md)): RRF and `RETRIEVE_RRF_K` go with query
+recovery (a1); `Document` stays the hit type (`langgraph` needs `langchain-core`); the
+`VectorStore.load(records)` duplicate documents dict stays (embed/retrieve, not agent).
 
 ## Metrics (`track.py`)
 

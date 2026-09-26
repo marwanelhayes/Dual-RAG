@@ -336,3 +336,80 @@ question already names module `csr_file`; the gain came from a module-name / sig
 coincidence.
 
 Reopen when: questions spell signals in snake_case form and miss their mixed-case RTL names.
+
+## DF-26: Frozen small-LLM query router
+
+Decided 2026-09-26. Current choice: `agent.classify_query` (13 regexes) routes SPEC / RTL /
+COMPARISON; correct on bench 60/60, routing challenge 60/60, gold 10/10, heldout 7/7.
+
+Deferred option: a "system 1" router with frozen weights (e.g. Qwen, the user's "JEV style"
+idea), like DF-21 for document roles.
+
+Reopen when: new questions mis-route, or the regex list grows for each new phrasing.
+
+## DF-27: Spec hierarchy expansion and near-duplicate dropping
+
+Decided 2026-09-26. Current choice: spec evidence = retriever top k.
+
+Deferred option: `expand_spec_hierarchy` (same-section ±1 chunk, parent/prev/next/child
+section) and `drop_near_duplicates` with ×3 over-fetch.
+
+Why not now: neighbours delivered 0 gold to the model context (2 per question, appended after
+the budget); dedup dropped 0 of 24 hits on all 60 questions.
+
+Reopen when: answers span adjacent chunks and context recall shows the gap.
+
+## DF-28: Bridge-targeted RTL blocks
+
+Decided 2026-09-26. Current choice: RTL evidence = `RTLRetriever` hits only.
+
+Deferred option: `surrounding_rtl_blocks` (blocks reading/writing bridge-linked signals, with
+staging-suffix expansion) rendered first in the RTL context.
+
+Why not now: 0 of their blocks were gold; they filled the RTL budget (context RTL recall 0.308
+with, 0.508 without).
+
+Reopen when: bridge-linked blocks carry gold the RTL retriever misses.
+
+## DF-29: Reverse-bridge spec re-query
+
+Decided 2026-09-26. Current choice: none.
+
+Deferred option: weak spec lane → spec names linked to RTL-hit modules → second spec search.
+
+Why not now: fired on 10/60, hits appended after the budget, 0 gold reached the model.
+
+Reopen when: fused (not appended) and weak-spec questions lack gold in context.
+
+## DF-30: LLM query recovery
+
+Decided 2026-09-26. Current choice: none (was `AGENT_QUERY_RECOVERY = False`, never measured).
+
+Deferred option: `recovery_node`, `recovery_query`, `local_query`, `fuse_recovery` (RRF of
+query rankings + rerank), `bench --compare-recovery`.
+
+Reopen when: a measured comparison shows context-recall gain on weak-lane questions.
+
+## DF-31: Lane floors and credibility gate
+
+Decided 2026-09-26. Current choice: answer path = required domains citable → model →
+`validate_answer`; fixed context shares.
+
+Deferred option: background-calibrated cross-encoder floors per lane gating the answer and
+shrinking weak lanes' context share.
+
+Why not now: gated 7/60 questions, correct abstention on 1; gold was in context on 2 of the
+wrongly gated.
+
+Reopen when: a calibrated score predicts gold-in-context with measured precision.
+
+## DF-32: Structured spec signal rows in context
+
+Decided 2026-09-26. Current choice: `select_spec_signals` feeds `lookup_bridge` only.
+
+Deferred option: `STRUCTURED SPEC SIGNALS` rows (name, width, table) in the spec context.
+
+Why not now: rows repeat table text already cited, are not citable, and printed a removed
+`direction` field.
+
+Reopen when: the answer bench shows the model needs signal attributes absent from passages.

@@ -5,8 +5,8 @@ Handoff from the 2026-09-21/24 simplification sessions. Method and session promp
 [`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md),
 [`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md),
 [`docs/specs/rtl_embed.md`](specs/rtl_embed.md), [`docs/specs/bridge.md`](specs/bridge.md),
-[`docs/specs/retrieve.md`](specs/retrieve.md).
-Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-24).
+[`docs/specs/retrieve.md`](specs/retrieve.md), [`docs/specs/agent.md`](specs/agent.md).
+Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
@@ -153,8 +153,8 @@ test PDFs have points but no printed heading, and it would delete body text.
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
 ending "... going for retrieve.py".
 
-1. **Walk `agent.py`** with `/grill-me` (prompt in SIMPLIFICATION_METHOD, ending "... going for
-   agent.py"). Pending lists: below and in [`docs/specs/retrieve.md`](specs/retrieve.md).
+1. **Run the `agent.py` queue** ([`docs/specs/agent.md`](specs/agent.md), walked 2026-09-26):
+   a0 context metrics, then a1-a12.
 2. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
    collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
    (DF), or propagate only from `interface_prefix` links.
