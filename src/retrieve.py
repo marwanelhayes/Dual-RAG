@@ -306,20 +306,10 @@ def exact_lookup(query, records, k=None):
         named = strength is not None
         matched_signal = None
         if record.get("source_type") == "module":
-            signal_matches = []
-            for signal in record.get("signal_metadata", []):
-                signal_strength = _term_strength(
-                    signal_terms,
-                    [signal.get("original_name"), signal.get("normalized_name")])
-                if signal_strength is not None:
-                    signal_matches.append((signal_strength, signal))
-            if signal_matches:
-                signal_matches.sort(key=lambda item: (
-                    item[0], item[1].get("original_name", "").casefold(),
-                    item[1].get("signal_id", "")))
-                signal_strength, matched_signal = signal_matches[0]
-                if strength is None or signal_strength < strength:
-                    strength = signal_strength
+            signals = sorted(set(signal_terms).intersection(record.get("signal_names", [])),
+                             key=str.casefold)
+            if signals:
+                matched_signal, strength = signals[0], 0
         if strength is None:
             continue
         type_order = 0 if matched_signal else 1 if record.get("source_type") == "module" else 2
@@ -331,7 +321,7 @@ def exact_lookup(query, records, k=None):
         document = record_to_document(record)
         if matched_signal:
             document.metadata["exact_match_type"] = "signal"
-            document.metadata["symbol_name"] = matched_signal.get("original_name")
+            document.metadata["symbol_name"] = matched_signal
         documents.append(document)
     return documents[:k] if k is not None else documents
 

@@ -10,22 +10,20 @@ import re
 
 import configure as cfg
 from embed import VectorStore, build_manifest, write_manifest
-from naming import identifier_tokens, normalize_identifier
+from naming import identifier_tokens
 
 
-_LOOKUP_TERMS = 128
 _COMMENT = re.compile(r"//+([^\n]*)|/\*(.*?)\*/", re.S)
 _RULE = re.compile(r"^[\s\-=_*#~+.─━—–]*$")
 # Box-drawing banners cost about one token per character, so they are collapsed away.
 _DECORATION = re.compile(r"[─━—–\-=_*#~+]{3,}")
 
 
-def _unique(items, limit=None):
-    """Deduplicate non-empty values in input order, optionally bounded.
+def _unique(items):
+    """Deduplicate non-empty values in input order.
 
     Args:
         items: Values to deduplicate.
-        limit: Maximum values to keep, or None for no bound.
 
     Returns:
         Unique non-empty values in first-seen order.
@@ -34,8 +32,6 @@ def _unique(items, limit=None):
     for item in items:
         if item not in (None, "") and item not in out:
             out.append(item)
-            if limit is not None and len(out) >= limit:
-                break
     return out
 
 
@@ -66,7 +62,7 @@ def _record(chunk_id, record_id, context_header, text, source_type, module, entr
         "module": module,
         "file": entry["file"],
         "line": metadata.pop("line"),
-        "lookup_terms": _unique(lookup_terms, _LOOKUP_TERMS),
+        "lookup_terms": lookup_terms,
     }
     record.update(metadata)
     return record
@@ -92,29 +88,17 @@ def comments(text):
     return found
 
 
-def _signal_metadata(entry):
-    """Return declarations retained for exact lookup, never as vector rows.
+def _signal_names(entry):
+    """Return the declared port, signal, and parameter names exact lookup matches.
 
     Args:
         entry: One module record from ``rtl.json``.
 
     Returns:
-        Port, signal, and parameter declarations with their populated fields.
+        Declaration names as the source spells them.
     """
-    signals = []
-    for field in ("ports", "signals", "parameters"):
-        for declaration in entry[field]:
-            item = {
-                key: declaration[key]
-                for key in (
-                    "signal_id", "construct_type", "original_name", "normalized_name",
-                    "normalized_tokens", "direction", "data_type", "width",
-                    "width_expression", "file_path", "start_line", "end_line",
-                    "reader_sites", "writer_sites",
-                ) if declaration.get(key) is not None
-            }
-            signals.append(item)
-    return signals
+    return [declaration["original_name"]
+            for field in ("ports", "signals", "parameters") for declaration in entry[field]]
 
 
 def _terms(names):
@@ -231,13 +215,12 @@ def chunks(rtl):
             source_type="module",
             module=name,
             entry=entry,
-            lookup_terms=[name, entry["original_name"], normalize_identifier(name)],
+            lookup_terms=[name],
             line=entry["start_line"],
             start_line=entry["start_line"],
             end_line=entry["end_line"],
-            original_name=entry["original_name"],
             normalized_name=entry["normalized_name"],
-            signal_metadata=_signal_metadata(entry),
+            signal_names=_signal_names(entry),
         ), lines))
     return records
 

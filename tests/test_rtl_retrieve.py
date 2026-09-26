@@ -159,11 +159,7 @@ def test_exact_signal_search_splits_module_and_construct_budget():
                 "chunk_id": f"rtl:{module}", "record_id": f"module:{module}",
                 "context_header": f"RTL > {module}", "text": f"module {module}",
                 "source_type": "module", "module": module, "lookup_terms": [],
-                "signal_metadata": [{
-                    "signal_id": f"signal:{module}", "original_name": "SharedSignal",
-                    "normalized_name": "shared_signal", "writer_sites": [{}],
-                    "reader_sites": [],
-                }],
+                "signal_names": ["SharedSignal"],
             },
             {
                 "chunk_id": f"rtl:construct:{module}:always:1-2",
@@ -251,8 +247,7 @@ def test_exact_lookup_needs_the_name_spelled_as_the_rtl_states_it():
          "source_type": "construct", "lookup_terms": ["Rounding"]},
         {"chunk_id": "rtl:flp_add_sub", "record_id": "m", "context_header": "RTL > flp_add_sub",
          "text": "", "module": "flp_add_sub", "source_type": "module", "lookup_terms": [],
-         "signal_metadata": [{"signal_id": "s", "original_name": "mode",
-                              "normalized_name": "mode"}]},
+         "signal_names": ["mode"]},
     ]
 
     assert retrieve.exact_lookup("Does the RTL support the Vectored MODE for rounding?",
@@ -265,7 +260,7 @@ def test_short_signal_names_are_exact_addressable():
     records = [{"chunk_id": "rtl:fetch_stage", "record_id": "m",
                 "context_header": "RTL > fetch_stage", "text": "", "module": "fetch_stage",
                 "source_type": "module", "lookup_terms": [],
-                "signal_metadata": [{"signal_id": "s", "original_name": "PC"}]}]
+                "signal_names": ["PC"]}]
 
     hits = retrieve.exact_lookup("How is PC updated?", records)
 
@@ -276,7 +271,7 @@ def test_signal_structures_are_kept_when_exact_hits_leave_room_for_dense_fill():
     module = {"chunk_id": "rtl:decode_stage", "record_id": "m", "text": "",
               "context_header": "RTL > decode_stage", "source_type": "module",
               "module": "decode_stage", "lookup_terms": [],
-              "signal_metadata": [{"signal_id": "s", "original_name": "SignImmD"}]}
+              "signal_names": ["SignImmD"]}
     block = {"chunk_id": "rtl:construct:decode_stage:always:1-2", "record_id": "b",
              "text": "", "context_header": "RTL > decode_stage > always",
              "source_type": "construct", "module": "decode_stage", "lookup_terms": [],

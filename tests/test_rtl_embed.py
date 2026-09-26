@@ -168,7 +168,7 @@ def test_records_are_module_first_and_do_not_vectorize_signals_or_instances(tmp_
     assert len({record["chunk_id"] for record in records}) == len(records)
 
 
-def test_module_record_preserves_id_provenance_children_and_signal_metadata(tmp_path):
+def test_module_record_preserves_id_provenance_children_and_signal_names(tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")
     record = next(record for record in re_.retrieval_records(_rtl(source))
@@ -179,9 +179,8 @@ def test_module_record_preserves_id_provenance_children_and_signal_metadata(tmp_
     assert record["file"] == str(source) and record["line"] == 1
     assert "instantiates: child" in record["text"]
     assert "rounding mode and valid flag" in record["text"]
-    assert {signal["original_name"] for signal in record["signal_metadata"]} == {
-        "enable", "FPUValidD"
-    }
+    assert set(record["signal_names"]) == {"enable", "FPUValidD"}
+    assert record["lookup_terms"] == ["fpu_decoder"]
 
 
 def test_structural_ids_and_surfaces_are_stable_and_bounded(tmp_path):
@@ -291,7 +290,7 @@ def test_records_carry_only_fields_a_reader_uses(tmp_path):
     module = next(record for record in records if record["source_type"] == "module")
     block = next(record for record in records if record["source_type"] == "construct")
 
-    assert set(module) == shared | {"original_name", "normalized_name", "signal_metadata"}
+    assert set(module) == shared | {"normalized_name", "signal_names"}
     assert set(block) == shared | {"signals_read", "signals_written"}
 
 
@@ -362,7 +361,7 @@ def test_module_facets_overflow_into_windows_without_losing_a_port_or_comment(
     assert all(len(record["text"]) <= 150 for record in windows)
     assert all(f"port_{index}" in text for index in range(40))
     assert all(f"note {index}" in text for index in range(40))
-    assert all(not record["lookup_terms"] and "signal_metadata" not in record
+    assert all(not record["lookup_terms"] and "signal_names" not in record
                for record in windows[1:])
 
 
