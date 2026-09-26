@@ -104,11 +104,21 @@ Every step: failing test first, full suite green, commit, `build.py --clean`,
 If `q-exp/no-rerank` ≥ q0 on `retrieve.spec`, reopen the reranker as its own question; if
 `q-exp/no-owned` ≥ q0 on `retrieve.rtl.exact_id_recall_at_k`, add a removal step.
 
-## Outcome so far (2026-09-26)
+## Outcome (2026-09-26)
 
-q0-q7 run; q8 pending. Runs in [`docs/NEXT_STEPS.md`](../NEXT_STEPS.md).
+All steps run; commits and MLflow runs in [`docs/NEXT_STEPS.md`](../NEXT_STEPS.md).
 
-- Both experiments confirm keeps: no reranker drops stage spec 0.683 → 0.493; no owned
-  rerank drops stage RTL exact 0.508 → 0.475.
-- Stage RTL exact 0.508 → 0.517 at q6, back to 0.508 at q7 (`CMP_MINFO_CSR_EXACT`): signal
-  matching also read `signal_metadata[*].normalized_name`, which Q11 missed. Decide before q8.
+| | q0 | q8 |
+|---|---|---|
+| `retrieve.spec.section_recall_at_k` | 0.683 | 0.683 |
+| `retrieve.rtl.exact_id_recall_at_k` | 0.508 | 0.508 (0.517 at q6) |
+| `retrieve.rtl.mrr_at_k` | 0.630 | **0.649** |
+| agent `retrieval.spec.section_recall_at_k` | 0.675 | **0.683** |
+| agent `retrieval.rtl.exact_id_recall_at_k` | 0.458 | **0.500** |
+| agent `retrieval.rtl.mrr_at_k` | 0.625 | **0.666** |
+| `src/retrieve.py` lines (`rtl_embed.py`) | 641 (379) | 453 (362) |
+
+- Experiments confirm both keeps: without the reranker stage spec is 0.493; without the owned
+  rerank stage RTL exact is 0.475.
+- q7 lost `CMP_MINFO_CSR_EXACT`'s structure (signal `CsrFile` had matched via its
+  `normalized_name`, which Q11 missed); accepted, DF-25.

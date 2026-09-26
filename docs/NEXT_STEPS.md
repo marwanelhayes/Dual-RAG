@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-24).
 
 ## Where we are
 
-Branch `simplify`, head `705ffbc` + docs. Tests: 272 passed. Decision metrics:
+Branch `simplify`, head `03d2903` + docs. Tests: 273 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -99,16 +99,15 @@ build (artifacts unchanged); q0 and q7 rebuilt.
 | q4 `retrieve/case-exact-tiers` | `556f196` | `8916fefd` | 0.683 / 0.467 · 0.683 / 0.508 / 0.649 | |
 | q5 `retrieve/query-terms` | `babee85` | `32152773` | 0.683 / 0.467 · 0.683 / 0.508 / 0.649 | zero diff |
 | q6 `retrieve/one-ordering` | `6b1fcf8` | `f8f6b192` | 0.683 / **0.508** · 0.683 / **0.517** / 0.649 | TRAP_ENTRY 1/3 → 2/3 |
-| q7 `rtl_embed/lookup-fields` | `705ffbc` | `f45a7460` | 0.683 / 0.500 · 0.683 / 0.508 / 0.649 | **stopped queue**, see below |
+| q7 `rtl_embed/lookup-fields` | `705ffbc` | `f45a7460` | 0.683 / 0.500 · 0.683 / 0.508 / 0.649 | -1 gold id, accepted (DF-25) |
+| q8 `retrieve/hit-shape` | `03d2903` | `b446c527` | **0.683 / 0.500** · **0.683 / 0.508 / 0.649** | zero diff |
 
 q7 (-1 gold id): `CMP_MINFO_CSR_EXACT` ("…implemented in csr_file?") lost
 `rtl:construct:csr_file:task:83-103`. Before q7 the signal `CsrFile` matched through its
 `normalized_name` `csr_file` (case-exact against the query word), making `rtl:csr_file` a
 signal hit whose structures included the gold task. `signal_names` holds only original names.
 The walk's Q11 finding ("retrieve reads only `original_name`") missed that q4 still matched
-signal `normalized_name`. Open decision: add normalized names to `signal_names` (restores the
-hit), or accept (the module is named anyway; the gain came through a module-name / signal-name
-coincidence). q8 `retrieve/hit-shape` not run.
+signal `normalized_name`. Decided 2026-09-26: accept the loss (DF-25).
 
 Ingest 10 (-0.025): gold rewarded prose copies of the rounding-mode table; the table chunk is
 still retrieved. Ingest 14 (-0.034): the default 256-token cap, fixed by the sweep.
@@ -154,14 +153,14 @@ test PDFs have points but no printed heading, and it would delete body text.
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
 ending "... going for retrieve.py".
 
-1. **Finish the `retrieve.py` queue** ([`docs/specs/retrieve.md`](specs/retrieve.md)): decide the
-   q7 `CsrFile` / `normalized_name` regression (table above), then q8 `retrieve/hit-shape`.
-   Then **walk `agent.py`** (pending lists below and in the retrieve spec).
+1. **Walk `agent.py`** with `/grill-me` (prompt in SIMPLIFICATION_METHOD, ending "... going for
+   agent.py"). Pending lists: below and in [`docs/specs/retrieve.md`](specs/retrieve.md).
 2. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
    collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
    (DF), or propagate only from `interface_prefix` links.
 
 Done 2026-09-23: step 9b, `embed.py` walk + e0-e5 (Chroma), `rtl_ingest.py` walk + r0-r5.
+Done 2026-09-26: `retrieve.py` walk + q0-q8.
 Done 2026-09-24: `rtl_embed.py` walk + rt0-rt11; ingest 10-15; spec_signals s2-s7;
 `bridge.py` walk + b0-b10; `ARESETn` tokenization; `faiss-cpu` / `langchain-community`
 uninstalled from `.venv`.
