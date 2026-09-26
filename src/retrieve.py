@@ -4,7 +4,7 @@ import re
 
 import configure as cfg
 from embed import Embedder, VectorStore, available_device, record_to_document
-from naming import identifier_tokens, normalize_identifier
+from naming import identifier_tokens
 
 from langchain_core.documents import Document
 
@@ -270,26 +270,16 @@ def _query_terms(query):
 
 
 def _term_strength(query_terms, candidates):
-    """Score exact, case-folded, then normalized candidate-name matches.
+    """Score a candidate name the query spells exactly as the RTL states it.
 
     Args:
         query_terms: Identifier-like terms taken from the query.
         candidates: Candidate names this record can be addressed by.
 
     Returns:
-        ``0``, ``1``, or ``2`` for decreasing match strength, else None.
+        ``0`` for an exact match, else None.
     """
-    exact = set(query_terms)
-    folded = {term.casefold() for term in query_terms}
-    normalized = {normalize_identifier(term) for term in query_terms}
-    candidates = [str(candidate) for candidate in candidates if candidate]
-    if exact.intersection(candidates):
-        return 0
-    if folded.intersection(candidate.casefold() for candidate in candidates):
-        return 1
-    if normalized.intersection(normalize_identifier(candidate) for candidate in candidates):
-        return 2
-    return None
+    return 0 if set(query_terms).intersection(map(str, filter(None, candidates))) else None
 
 
 def _phrase_strength(query_tokens, normalized_name):
@@ -300,13 +290,13 @@ def _phrase_strength(query_tokens, normalized_name):
         normalized_name: Space-joined normalized module name.
 
     Returns:
-        ``3`` when the name appears as a contiguous token run, else None.
+        ``1`` when the name appears as a contiguous token run, else None.
     """
     tokens = str(normalized_name or "").split()
     if len(tokens) < 2:
         return None
     span = len(tokens)
-    return 3 if any(query_tokens[start:start + span] == tokens
+    return 1 if any(query_tokens[start:start + span] == tokens
                     for start in range(len(query_tokens) - span + 1)) else None
 
 

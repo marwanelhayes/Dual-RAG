@@ -241,3 +241,20 @@ def test_window_hits_fold_into_one_hit_for_their_record():
 
     assert [hit.metadata["chunk_id"] for hit in hits] == ["rtl:m", "rtl:n"]
     assert hits[0].page_content.endswith("comments: stall logic")
+
+
+def test_exact_lookup_needs_the_name_spelled_as_the_rtl_states_it():
+    records = [
+        {"chunk_id": "rtl:construct:flp_mul:func:1-2", "record_id": "f",
+         "context_header": "RTL > flp_mul > function", "text": "", "module": "flp_mul",
+         "source_type": "construct", "lookup_terms": ["Rounding"]},
+        {"chunk_id": "rtl:flp_add_sub", "record_id": "m", "context_header": "RTL > flp_add_sub",
+         "text": "", "module": "flp_add_sub", "source_type": "module", "lookup_terms": [],
+         "signal_metadata": [{"signal_id": "s", "original_name": "mode",
+                              "normalized_name": "mode"}]},
+    ]
+
+    assert retrieve.exact_lookup("Does the RTL support the Vectored MODE for rounding?",
+                                 records) == []
+    assert [hit.metadata["chunk_id"] for hit in retrieve.exact_lookup(
+        "What does Rounding return?", records)] == ["rtl:construct:flp_mul:func:1-2"]
