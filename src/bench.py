@@ -485,6 +485,35 @@ def run_retrieval(questions, app=None, k=5):
     return rows
 
 
+def stage_retrieval(questions, spec, rtl, k=5, sections=None):
+    """Score each retriever on the raw question, without any agent layer.
+
+    Args:
+        questions: Gold case records.
+        spec: Specification retriever exposing ``search(query, top_k)``.
+        rtl: RTL retriever exposing ``search(query, top_k)``.
+        k: Rank cutoff.
+        sections: Optional chunk ID to ``section_key`` map for section recall.
+
+    Returns:
+        Scored rows; a lane is searched only for questions that expect it.
+    """
+    def evidence(hits):
+        """Project retriever hits, bare or ``(document, score)``, to evidence IDs."""
+        return [{"id": (hit[0] if isinstance(hit, tuple) else hit).metadata["chunk_id"]}
+                for hit in hits]
+
+    rows = []
+    for question in questions:
+        state = {}
+        if question.get("relevant_spec_ids"):
+            state["spec_evidence"] = evidence(spec.search(question["question"], top_k=k))
+        if question.get("relevant_rtl_ids"):
+            state["rtl_evidence"] = evidence(rtl.search(question["question"], top_k=k))
+        rows.append(retrieval_row(question, state, k, sections))
+    return rows
+
+
 def _lane_summary(rows, lane):
     """Aggregate one lane across the rows that expect it.
 
@@ -639,6 +668,32 @@ def compare_recovery(questions, k=5, graph_factory=None):
                for name, rows in results.items()}}
 
 
+def stage_retrieval_report(questions, k=5):
+    """Load both retrievers from the pipeline artifacts and score them stage-locally.
+
+    Args:
+        questions: Gold case records.
+        k: Rank cutoff.
+
+    Returns:
+        ``{"metrics": {"spec", "rtl"}, "results": rows}``.
+    """
+    from embed import Embedder
+    from ingest import load_chunks
+    from retrieve import Reranker, Retriever, RTLRetriever
+
+    spec_records = load_chunks()
+    rtl_records = load_chunks(cfg.RTL_CHUNKS_PATH)
+    embedder, reranker = Embedder(), Reranker()
+    spec = Retriever.load(spec_records, embedder=embedder, reranker=reranker)
+    rtl = RTLRetriever(rtl_records, hybrid=Retriever.load(
+        rtl_records, cfg.RTL_INDEX_DIR, embedder=embedder, reranker=reranker))
+    sections = {chunk["chunk_id"]: section_key(chunk) for chunk in spec_records}
+    rows = stage_retrieval(questions, spec, rtl, k, sections)
+    return {"metrics": {lane: _lane_summary(rows, lane) for lane in ("spec", "rtl")},
+            "results": rows}
+
+
 def retrieval_main(path=None, k=5, compare=False):
     """Score retrieval alone and write the per-question report.
 
@@ -665,6 +720,7 @@ def retrieval_main(path=None, k=5, compare=False):
     rows = run_retrieval(questions, build_graph(answer_model=_skip_answer), k)
     report = {"k": k, "metrics": retrieval_metrics(rows),
               "misses": retrieval_misses(rows), "results": rows}
+    report["retrieve"] = stage_retrieval_report(questions, k)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg.RETRIEVAL_PATH, "w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)

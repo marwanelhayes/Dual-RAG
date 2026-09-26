@@ -334,7 +334,10 @@ def pipeline_metrics():
         metrics.update(bridge_metrics(bridge, json.load(handle)["signals"]))
     if cfg.RETRIEVAL_PATH.exists():
         with open(cfg.RETRIEVAL_PATH, encoding="utf-8") as handle:
-            metrics.update(flatten("retrieval", json.load(handle)["metrics"]["overall"]))
+            report = json.load(handle)
+        metrics.update(flatten("retrieval", report["metrics"]["overall"]))
+        if "retrieve" in report:
+            metrics.update(flatten("retrieve", report["retrieve"]["metrics"]))
     return metrics
 
 

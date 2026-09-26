@@ -331,3 +331,33 @@ def test_retrieval_row_and_summary_carry_section_recall():
 
     assert row["spec"]["section_recall_at_k"] == 1.0
     assert bench._lane_summary([row], "spec")["section_recall_at_k"] == 1.0
+
+
+def test_stage_retrieval_scores_each_retriever_on_the_raw_question():
+    """Stage metrics bypass the agent: the question goes straight to each retriever."""
+    from langchain_core.documents import Document
+
+    def doc(chunk_id):
+        return Document(page_content="", metadata={"chunk_id": chunk_id})
+
+    class Spec:
+        def search(self, query, top_k):
+            assert query == "What is AWVALID?"
+            return [(doc("axi#0051#003"), 1.0)]
+
+    class RTL:
+        def search(self, query, top_k):
+            return [doc("rtl:cache")]
+
+    questions = [
+        {"id": "s", "question": "What is AWVALID?", "relevant_spec_ids": ["axi#0042#000"],
+         "relevant_spec_sections": [
+             {"chunk_id": "axi#0042#000", "section": "axi::A2.3.1", "page": 30}]},
+        {"id": "r", "question": "Where is the cache?", "relevant_rtl_ids": ["rtl:cache"]},
+    ]
+
+    rows = bench.stage_retrieval(questions, Spec(), RTL(), 5,
+                                 sections={"axi#0051#003": "axi::A2.3.1"})
+
+    assert bench._lane_summary(rows, "spec")["section_recall_at_k"] == 1.0
+    assert bench._lane_summary(rows, "rtl")["exact_id_recall_at_k"] == 1.0
