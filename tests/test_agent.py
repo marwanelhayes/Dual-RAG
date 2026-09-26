@@ -293,3 +293,14 @@ def test_spec_signal_rows_stay_out_of_the_context():
              "spec_signals": [{"name": "AWVALID", "width": "1", "table_id": "t"}]}
 
     assert "STRUCTURED SPEC SIGNALS" not in agent.merge_evidence(state)
+
+
+def test_signals_and_section_alignments_match_evidence_by_hierarchy_id():
+    evidence = [{"id": "c1", "metadata": {"hierarchy_id": "axi::sec::0042"}}]
+    signal = {"signal_id": "sig:awvalid", "name": "AWVALID", "hierarchy_id": "axi::sec::0042"}
+    bridge = {"signal_alignments": [], "unresolved_signals": [], "module_alignments": [
+        {"spec_section_id": "axi::sec::0042", "spec_section_title": "Valid-Ready",
+         "rtl_module_name": "cache", "confidence_level": "MEDIUM"}]}
+
+    assert agent.select_spec_signals("what?", evidence, [signal]) == [signal]
+    assert agent.lookup_bridge([], evidence, bridge)[1] == bridge["module_alignments"]

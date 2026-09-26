@@ -228,32 +228,18 @@ def select_spec_signals(question, evidence, signals, limit=8):
     Returns:
         Relevant signal records in deterministic score order.
     """
-    chunk_ids = {item.get("id") for item in evidence}
-    subsection_ids = {item.get("metadata", {}).get("subsection_id")
-                      for item in evidence
-                      if item.get("metadata", {}).get("subsection_id")}
-    root_section_ids = {item.get("metadata", {}).get("section_id")
-                        for item in evidence
-                        if item.get("metadata", {}).get("section_id")
-                        and not item.get("metadata", {}).get("subsection_id")}
-    table_ids = {
-        table_id for item in evidence
-        for table_id in item.get("metadata", {}).get("table_ids", []) if table_id
-    }
+    chunk_ids = {item["id"] for item in evidence}
+    hierarchy_ids = {item["metadata"].get("hierarchy_id") for item in evidence} - {None}
+    table_ids = {table_id for item in evidence
+                 for table_id in item["metadata"].get("table_ids", [])}
     query_tokens = _name_tokens(question)
     ranked = []
     for position, signal in enumerate(signals):
-        signal_chunks = set(signal.get("chunk_ids") or [signal.get("chunk_id")]) - {None}
-        signal_names = [signal.get("name"), signal.get("original_name"),
-                        signal.get("normalized_name")]
         overlap = len(query_tokens.intersection(
-            token for surface in signal_names for token in _name_tokens(surface)))
-        provenance = bool(
-            chunk_ids & signal_chunks
-            or signal.get("table_id") in table_ids
-            or signal.get("subsection_id") in subsection_ids
-            or (not signal.get("subsection_id")
-                and signal.get("section_id") in root_section_ids))
+            _name_tokens(signal.get("name")) | _name_tokens(signal.get("normalized_name"))))
+        provenance = (signal.get("chunk_id") in chunk_ids
+                      or signal.get("table_id") in table_ids
+                      or signal.get("hierarchy_id") in hierarchy_ids)
         if not provenance and not overlap:
             continue
         ranked.append((overlap, int(provenance), -position, signal))
@@ -273,66 +259,16 @@ def lookup_bridge(signals, spec_evidence, artifact, limit=12):
     Returns:
         ``(signal_matches, module_matches)``.
     """
-    signal_ids = {item.get("signal_id") or item.get("id") for item in signals}
-    signal_ids.discard(None)
-    names = {str(item.get("name") or item.get("original_name") or "").casefold()
-             for item in signals}
-    names.discard("")
-    section_ids = {
-        value for item in spec_evidence for value in (
-            item.get("metadata", {}).get("section_id"),
-            item.get("metadata", {}).get("subsection_id")) if value
-    }
-    matches = []
-    if signal_ids or names:
-        for mapping in [*artifact.get("signal_alignments", []),
-                        *artifact.get("unresolved_signals", [])]:
-            mapping_id = (mapping.get("spec_signal_id")
-                          or mapping.get("spec", {}).get("id"))
-            mapping_name = str(
-                mapping.get("spec_original_name") or mapping.get("spec_signal")
-                or mapping.get("spec_name") or mapping.get("spec", {}).get("name")
-                or "").casefold()
-            if mapping_id not in signal_ids and mapping_name not in names:
-                continue
-            matches.append(mapping)
+    signal_ids = {item["signal_id"] for item in signals}
+    names = {item["name"].casefold() for item in signals}
+    hierarchy_ids = {item["metadata"].get("hierarchy_id") for item in spec_evidence} - {None}
+    matches = [mapping for mapping in [*artifact.get("signal_alignments", []),
+                                       *artifact.get("unresolved_signals", [])]
+               if mapping["spec_signal_id"] in signal_ids
+               or mapping["spec_original_name"].casefold() in names]
     modules = [mapping for mapping in artifact.get("module_alignments", [])
-               if section_ids and (mapping.get("spec_section_id")
-                                   or mapping.get("spec", {}).get("section_id"))
-               in section_ids]
+               if mapping["spec_section_id"] in hierarchy_ids]
     return matches[:limit], modules[:limit]
-
-
-def _mapping_values(mapping, keys):
-    """Collect scalar target values from a bridge mapping and its candidates.
-
-    Args:
-        mapping: Bridge alignment record.
-        keys: Candidate field names.
-
-    Returns:
-        Unique non-empty string values.
-    """
-    values = []
-    sources = [mapping, mapping.get("rtl", {}), *(mapping.get("candidates") or [])]
-    for source in sources:
-        for key in keys:
-            value = source.get(key) if isinstance(source, dict) else None
-            if value and str(value) not in values:
-                values.append(str(value))
-    return values
-
-
-def _resolved_fields(mapping):
-    """Return one alignment's own fields, excluding its rival candidate list.
-
-    Args:
-        mapping: Bridge alignment record.
-
-    Returns:
-        The mapping without its ``candidates`` entry.
-    """
-    return {key: value for key, value in mapping.items() if key != "candidates"}
 
 
 def _spec_context(evidence):
@@ -366,23 +302,6 @@ def _alignment_site(mapping):
     return f" at {Path(str(file)).name}:{rtl.get('start_line')}" if file else ""
 
 
-def _evidence_detail(mapping):
-    """Render the falsifiable structural components behind one alignment.
-
-    Args:
-        mapping: Bridge alignment record.
-
-    Returns:
-        A bracketed width and direction comparison, or an empty string.
-    """
-    top = next(iter(mapping.get("candidates") or []), {})
-    components = mapping.get("component_evidence") or top.get("component_evidence") or {}
-    parts = [f"{name} {components[name].get('detail')}"
-             for name in ("width", "direction")
-             if isinstance(components.get(name), dict) and components[name].get("available")]
-    return f" [{'; '.join(parts)}]" if parts else ""
-
-
 def _bridge_context(signal_matches, module_matches):
     """Render cross-domain alignment evidence without behavioral conclusions.
 
@@ -395,38 +314,19 @@ def _bridge_context(signal_matches, module_matches):
     """
     rows = []
     for item in signal_matches:
-        spec_name = item.get("spec_original_name") or item.get("spec_signal") \
-            or item.get("spec_name") \
-            or item.get("spec", {}).get("name")
-        unresolved = item.get("confidence_level") == "UNRESOLVED"
-        rtl_names = [] if unresolved else _mapping_values(
-            _resolved_fields(item),
-            ("rtl_original_name", "rtl_signal", "rtl_name", "signal_name",
-             "original_name"))
-        candidate_names = _mapping_values(
-            {"candidates": item.get("candidates", [])},
-            ("rtl_original_name", "rtl_signal", "rtl_name", "signal_name"))
-        candidate_suffix = (
-            f" candidates={', '.join(candidate_names[:3])}" if unresolved and candidate_names
-            else "")
-        reason_suffix = f" reason={item['reason']}" if unresolved and item.get("reason") else ""
-        rows.append(
-            f"signal {spec_name} -> {', '.join(rtl_names) or 'UNRESOLVED'} "
-            f"identity_match={item.get('confidence_level', item.get('status', 'UNRESOLVED'))} "
-            f"method={item.get('method', 'none')}{_alignment_site(item)}"
-            f"{_evidence_detail(item)}{reason_suffix}{candidate_suffix}")
+        level = item["confidence_level"]
+        if level == "UNRESOLVED":
+            names = [candidate["rtl_original_name"] for candidate in item.get("candidates", [])]
+            target = "UNRESOLVED"
+            suffix = f" reason={item['reason']}" + (
+                f" candidates={', '.join(names[:3])}" if names else "")
+        else:
+            target, suffix = item["rtl_original_name"], ""
+        rows.append(f"signal {item['spec_original_name']} -> {target} identity_match={level} "
+                    f"method={item.get('method', 'none')}{_alignment_site(item)}{suffix}")
     for item in module_matches:
-        spec_title = item.get("spec_section_title") or item.get("spec_section") \
-            or item.get("spec_title") \
-            or item.get("spec", {}).get("title")
-        unresolved = item.get("confidence_level") == "UNRESOLVED"
-        rtl_names = [] if unresolved else _mapping_values(
-            _resolved_fields(item),
-            ("rtl_module_name", "rtl_module", "module_name", "module"))
-        rows.append(
-            f"section {spec_title} -> {', '.join(rtl_names) or 'UNRESOLVED'} "
-            f"identity_match={item.get('confidence_level', item.get('status', 'UNRESOLVED'))} "
-            f"identity_score={item.get('confidence', 0)}")
+        rows.append(f"section {item['spec_section_title']} -> {item['rtl_module_name']} "
+                    f"identity_match={item['confidence_level']}")
     return "\n".join(rows)
 
 
@@ -755,21 +655,10 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             "trace": _append_trace(
                 state, "bridge_lookup", signal_matches=len(matches),
                 module_matches=len(modules),
-                mappings=[{
-                    "spec": item.get("spec_original_name") or item.get("spec_signal")
-                            or item.get("spec_name")
-                            or item.get("spec", {}).get("name"),
-                    "rtl": _mapping_values(
-                        _resolved_fields(item),
-                        ("rtl_original_name", "rtl_signal", "rtl_name", "signal_name",
-                         "original_name")),
-                    "confidence": item.get("confidence"),
-                    "confidence_level": item.get("confidence_level"),
-                    "candidates": [candidate.get("rtl_original_name")
-                                   for candidate in item.get("candidates", [])
-                                   if candidate.get("survived_structural")][:
-                                       cfg.BRIDGE_QUERY_CANDIDATES],
-                } for item in matches]),
+                mappings=[{"spec": item["spec_original_name"],
+                           "rtl": item.get("rtl_original_name"),
+                           "confidence_level": item["confidence_level"]}
+                          for item in matches]),
         }
 
     def rtl_node(state):
