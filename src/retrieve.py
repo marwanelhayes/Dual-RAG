@@ -10,12 +10,6 @@ from langchain_core.documents import Document
 
 
 TOKEN_RE = re.compile(r"[a-z0-9_.]+")
-IDENTIFIER_RE = re.compile(
-    r"\b(?:0x[0-9a-f]+|[A-Z][A-Z0-9_.]{2,}|"
-    r"[A-Za-z_][A-Za-z0-9]*_[A-Za-z0-9_.]+|"
-    r"[A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.]+)\b")
-# These describe the question's domain, not a specific hardware identity.
-CONTEXT_TERMS = frozenset({"RTL", "SPEC", "AXI", "FPU"})
 _IDENTIFIER = re.compile(
     r"0[xX][0-9A-Fa-f]+|[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+)*"
 )
@@ -39,47 +33,6 @@ def tokenize(text):
         Lowercase alphanumeric and hardware-identifier tokens.
     """
     return TOKEN_RE.findall((text or "").lower())
-
-
-def identifier_terms(text):
-    """Return unique identifier-shaped query terms in encounter order.
-
-    Args:
-        text: Query text to scan.
-
-    Returns:
-        Exact-looking hardware identifiers.
-    """
-    return [term for term in dict.fromkeys(IDENTIFIER_RE.findall(text or ""))
-            if term not in CONTEXT_TERMS]
-
-
-def exact_document_ids(documents, terms):
-    """Prioritize the most selective matching identifier, retaining frequency ties.
-
-    Args:
-        documents: LangChain documents keyed by stable chunk identifier.
-        terms: Literal identifier terms to match.
-
-    Returns:
-        Matching IDs in corpus order. Broad-only hits remain eligible via hybrid search.
-    """
-    wanted = [term for term in dict.fromkeys(terms or []) if term]
-    if not wanted:
-        return []
-    patterns = [
-        re.compile(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
-                   re.IGNORECASE)
-        for term in wanted
-    ]
-    matches = [{chunk_id for chunk_id, document in documents.items()
-                if pattern.search(document.page_content)} for pattern in patterns]
-    matches = [ids for ids in matches if ids]
-    if not matches:
-        return []
-    smallest = min(map(len, matches))
-    selected = set().union(*(ids for ids in matches if len(ids) == smallest))
-    return [chunk_id for chunk_id in documents if chunk_id in selected]
 
 
 class BM25Index:
@@ -234,7 +187,7 @@ class Reranker:
 
 
 class Retriever:
-    """Combine exact, lexical, dense, and cross-encoder retrieval lanes."""
+    """Rerank the union of lexical and dense candidates with a cross-encoder."""
 
     def __init__(self, documents, bm25, store, reranker):
         """Assemble independently replaceable ranking adapters at one seam.
@@ -271,54 +224,35 @@ class Retriever:
         store = VectorStore.load(index_dir, records, embedder=embedder)
         return cls(documents, BM25Index.build(documents), store, reranker or Reranker())
 
-    def candidates(self, query, n=cfg.RETRIEVE_CANDIDATES, exact_terms=None):
-        """Return exact hits followed by fused lexical and dense candidates.
+    def candidates(self, query, n=cfg.RETRIEVE_CANDIDATES):
+        """Return the lexical then dense candidate union.
 
         Args:
             query: Query used by lexical and dense ranking.
-            n: Candidate count requested from each broad lane.
-            exact_terms: Optional explicit literal terms.
+            n: Candidate count requested from each lane.
 
         Returns:
-            Stable candidate identifiers in ranking order.
+            Stable candidate identifiers, lexical first.
         """
-        terms = identifier_terms(query) if exact_terms is None else exact_terms
-        exact = exact_document_ids(self.documents, terms)
         lexical = self.bm25.search(query, n)
         dense = [document.metadata["chunk_id"]
                  for document, _ in self.store.search(query, k=n)]
-        # The reranker scores every candidate, so the broad lanes only need a union.
-        fused = list(dict.fromkeys(lexical + dense))
-        exact_set = set(exact)
-        return exact + [chunk_id for chunk_id in fused if chunk_id not in exact_set]
+        # The reranker scores every candidate, so the lanes only need a union.
+        return list(dict.fromkeys(lexical + dense))
 
-    def search(self, query, top_k=cfg.RETRIEVE_TOP_K, exact_terms=None):
-        """Keep a bounded exact prefix, then fill by relevance across all candidates.
+    def search(self, query, top_k=cfg.RETRIEVE_TOP_K):
+        """Rank every candidate with the cross-encoder and keep the best.
 
         Args:
             query: Query used by every retrieval lane.
             top_k: Maximum final result count.
-            exact_terms: Optional explicit literal terms.
 
         Returns:
             Document and cross-encoder score pairs.
         """
-        if top_k <= 0:
-            return []
-        terms = identifier_terms(query) if exact_terms is None else exact_terms
-        exact_ids = exact_document_ids(self.documents, terms)
-        candidate_ids = self.candidates(query, exact_terms=terms)
-        exact_set = set(exact_ids)
-        if top_k == 1 and exact_ids:
-            return self.reranker.rank(query, [self.documents[item] for item in exact_ids])[:1]
-        ranked = self.reranker.rank(query, [self.documents[item] for item in candidate_ids
-                                            if item in self.documents])
-        # Exact identity gets priority, but cannot reserve the entire evidence budget.
-        pinned = [pair for pair in ranked if pair[0].metadata["chunk_id"] in exact_set][
-            :max(1, top_k // 2)]
-        pinned_ids = {document.metadata["chunk_id"] for document, _ in pinned}
-        remaining = [pair for pair in ranked if pair[0].metadata["chunk_id"] not in pinned_ids]
-        return pinned + remaining[:top_k - len(pinned)]
+        ranked = self.reranker.rank(
+            query, [self.documents[item] for item in self.candidates(query)])
+        return ranked[:top_k]
 
 
 def _query_terms(query):
