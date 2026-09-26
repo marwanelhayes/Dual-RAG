@@ -202,3 +202,12 @@ def test_dead_retrieval_entry_points_are_gone():
     assert not hasattr(retrieve, "search")
     assert not hasattr(retrieve, "load_records")
     assert not hasattr(retrieve, "main")
+
+
+def test_candidates_are_the_lexical_then_dense_union_for_the_reranker():
+    documents = {key: _doc(key, key) for key in ("a", "b", "c")}
+    retriever = retrieve.Retriever(documents, _StaticRanker(["a", "b"]),
+                                   _Dense([documents["c"], documents["a"]]),
+                                   _ReverseReranker())
+
+    assert retriever.candidates("write address", n=2) == ["a", "b", "c"]

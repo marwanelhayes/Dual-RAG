@@ -287,7 +287,8 @@ class Retriever:
         lexical = self.bm25.search(query, n)
         dense = [document.metadata["chunk_id"]
                  for document, _ in self.store.search(query, k=n)]
-        fused = reciprocal_rank_fusion([lexical, dense])
+        # The reranker scores every candidate, so the broad lanes only need a union.
+        fused = list(dict.fromkeys(lexical + dense))
         exact_set = set(exact)
         return exact + [chunk_id for chunk_id in fused if chunk_id not in exact_set]
 
