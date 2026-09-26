@@ -103,3 +103,12 @@ Every step: failing test first, full suite green, commit, `build.py --clean`,
 
 If `q-exp/no-rerank` ≥ q0 on `retrieve.spec`, reopen the reranker as its own question; if
 `q-exp/no-owned` ≥ q0 on `retrieve.rtl.exact_id_recall_at_k`, add a removal step.
+
+## Outcome so far (2026-09-26)
+
+q0-q7 run; q8 pending. Runs in [`docs/NEXT_STEPS.md`](../NEXT_STEPS.md).
+
+- Both experiments confirm keeps: no reranker drops stage spec 0.683 → 0.493; no owned
+  rerank drops stage RTL exact 0.508 → 0.475.
+- Stage RTL exact 0.508 → 0.517 at q6, back to 0.508 at q7 (`CMP_MINFO_CSR_EXACT`): signal
+  matching also read `signal_metadata[*].normalized_name`, which Q11 missed. Decide before q8.

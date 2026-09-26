@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-24).
 
 ## Where we are
 
-Branch `simplify`, head `6545463`. Tests: 273 passed. Decision metrics:
+Branch `simplify`, head `705ffbc` + docs. Tests: 272 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -84,6 +84,32 @@ precision against `eval/bridge_gold.json`, 25 AXI channel signals).
 | bridge b10 `consolidate-signals` | `b68ccf3` | `07e50ab5` | bridge 1.0 / 0.94 | spec_signals contract; modules 136 |
 | naming `active-low-suffix` | `6545463` | `c8f6267f` | 0.675 / 0.458 | `ARESETn` → `areset` + `n` |
 
+Retrieve queue run 2026-09-26 (stage-local metrics from q0). Columns: agent spec section / agent
+RTL exact / stage spec section / stage RTL exact / stage RTL MRR. Retrieve-only steps skip the
+build (artifacts unchanged); q0 and q7 rebuilt.
+
+| Step | Commit | MLflow run | agent spec / rtl · stage spec / rtl / mrr | Notes |
+|---|---|---|---|---|
+| q0 `retrieve/metrics` | `690f9e1` | `d4899e7a` | 0.675 / 0.458 · 0.683 / 0.508 / 0.630 | baseline |
+| exp `q-exp/no-rerank` | `e26678f` (branch `exp/no-rerank`) | `5e39a486` | 0.493 / 0.425 · 0.493 / 0.500 / 0.608 | reranker kept |
+| exp `q-exp/no-owned` | branch `exp/no-owned` | `ce9bcc2b` | 0.675 / 0.458 · 0.683 / 0.475 / 0.616 | owned rerank kept |
+| q1 `retrieve/drop-dead-code` | `bcf9a76` | `43c36d90` | 0.675 / 0.458 · 0.683 / 0.508 / 0.630 | zero diff |
+| q2 `retrieve/union-not-rrf` | `fc4f0b1` | `7d845943` | 0.675 / 0.458 · 0.683 / 0.508 / 0.630 | zero diff |
+| q3 `retrieve/drop-spec-exact-lane` | `833f040` | `9812f196` | 0.683 / 0.458 · 0.683 / 0.508 / 0.630 | 6 spec lists reordered |
+| q4 `retrieve/case-exact-tiers` | `556f196` | `8916fefd` | 0.683 / 0.467 · 0.683 / 0.508 / 0.649 | |
+| q5 `retrieve/query-terms` | `babee85` | `32152773` | 0.683 / 0.467 · 0.683 / 0.508 / 0.649 | zero diff |
+| q6 `retrieve/one-ordering` | `6b1fcf8` | `f8f6b192` | 0.683 / **0.508** · 0.683 / **0.517** / 0.649 | TRAP_ENTRY 1/3 → 2/3 |
+| q7 `rtl_embed/lookup-fields` | `705ffbc` | `f45a7460` | 0.683 / 0.500 · 0.683 / 0.508 / 0.649 | **stopped queue**, see below |
+
+q7 (-1 gold id): `CMP_MINFO_CSR_EXACT` ("…implemented in csr_file?") lost
+`rtl:construct:csr_file:task:83-103`. Before q7 the signal `CsrFile` matched through its
+`normalized_name` `csr_file` (case-exact against the query word), making `rtl:csr_file` a
+signal hit whose structures included the gold task. `signal_names` holds only original names.
+The walk's Q11 finding ("retrieve reads only `original_name`") missed that q4 still matched
+signal `normalized_name`. Open decision: add normalized names to `signal_names` (restores the
+hit), or accept (the module is named anyway; the gain came through a module-name / signal-name
+coincidence). q8 `retrieve/hit-shape` not run.
+
 Ingest 10 (-0.025): gold rewarded prose copies of the rounding-mode table; the table chunk is
 still retrieved. Ingest 14 (-0.034): the default 256-token cap, fixed by the sweep.
 
@@ -128,10 +154,9 @@ test PDFs have points but no printed heading, and it would delete body text.
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
 ending "... going for retrieve.py".
 
-1. **Run the `retrieve.py` queue** ([`docs/specs/retrieve.md`](specs/retrieve.md), walked
-   2026-09-26): q0 stage-local metrics, experiments `q-exp/no-rerank` and `q-exp/no-owned`
-   on throwaway branches, then q1-q8. Then **walk `agent.py`** (pending lists below and in
-   the retrieve spec).
+1. **Finish the `retrieve.py` queue** ([`docs/specs/retrieve.md`](specs/retrieve.md)): decide the
+   q7 `CsrFile` / `normalized_name` regression (table above), then q8 `retrieve/hit-shape`.
+   Then **walk `agent.py`** (pending lists below and in the retrieve spec).
 2. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
    collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
    (DF), or propagate only from `interface_prefix` links.
