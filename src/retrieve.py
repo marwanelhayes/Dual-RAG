@@ -1,6 +1,7 @@
 """Run exact-first hybrid retrieval over one domain-local vector index."""
 
 import re
+from itertools import zip_longest
 
 import configure as cfg
 from embed import Embedder, VectorStore, available_device, record_to_document
@@ -418,30 +419,19 @@ class RTLRetriever:
                 document.metadata.get("module", ""),
                 document.metadata.get("start_line", 0),
             ))
-        if len(exact) >= wanted:
-            if structures:
-                structure_count = 0 if wanted == 1 else min(len(structures), wanted // 2)
-                selected = signal_exact[:wanted - structure_count]
-                selected_structures = structures[:structure_count]
-                output = [item for pair in zip(selected, selected_structures)
-                          for item in pair]
-                output.extend(selected[len(selected_structures):])
-                used = {document.metadata.get("chunk_id") for document in output}
-                output.extend(document for document in exact
-                              if document.metadata.get("chunk_id") not in used)
-                if output:
-                    return output[:wanted]
-            return exact[:wanted]
-        if structures:
-            exact_ids = {document.metadata.get("chunk_id") for document in exact}
-            output = [*exact, *(document for document in structures
-                                if document.metadata.get("chunk_id") not in exact_ids)]
-            if len(output) >= wanted:
-                return output[:wanted]
+        # Exact hits and the blocks using their signals alternate, so neither fills the budget.
+        prefix, seen = [], set()
+        for document in (item for pair in zip_longest(exact, structures) for item in pair):
+            chunk_id = document and document.metadata.get("chunk_id")
+            if chunk_id and chunk_id not in seen:
+                prefix.append(document)
+                seen.add(chunk_id)
+        if len(prefix) >= wanted:
+            return prefix[:wanted]
         hybrid = self._hybrid()
-        ranked = hybrid.search(query, top_k=wanted + len(exact))
-        output = list(exact)
-        seen = {document.metadata.get("chunk_id") for document in exact}
+        ranked = hybrid.search(query, top_k=wanted + len(prefix))
+        output = list(prefix)
+        prefix_ids = set(seen)
         for hit in ranked:
             document = _fold_window(hit[0] if isinstance(hit, tuple) else hit)
             chunk_id = document.metadata.get("chunk_id")
@@ -464,9 +454,8 @@ class RTLRetriever:
         if owned and getattr(hybrid, "reranker", None):
             reranked = [document for document, _ in hybrid.reranker.rank(
                 query, [*output, *owned])]
-            exact_ids = {document.metadata.get("chunk_id") for document in exact}
             pinned = [document for document in reranked
-                      if document.metadata.get("chunk_id") in exact_ids][
+                      if document.metadata.get("chunk_id") in prefix_ids][
                           :max(1, wanted // 2)]
             pinned_ids = {document.metadata.get("chunk_id") for document in pinned}
             output = [*pinned, *(document for document in reranked

@@ -87,8 +87,9 @@ def test_exact_signal_search_prioritizes_writer_block_across_owning_modules(tmp_
     hits = retrieve.RTLRetriever(re_.retrieval_records(rtl)).search(
         "Where is FPUValidD written?", top_k=3)
 
-    assert hits[-1].metadata["module"] == "fpu_decoder"
-    assert "FPUValidD" in hits[-1].metadata["signals_written"]
+    blocks = [hit for hit in hits if hit.metadata["source_type"] == "construct"]
+    assert blocks[0].metadata["module"] == "fpu_decoder"
+    assert "FPUValidD" in blocks[0].metadata["signals_written"]
 
 
 def test_exact_lookup_runs_before_loading_the_dense_model(monkeypatch, tmp_path):
@@ -269,3 +270,26 @@ def test_short_signal_names_are_exact_addressable():
     hits = retrieve.exact_lookup("How is PC updated?", records)
 
     assert [hit.metadata["symbol_name"] for hit in hits] == ["PC"]
+
+
+def test_signal_structures_are_kept_when_exact_hits_leave_room_for_dense_fill():
+    module = {"chunk_id": "rtl:decode_stage", "record_id": "m", "text": "",
+              "context_header": "RTL > decode_stage", "source_type": "module",
+              "module": "decode_stage", "lookup_terms": [],
+              "signal_metadata": [{"signal_id": "s", "original_name": "SignImmD"}]}
+    block = {"chunk_id": "rtl:construct:decode_stage:always:1-2", "record_id": "b",
+             "text": "", "context_header": "RTL > decode_stage > always",
+             "source_type": "construct", "module": "decode_stage", "lookup_terms": [],
+             "signals_read": [], "signals_written": ["SignImmD"], "start_line": 1}
+    other = Document(page_content="", metadata={"chunk_id": "rtl:other", "module": "other",
+                                                "source_type": "module"})
+
+    class Hybrid:
+        def search(self, query, top_k):
+            return [(other, 1.0)]
+
+    hits = retrieve.RTLRetriever([module, block], hybrid=Hybrid()).search(
+        "How is SignImmD generated?", top_k=5)
+
+    assert [hit.metadata["chunk_id"] for hit in hits] == [
+        "rtl:decode_stage", "rtl:construct:decode_stage:always:1-2", "rtl:other"]
