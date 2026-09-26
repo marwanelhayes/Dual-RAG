@@ -285,3 +285,11 @@ def test_a_weak_spec_lane_is_not_requeried_through_the_bridge():
     agent.run(app, "What does fpu do?")
 
     assert len(queries) == 1 and not hasattr(agent, "reverse_bridge_terms")
+
+
+def test_spec_signal_rows_stay_out_of_the_context():
+    state = {"question": "q", "query_type": agent.SPEC,
+             "spec_evidence": [{"id": "s1", "text": "AWVALID", "metadata": {"start_page": 1}}],
+             "spec_signals": [{"name": "AWVALID", "width": "1", "table_id": "t"}]}
+
+    assert "STRUCTURED SPEC SIGNALS" not in agent.merge_evidence(state)

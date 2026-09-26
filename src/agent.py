@@ -335,12 +335,11 @@ def _resolved_fields(mapping):
     return {key: value for key, value in mapping.items() if key != "candidates"}
 
 
-def _spec_context(evidence, signals):
-    """Render bounded, citable specification evidence.
+def _spec_context(evidence):
+    """Render citable specification passages with their page.
 
     Args:
         evidence: Specification evidence records.
-        signals: Relevant structured spec signals.
 
     Returns:
         Human-readable evidence text.
@@ -350,14 +349,6 @@ def _spec_context(evidence, signals):
         metadata = item.get("metadata", {})
         page = metadata.get("page") or metadata.get("start_page") or "?"
         parts.append(f"[spec:{item['id']} p.{page}]\n{item.get('text', '')}")
-    if signals:
-        rows = [
-            f"- {item.get('name') or item.get('original_name')}"
-            f" width={item.get('width')} direction={item.get('direction')}"
-            f" table={item.get('table_id')}"
-            for item in signals
-        ]
-        parts.append("STRUCTURED SPEC SIGNALS:\n" + "\n".join(rows))
     return "\n\n".join(parts)
 
 
@@ -471,8 +462,7 @@ def merge_evidence(state):
     """
     sections = [f"QUESTION:\n{state['question']}", f"QUERY TYPE:\n{state['query_type']}"]
     if state.get("spec_evidence"):
-        sections.append("SPEC EVIDENCE:\n" + _spec_context(
-            state["spec_evidence"], state.get("spec_signals", [])))
+        sections.append("SPEC EVIDENCE:\n" + _spec_context(state["spec_evidence"]))
     if state.get("bridge_matches") or state.get("module_matches"):
         sections.append("CROSS-DOMAIN ALIGNMENTS:\n" + _bridge_context(
             state.get("bridge_matches", []), state.get("module_matches", [])))
@@ -499,7 +489,7 @@ def citable_evidence(state):
                 continue
             if kind != "spec" and not (metadata.get("file") or metadata.get("file_path")):
                 continue
-            rendered = (_spec_context([item], []) if kind == "spec" else
+            rendered = (_spec_context([item]) if kind == "spec" else
                         _rtl_context([item]))
             citation = rendered.split("]", 1)[0] + "]"
             text = rendered.split("\n", 1)[1]
