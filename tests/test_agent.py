@@ -139,7 +139,6 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
     assert state["query_type"] == agent.COMPARISON
-    assert state["rtl_blocks"][0]["start_line"] == 20
     assert state["answer_status"] == "rejected"
     assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
 
@@ -263,28 +262,6 @@ def test_signal_selection_rejects_description_overlap_and_broad_parent_sections(
     assert selected == []
 
 
-def test_unresolved_bridge_record_exposes_only_qualified_candidates_as_search_targets():
-    signals = [{"signal_id": "unknown", "name": "new_signal"}]
-    artifact = {"signal_alignments": [], "unresolved_signals": [{
-        "spec_signal_id": "unknown", "spec_original_name": "new_signal",
-        "confidence_level": "UNRESOLVED", "candidates": [{
-            "rtl_signal_id": "rtl::candidate", "rtl_original_name": "candidate_i",
-            "rtl_module_name": "candidate_module", "score": 0.7,
-            "survived_structural": True,
-        }, {
-            "rtl_signal_id": "rtl::weak", "rtl_original_name": "unrelated_i",
-            "rtl_module_name": "unrelated_module", "score": 0.1,
-            "survived_structural": False,
-        }],
-    }], "module_alignments": []}
-
-    matches, modules = agent.lookup_bridge(signals, [], artifact)
-    targets, target_modules = agent.bridge_targets(matches, modules)
-
-    assert matches[0]["confidence_level"] == "UNRESOLVED"
-    assert targets == ["candidate_i"] and target_modules == ["candidate_module"]
-
-
 def test_empty_spec_selection_does_not_return_unrelated_bridge_rows():
     artifact = {"signal_alignments": [{
         "spec_signal_id": "unrelated", "spec_original_name": "unrelated",
@@ -298,113 +275,6 @@ def test_empty_spec_selection_does_not_return_unrelated_bridge_rows():
     matches, modules = agent.lookup_bridge([], [], artifact)
 
     assert matches == [] and modules == []
-
-
-def _staged_rtl():
-    """Return a module using the usual registered/next staging convention."""
-    return {"modules": {"cache": {
-        "original_name": "cache",
-        "ports": [{"original_name": "MAWValid"}, {"original_name": "rst"},
-                  {"original_name": "rst_n"}],
-        "signals": [{"original_name": "MAWValid_next"}],
-        "always_blocks": [
-            {"construct_id": "rtl:block:cache:415", "file": "rtl/cache.sv",
-             "start_line": 415, "end_line": 459, "signals_read": ["MAWValid_next"],
-             "signals_written": ["MAWValid"],
-             "source_text": "always_ff MAWValid <= MAWValid_next;"},
-            {"construct_id": "rtl:block:cache:660", "file": "rtl/cache.sv",
-             "start_line": 660, "end_line": 991, "signals_read": ["MAWReady"],
-             "signals_written": ["MAWValid_next"],
-             "source_text": "always_comb MAWValid_next = 1'b1;"},
-            {"construct_id": "rtl:block:cache:900", "file": "rtl/cache.sv",
-             "start_line": 900, "end_line": 910, "signals_read": [],
-             "signals_written": ["rst_n"], "source_text": "always_comb rst_n = ~rst;"},
-        ],
-        "functions_tasks": [], "assignments": [], "structural_chunks": [],
-    }}}
-
-
-def test_blocks_follow_registered_and_next_staging_suffixes_both_ways():
-    forward = agent.surrounding_rtl_blocks(_staged_rtl(), ["MAWValid"], [], limit=6)
-    reverse = agent.surrounding_rtl_blocks(_staged_rtl(), ["MAWValid_next"], [], limit=6)
-
-    assert [block["start_line"] for block in forward] == [415, 660]
-    assert {block["start_line"] for block in reverse} == {415, 660}
-
-
-def test_a_module_target_alone_expands_nothing_rather_than_the_first_blocks_in_the_file():
-    blocks = agent.surrounding_rtl_blocks(_staged_rtl(), [], ["cache"], limit=6)
-
-    assert blocks == []
-
-
-def test_staging_hop_ignores_suffixes_that_are_not_a_staging_convention():
-    blocks = agent.surrounding_rtl_blocks(_staged_rtl(), ["rst"], [], limit=6)
-
-    assert [block["start_line"] for block in blocks] == []
-
-
-def test_selected_blocks_record_which_targets_they_matched():
-    blocks = agent.surrounding_rtl_blocks(_staged_rtl(), ["MAWValid"], [], limit=6)
-    matched = {block["start_line"]: block["matched_signals"] for block in blocks}
-
-    assert matched[415] == ["mawvalid", "mawvalid_next"]
-    assert matched[660] == ["mawvalid_next"]
-
-
-def test_oversized_blocks_are_excerpted_around_their_matched_signals(monkeypatch):
-    monkeypatch.setattr(agent.cfg, "AGENT_RTL_BLOCK_CHARS", 120, raising=False)
-    filler = "\n".join(f"    unrelated_{index} = 0;" for index in range(40))
-    block = {
-        "id": "b", "module": "cache", "file": "rtl/cache.sv",
-        "start_line": 660, "end_line": 991, "matched_signals": ["mawvalid_next"],
-        "text": filler + "\n    MAWValid_next = 1'b1;\n" + filler,
-    }
-
-    rendered = agent._rtl_context([], [block])
-
-    assert "MAWValid_next = 1'b1;" in rendered
-    assert "[...]" in rendered
-    assert "unrelated_20 = 0;" not in rendered
-    assert "unrelated_39 = 0;" in rendered
-    assert len(rendered) < len(block["text"])
-
-
-def test_targeted_blocks_outrank_fuzzy_rtl_evidence_in_the_lane():
-    evidence = [{"id": "e", "text": "fuzzy vector hit",
-                 "metadata": {"file": "rtl/other.sv", "start_line": 9}}]
-    block = {
-        "id": "b", "module": "cache", "file": "rtl/cache.sv",
-        "start_line": 660, "end_line": 991, "matched_signals": ["mawvalid_next"],
-        "text": "MAWValid_next = 1'b1;",
-    }
-
-    rendered = agent._rtl_context(evidence, [block])
-
-    assert rendered.index("cache.sv:660") < rendered.index("other.sv:9")
-
-
-def test_small_blocks_are_never_excerpted():
-    block = {
-        "id": "b", "module": "cache", "file": "rtl/cache.sv",
-        "start_line": 1, "end_line": 2, "matched_signals": ["mawvalid"],
-        "text": "always_ff MAWValid <= MAWValid_next;",
-    }
-
-    rendered = agent._rtl_context([], [block])
-
-    assert "always_ff MAWValid <= MAWValid_next;" in rendered
-    assert "[...]" not in rendered
-
-
-def test_surrounding_blocks_require_a_target_module_or_signal():
-    _, _, rtl, _ = _runtime_data()
-
-    hit = agent.surrounding_rtl_blocks(rtl, ["rm_i"], [], limit=2)
-    miss = agent.surrounding_rtl_blocks(rtl, ["other"], [], limit=2)
-
-    assert hit[0]["id"] == "rtl:block:fpu:20"
-    assert miss == []
 
 
 def test_merged_context_is_bounded_and_separates_domains(monkeypatch):
@@ -450,18 +320,6 @@ def test_alignment_rows_state_how_the_identity_was_found_not_a_verdict():
     assert "confidence=" not in rendered
 
 
-def test_targeted_blocks_are_relabelled_with_store_chunk_ids():
-    blocks = [{"id": "cache:415", "module": "cache", "start_line": 415, "end_line": 459},
-              {"id": "cache:9", "module": "cache", "start_line": 9, "end_line": 11}]
-    records = [{"chunk_id": "rtl:construct:cache:always:415-459", "source_type": "construct",
-                "module": "cache", "start_line": 415, "end_line": 459}]
-
-    aligned = agent.align_block_ids(blocks, records)
-
-    assert aligned[0]["id"] == "rtl:construct:cache:always:415-459"
-    assert aligned[1]["id"] == "cache:9"
-
-
 def test_query_recovery_is_gone():
     import inspect
 
@@ -492,3 +350,19 @@ def test_spec_evidence_is_the_retrieved_passages_only():
     state = agent.run(app, "What rounding modes are required?")
 
     assert [item["id"] for item in state["spec_evidence"]] == ["doc#0010#001"]
+
+
+def test_rtl_evidence_is_the_retrieved_records_only():
+    records, signals, rtl, bridge = _runtime_data()
+    app = agent.build_graph(
+        spec_retriever=lambda query, k: [_doc("spec#1", "Rounding mode selects RNE.",
+                                              section_id="sec:fpu", start_page=12)],
+        rtl_retriever=lambda query, k: [], answer_model=lambda prompt: "answer",
+        spec_records=records, spec_signals=signals, rtl=rtl, bridge=bridge,
+        reranker=_Reranker(), lane_floors=_FLOORS)
+
+    state = agent.run(app, "Does fpu implement rounding_mode?")
+
+    assert state["bridge_matches"]
+    assert "rtl_blocks" not in state
+    assert "always_comb result_o = rm_i;" not in state["final_context"]

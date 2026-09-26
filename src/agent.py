@@ -29,7 +29,6 @@ class State(TypedDict, total=False):
     bridge_matches: list
     module_matches: list
     rtl_evidence: list
-    rtl_blocks: list
     final_context: str
     trace: list
     answer: str
@@ -127,9 +126,6 @@ _RTL_INSPECTION = re.compile(
     r"what\s+(?:writes?|drives?|generates?|assigns?|expression|logic|fan-in)\b|"
     r"how\s+(?:is|are)\b.*\b(?:chosen|generated|assigned|driven|read|written|updated|"
     r"calculated|computed|produced)\b)", re.IGNORECASE)
-# Conventional staging suffixes and pipeline depth; _n means active-low, never next.
-_STAGING_SUFFIX = re.compile(
-    r"_(?:next|nxt|new|comb|pre|post|reg|ff|sync|d|q|r)\d*$")
 
 
 def classify_query(question):
@@ -470,180 +466,6 @@ def _resolved_fields(mapping):
     return {key: value for key, value in mapping.items() if key != "candidates"}
 
 
-def bridge_targets(signal_matches, module_matches):
-    """Return target RTL signals and modules for comparison retrieval.
-
-    Args:
-        signal_matches: Relevant signal alignment records.
-        module_matches: Relevant section-to-module records.
-
-    Returns:
-        ``(signal_names, module_names)`` in stable order.
-    """
-    signals = []
-    modules = []
-    for mapping in signal_matches:
-        if mapping.get("confidence_level") == "UNRESOLVED":
-            candidates = [candidate for candidate in mapping.get("candidates", [])
-                          if candidate.get("score", 0)
-                          >= cfg.BRIDGE_QUERY_CANDIDATE_MIN]
-            for candidate in candidates[:cfg.BRIDGE_QUERY_CANDIDATES]:
-                signals.extend(_mapping_values(
-                    candidate, ("rtl_original_name", "rtl_signal", "rtl_name")))
-                modules.extend(_mapping_values(
-                    candidate, ("rtl_module_name", "rtl_module", "module_name")))
-            continue
-        if not any(mapping.get(key) for key in (
-                "rtl_signal_id", "rtl_original_name", "rtl_signal", "rtl_name")):
-            continue
-        signals.extend(_mapping_values(
-            _resolved_fields(mapping),
-            ("rtl_original_name", "rtl_signal", "rtl_name", "signal_name")))
-        modules.extend(_mapping_values(
-            _resolved_fields(mapping),
-            ("rtl_module_name", "rtl_module", "module_name", "module")))
-    for mapping in module_matches:
-        if not any(mapping.get(key) for key in (
-                "rtl_module_id", "rtl_module_name", "rtl_module", "module_name")):
-            continue
-        modules.extend(_mapping_values(
-            _resolved_fields(mapping),
-            ("rtl_module_name", "rtl_module", "module_name", "module")))
-    return list(dict.fromkeys(signals)), list(dict.fromkeys(modules))
-
-
-def align_block_ids(blocks, records):
-    """Relabel targeted AST blocks with the chunk ids the RTL store already uses.
-
-    Blocks come from the compiler artifact and carry construct ids, so without this
-    the same always block is cited under two different names and cannot be traced
-    back to the retrieval store.
-
-    Args:
-        blocks: Targeted block records.
-        records: RTL retrieval records.
-
-    Returns:
-        Blocks whose ``id`` matches the store whenever the block exists there.
-    """
-    index = {(str(record.get("module")), record.get("start_line"), record.get("end_line")):
-             record.get("chunk_id")
-             for record in records if record.get("source_type") == "construct"}
-    aligned = []
-    for block in blocks:
-        chunk_id = index.get((str(block.get("module")), block.get("start_line"),
-                              block.get("end_line")))
-        aligned.append({**block, "id": chunk_id} if chunk_id else dict(block))
-    return aligned
-
-
-def _module_table(rtl):
-    """Return the module dictionary from current or minimally compatible RTL data.
-
-    Args:
-        rtl: Parsed RTL artifact.
-
-    Returns:
-        Module name to module metadata mapping.
-    """
-    modules = rtl.get("modules", {})
-    if isinstance(modules, dict):
-        return modules
-    return {item.get("original_name") or item.get("name"): item
-            for item in modules if item.get("original_name") or item.get("name")}
-
-
-def _staging_base(name):
-    """Return one identifier without a conventional register or pipeline suffix.
-
-    Args:
-        name: RTL identifier.
-
-    Returns:
-        The casefolded stem shared by every stage of the same value.
-    """
-    return _STAGING_SUFFIX.sub("", str(name).casefold())
-
-
-def _staged_names(wanted, module):
-    """Expand targets with the module's own registered and next-state partners.
-
-    SystemVerilog spreads one registered value across two identifiers, so the block
-    deciding the value usually writes a differently suffixed name than the one asked
-    for.  Only identifiers the module itself declares may join a target.
-
-    Args:
-        wanted: Casefolded target signal names.
-        module: Module metadata from the RTL artifact.
-
-    Returns:
-        The targets plus every declared identifier sharing a staging stem.
-    """
-    declared = {str(item.get("original_name") or item.get("name") or "").casefold()
-                for key in ("ports", "signals") for item in module.get(key) or []}
-    stems = {_staging_base(name) for name in wanted}
-    return wanted | {name for name in declared if name and _staging_base(name) in stems}
-
-
-def surrounding_rtl_blocks(rtl, signal_names, module_names, limit=6):
-    """Select AST blocks that read or write bridge-targeted signals.
-
-    Args:
-        rtl: Module-centric Verilator artifact.
-        signal_names: Target RTL signal names.
-        module_names: Target RTL module names.
-        limit: Maximum source blocks retained.
-
-    Returns:
-        Ranked block evidence with exact file and line provenance.
-    """
-    wanted_signals = {name.casefold() for name in signal_names}
-    wanted_modules = {name.casefold() for name in module_names}
-    # A module hit alone ranks every block equally, spending the limit on declaration order.
-    if not wanted_signals:
-        return []
-    ranked = []
-    for module_key, module in _module_table(rtl).items():
-        module_name = str(module.get("original_name") or module.get("name") or module_key)
-        module_hit = module_name.casefold() in wanted_modules
-        block_groups = [module.get("always_blocks", []), module.get("functions_tasks", []),
-                        module.get("assignment_groups", []), module.get("assignments", []),
-                        module.get("structural_chunks", [])]
-        staged_signals = _staged_names(wanted_signals, module)
-        for group in block_groups:
-            for block in group or []:
-                reads = block.get("signals_read") or block.get("inputs") or []
-                writes = block.get("signals_written") or block.get("outputs") or []
-                touched = {str(name).casefold() for name in [*reads, *writes]}
-                signal_hits = wanted_signals.intersection(touched)
-                staged_hits = staged_signals.intersection(touched) - signal_hits
-                if not module_hit and not signal_hits and not staged_hits:
-                    continue
-                score = 2 * len(signal_hits) + len(staged_hits) + int(module_hit)
-                ranked.append((score, module_name, int(block.get("start_line")
-                                                       or block.get("first") or 0), block,
-                               sorted(signal_hits | staged_hits)))
-    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
-    records = []
-    for _, module_name, _, block, matched in ranked[:limit]:
-        records.append({
-            "domain": "rtl",
-            "id": block.get("construct_id") or block.get("record_id")
-                  or f"{module_name}:{block.get('start_line', block.get('first', 0))}",
-            "module": module_name,
-            "file": block.get("file") or block.get("file_path"),
-            "start_line": block.get("start_line") or block.get("first"),
-            "end_line": block.get("end_line") or block.get("last"),
-            "signals_read": block.get("signals_read") or block.get("inputs") or [],
-            "signals_written": block.get("signals_written") or block.get("outputs") or [],
-            "matched_signals": matched,
-            "text": (block.get("source_code") or block.get("source_text")
-                     or block.get("text") or ""),
-            "metadata": dict(block),
-        })
-    return records
-
-
 def _bounded(text, limit):
     """Truncate evidence at a deterministic character boundary.
 
@@ -764,68 +586,16 @@ def _bridge_context(signal_matches, module_matches):
     return "\n".join(rows)
 
 
-def _excerpt_block(text, names):
-    """Reduce an oversized block to the lines naming a target, with local context.
-
-    A large state machine would otherwise consume the whole RTL lane and push the
-    deciding lines out of the evidence, so only the neighbourhood of each target is
-    kept and every elision is marked.
-
-    Args:
-        text: Full block source.
-        names: Casefolded target signal names matched by this block.
-
-    Returns:
-        The original text when it is small, otherwise a marked excerpt.
-    """
-    limit = int(cfg.AGENT_RTL_BLOCK_CHARS)
-    if len(text) <= limit or not names:
-        return text
-    span = int(cfg.AGENT_RTL_BLOCK_CONTEXT_LINES)
-    lines = text.splitlines()
-    keep = set()
-    for index, line in enumerate(lines):
-        folded = line.casefold()
-        if any(name in folded for name in names):
-            keep.update(range(max(0, index - span), min(len(lines), index + span + 1)))
-    if not keep:
-        return text
-    excerpt = []
-    previous = None
-    for index in sorted(keep):
-        if previous is not None and index > previous + 1:
-            excerpt.append("[...]")
-        excerpt.append(lines[index])
-        previous = index
-    if keep and min(keep) > 0:
-        excerpt.insert(0, "[...]")
-    if keep and max(keep) < len(lines) - 1:
-        excerpt.append("[...]")
-    return "\n".join(excerpt)
-
-
-def _rtl_context(evidence, blocks):
-    """Render retrieved RTL records and exact AST block surroundings.
-
-    Blocks are rendered first because they are targeted by exact signal identity,
-    so a bounded lane keeps them ahead of broader vector hits.
+def _rtl_context(evidence):
+    """Render retrieved RTL records with their file and line.
 
     Args:
         evidence: RTL retrieval records.
-        blocks: Targeted AST block records.
 
     Returns:
         Human-readable RTL evidence text.
     """
     parts = []
-    for block in blocks:
-        file = Path(str(block.get("file") or "rtl")).name
-        first = block.get("start_line") or "?"
-        last = block.get("end_line") or first
-        parts.append(
-            f"[rtl:{file}:{first}-{last}] reads={block.get('signals_read', [])} "
-            f"writes={block.get('signals_written', [])}\n"
-            f"{_excerpt_block(block.get('text', ''), block.get('matched_signals') or [])}")
     for item in evidence:
         metadata = item.get("metadata", {})
         file = metadata.get("file") or metadata.get("file_path") or "rtl"
@@ -845,7 +615,7 @@ def merge_evidence(state):
     """
     total_limit = int(cfg.AGENT_CONTEXT_CHARS)
     has_spec = bool(state.get("spec_evidence"))
-    has_rtl = bool(state.get("rtl_evidence") or state.get("rtl_blocks"))
+    has_rtl = bool(state.get("rtl_evidence"))
     has_bridge = bool(state.get("bridge_matches") or state.get("module_matches"))
     active = int(has_spec) + int(has_rtl) + int(has_bridge)
     overhead = min(350, max(100, total_limit // 4))
@@ -877,9 +647,9 @@ def merge_evidence(state):
         sections.append("CROSS-DOMAIN ALIGNMENTS:\n" + _bounded(
             _bridge_context(state.get("bridge_matches", []),
                             state.get("module_matches", [])), bridge_limit))
-    if state.get("rtl_evidence") or state.get("rtl_blocks"):
+    if state.get("rtl_evidence"):
         sections.append("RTL EVIDENCE:\n" + _bounded(
-            _rtl_context(state.get("rtl_evidence", []), state.get("rtl_blocks", [])),
+            _rtl_context(state["rtl_evidence"]),
             rtl_limit))
     return _bounded("\n\n".join(sections), total_limit)
 
@@ -892,23 +662,18 @@ def citable_evidence(state, context):
     """
     catalog, ambiguous = {}, set()
     groups = (("spec", state.get("spec_evidence", [])),
-              ("rtl", state.get("rtl_evidence", [])),
-              ("block", state.get("rtl_blocks", [])))
+              ("rtl", state.get("rtl_evidence", [])))
     for kind, records in groups:
         for item in records:
-            metadata = item.get("metadata", {}) if kind != "block" else item
+            metadata = item.get("metadata", {})
             location = (metadata.get("page") or metadata.get("start_page") if kind == "spec"
                         else metadata.get("start_line") or metadata.get("line"))
             if type(location) is not int or location < 1:
                 continue
-            if kind == "block":
-                end = metadata.get("end_line") or location
-                if type(end) is not int or end < location:
-                    continue
             if kind != "spec" and not (metadata.get("file") or metadata.get("file_path")):
                 continue
             rendered = (_spec_context([item], []) if kind == "spec" else
-                        _rtl_context([], [item]) if kind == "block" else _rtl_context([item], []))
+                        _rtl_context([item]))
             if rendered not in context:
                 continue
             citation = rendered.split("]", 1)[0] + "]"
@@ -1275,14 +1040,8 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             state: Current graph state.
 
         Returns:
-            State update with widened specification evidence, RTL blocks, and its trace event.
+            State update with widened specification evidence and its trace event.
         """
-        signal_names, module_names = bridge_targets(
-            state.get("bridge_matches", []), state.get("module_matches", []))
-        blocks = align_block_ids(
-            surrounding_rtl_blocks(runtime.get_rtl(), signal_names, module_names,
-                                   limit=cfg.AGENT_RTL_BLOCKS),
-            runtime.get_rtl_records())
         spec_evidence = list(state.get("spec_evidence", []))
         reranker = runtime.get_reranker()
         spec_score = lane_strength(reranker, state["question"], spec_evidence)
@@ -1302,15 +1061,9 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         return {
             "spec_evidence": spec_evidence,
             "spec_rankings": spec_rankings,
-            "rtl_blocks": blocks,
             "trace": _append_trace(
                 state, "evidence_expansion", reverse_terms=terms,
-                spec_chunks=len(spec_evidence),
-                blocks=[{
-                    "id": item["id"], "file": item.get("file"),
-                    "start_line": item.get("start_line"),
-                    "end_line": item.get("end_line"),
-                } for item in blocks]),
+                spec_chunks=len(spec_evidence)),
         }
 
     def allocate_node(state):
@@ -1323,12 +1076,10 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             State update with lane scores, the observed route, and its trace event.
         """
         reranker = runtime.get_reranker()
-        rtl_lane = [*state.get("rtl_blocks", []), *state.get("rtl_evidence", [])]
         scores = {
             "spec": lane_strength(reranker, state["question"],
                                   state.get("spec_evidence", [])),
-            "rtl": lane_strength(reranker, state["question"], rtl_lane,
-                                 sample=cfg.AGENT_LANE_SAMPLE + len(state.get("rtl_blocks", []))),
+            "rtl": lane_strength(reranker, state["question"], state.get("rtl_evidence", [])),
         }
         floors = runtime.get_lane_floors()
         credible = credible_lanes(scores, floors)
@@ -1368,7 +1119,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         """
         credible = state.get("lane_credible", {})
         has_spec = bool(state.get("spec_evidence"))
-        has_rtl = bool(state.get("rtl_evidence") or state.get("rtl_blocks"))
+        has_rtl = bool(state.get("rtl_evidence"))
         comparison = state.get("route_prior") == COMPARISON or state["query_type"] == COMPARISON
         validation = {"valid": False, "errors": [], "claims": []}
         status = "insufficient_evidence"

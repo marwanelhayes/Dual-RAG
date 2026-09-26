@@ -204,9 +204,9 @@ def test_lane_result_uses_one_cutoff_and_scores_alternatives_and_families():
     assert bench.lane_result(["a"], [], k=5) is None
 
 
-def test_retrieved_ids_keep_lane_order_and_append_targeted_blocks():
+def test_retrieved_ids_keep_lane_order_without_duplicates():
     state = {"spec_evidence": [{"id": "s1"}, {"id": "s1"}],
-             "rtl_evidence": [{"id": "r1"}], "rtl_blocks": [{"id": "r2"}, {"id": "r1"}]}
+             "rtl_evidence": [{"id": "r1"}, {"id": "r2"}, {"id": "r1"}]}
 
     assert bench.retrieved_ids(state) == (["s1"], ["r1", "r2"])
 

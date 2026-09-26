@@ -328,11 +328,10 @@ def retrieved_ids(state):
         state: Final state returned by ``agent.run``.
 
     Returns:
-        ``(spec_ids, rtl_ids)`` in rank order; targeted RTL blocks follow lane hits.
+        ``(spec_ids, rtl_ids)`` in rank order.
     """
     spec_ids = [item.get("id") for item in state.get("spec_evidence", [])]
     rtl_ids = [item.get("id") for item in state.get("rtl_evidence", [])]
-    rtl_ids += [item.get("id") for item in state.get("rtl_blocks", [])]
     return ([item for item in dict.fromkeys(spec_ids) if item],
             [item for item in dict.fromkeys(rtl_ids) if item])
 

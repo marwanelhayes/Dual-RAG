@@ -138,7 +138,6 @@ BRIDGE_PREFIX_MIN_NAME = 4
 BRIDGE_PREFIX_MIN_PORTS = 2
 # Unresolved shortlists may guide inspection without becoming persisted alignments.
 BRIDGE_QUERY_CANDIDATES = 3
-BRIDGE_QUERY_CANDIDATE_MIN = 0.45
 BRIDGE_PATH = OUTPUT_DIR / "bridge.json"
 
 # Benchmark against hand-checked answers instead of transcript-level inspection.
@@ -160,7 +159,6 @@ AGENT_SEARCH_K = 3
 AGENT_RTL_SEARCH_K = 8
 # Sentence-overlap chunking splits one spec passage across neighbours, so a section needs slots.
 AGENT_SPEC_SEARCH_K = 8
-AGENT_RTL_BLOCKS = 6
 # Cross-encoders rate prose above code, so each lane's floor is calibrated per domain.
 AGENT_LANE_SAMPLE = 3
 LANE_CALIBRATION_PATH = OUTPUT_DIR / "lane_calibration.json"
@@ -174,9 +172,6 @@ AGENT_CONTEXT_CHARS = 12500
 AGENT_SPEC_CONTEXT_CHARS = 4500
 AGENT_RTL_CONTEXT_CHARS = 5500
 AGENT_BRIDGE_CONTEXT_CHARS = 2500
-# Large state machines are excerpted around their targets instead of crowding the lane.
-AGENT_RTL_BLOCK_CHARS = 1200
-AGENT_RTL_BLOCK_CONTEXT_LINES = 1
 
 # A fixed sentinel lets the graph route insufficient evidence deterministically.
 AGENT_INSUFFICIENT = "INSUFFICIENT"
