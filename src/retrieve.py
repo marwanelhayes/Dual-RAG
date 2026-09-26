@@ -77,23 +77,6 @@ class BM25Index:
         return [self.chunk_ids[index] for index in ranked[:k]]
 
 
-def reciprocal_rank_fusion(rankings, rrf_k=cfg.RETRIEVE_RRF_K):
-    """Fuse ranked identifier lists without comparing incompatible scores.
-
-    Args:
-        rankings: Ranked identifier sequences to combine.
-        rrf_k: Damping constant applied to every rank contribution.
-
-    Returns:
-        Identifiers ordered by decreasing fused score.
-    """
-    scores = {}
-    for ranking in rankings:
-        for rank, chunk_id in enumerate(ranking, start=1):
-            scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (rrf_k + rank)
-    return sorted(scores, key=lambda chunk_id: scores[chunk_id], reverse=True)
-
-
 def document_authority(document):
     """Score how far one candidate's source document defines rather than explains.
 

@@ -75,12 +75,6 @@ def test_tokenizer_keeps_hardware_punctuation_inside_tokens():
     assert retrieve.tokenize("FADD.S drives result_o") == ["fadd.s", "drives", "result_o"]
 
 
-def test_reciprocal_rank_fusion_combines_lanes_without_raw_score_comparison():
-    fused = retrieve.reciprocal_rank_fusion([["a", "b"], ["b", "c"]], rrf_k=10)
-
-    assert fused[0] == "b" and set(fused) == {"a", "b", "c"}
-
-
 def test_graph_store_and_graph_sentence_helpers_are_gone():
     assert not hasattr(retrieve, "GraphStore")
     assert not hasattr(retrieve, "node_sentence")

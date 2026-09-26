@@ -85,7 +85,6 @@ ROLE_DOCUMENT_WEIGHTS = {"normative": 1.0, "architecture": 1.0, "explanatory": 1
 # Fuse broad lexical and dense candidate sets before the expensive precision pass.
 RETRIEVE_CANDIDATES = 30
 RETRIEVE_TOP_K = 5
-RETRIEVE_RRF_K = 60
 
 # A document that defines behavior outranks one that only explains it.
 ROLE_AUTHORITY = {"normative": 1.0, "architecture": 0.6, "explanatory": 0.2}
@@ -177,8 +176,6 @@ LANE_FLOOR_FALLBACK = -6.0
 # A lane below the floor keeps a small slice, so weak-but-real evidence stays inspectable.
 AGENT_WEAK_LANE_SHARE = 0.25
 AGENT_REVERSE_TERMS = 6
-# Enable after the paired benchmark demonstrates a useful recall/cost tradeoff.
-AGENT_QUERY_RECOVERY = False
 AGENT_ABSENCE_TERMS = 6
 AGENT_CONTEXT_CHARS = 12500
 AGENT_SPEC_CONTEXT_CHARS = 4500

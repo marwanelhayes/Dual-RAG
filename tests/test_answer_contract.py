@@ -71,7 +71,7 @@ def test_comparison_intent_survives_one_weak_lane_and_skips_generation(weak_lane
     app = agent.build_graph(lambda q, k: [doc("spec")], lambda q, k: [doc("rtl")],
                             lambda prompt: calls.append(prompt), [], {"sections": []}, [],
                             {"modules": {}}, {}, reranker=Scorer(),
-                            lane_floors={"spec": -6, "rtl": -6}, query_recovery=False)
+                            lane_floors={"spec": -6, "rtl": -6})
     state = agent.run(app, "Does the RTL implement every specified behavior?")
     assert state["query_type"] == agent.COMPARISON
     assert state["observed_query_type"] == (agent.RTL if weak_lane == "spec" else agent.SPEC)
@@ -91,7 +91,7 @@ def test_real_graph_accepts_only_source_validated_comparison_excerpts():
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
                             lambda prompt: json.dumps(response()), [], {"sections": []}, [],
                             {"modules": {}}, {}, reranker=Scorer(),
-                            lane_floors={"spec": -6, "rtl": -6}, query_recovery=False)
+                            lane_floors={"spec": -6, "rtl": -6})
     state = agent.run(app, "Does the RTL implement AWVALID?")
     assert state["answer_status"] == "evidence_found"
     assert state["answer_validation"]["valid"]
@@ -110,7 +110,7 @@ def test_strong_other_lane_cannot_promote_a_spec_request_into_comparison():
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
                             lambda prompt: response(["[spec:s1 p.12]"]), [], {"sections": []}, [],
                             {"modules": {}}, {}, reranker=Scorer(),
-                            lane_floors={"spec": -6, "rtl": -6}, query_recovery=False)
+                            lane_floors={"spec": -6, "rtl": -6})
     state = agent.run(app, "What does AWVALID indicate?")
     assert state["query_type"] == agent.SPEC
     assert state["observed_query_type"] == agent.COMPARISON

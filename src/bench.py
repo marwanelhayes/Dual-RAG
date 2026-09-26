@@ -447,10 +447,6 @@ def retrieval_row(question, state, k, sections=None):
         "rtl": lane_result(
             rtl_ids, question.get("relevant_rtl_ids", []), k,
             question.get("relevant_rtl_groups"), "rtl"),
-        "query_llm_calls": sum(event.get("llm_calls", 0) for event in state.get("trace", [])
-                               if event.get("event") == "query_recovery"),
-        "query_errors": [event["error"] for event in state.get("trace", [])
-                         if event.get("event") == "query_recovery" and event.get("error")],
     }
     if row["spec"] and sections is not None:
         row["spec"]["section_recall_at_k"] = section_recall(
@@ -603,8 +599,6 @@ def retrieval_metrics(rows):
                 row["spec"]["hit_at_k"] and row["rtl"]["hit_at_k"]
                 for row in subset if row.get("spec") and row.get("rtl")), default=0.0),
             "mean_seconds": _mean(row.get("seconds", 0) for row in subset),
-            "query_llm_calls": sum(row.get("query_llm_calls", 0) for row in subset),
-            "query_failures": sum(len(row.get("query_errors", [])) for row in subset),
             "spec": _lane_summary(subset, "spec"),
             "rtl": _lane_summary(subset, "rtl"),
             "context": {
@@ -674,30 +668,6 @@ def hit_report(rows):
     return "\n".join(lines)
 
 
-def compare_recovery(questions, k=5, graph_factory=None):
-    """Measure both variants on identical questions, alternating their execution order.
-
-    Warm both graphs on the first question before timing; warmup calls are excluded.
-    Answer generation is disabled, so every measured LLM call is query expansion.
-    """
-    import agent
-
-    factory = graph_factory or agent.build_graph
-    apps = {name: factory(answer_model=_skip_answer, query_recovery=enabled)
-            for name, enabled in (("baseline", False), ("recovery", True))}
-    if questions:
-        for app in apps.values():
-            agent.run(app, questions[0]["question"])
-    results = {name: [] for name in apps}
-    for index, question in enumerate(questions):
-        order = list(apps) if index % 2 == 0 else list(reversed(apps))
-        for name in order:
-            results[name].extend(run_retrieval([question], apps[name], k))
-    return {"k": k, "warmup_questions_per_variant": int(bool(questions)),
-            **{name: {"metrics": retrieval_metrics(rows), "results": rows}
-               for name, rows in results.items()}}
-
-
 def stage_retrieval_report(questions, k=5):
     """Load both retrievers from the pipeline artifacts and score them stage-locally.
 
@@ -724,7 +694,7 @@ def stage_retrieval_report(questions, k=5):
             "results": rows}
 
 
-def retrieval_main(path=None, k=5, compare=False):
+def retrieval_main(path=None, k=5):
     """Score retrieval alone and write the per-question report.
 
     Args:
@@ -737,16 +707,6 @@ def retrieval_main(path=None, k=5, compare=False):
     from agent import build_graph
 
     questions = load_gold(path or getattr(cfg, "QUESTION_SET_PATH", cfg.GOLD_PATH))
-    if compare:
-        report = compare_recovery(questions, k)
-        path = cfg.OUTPUT_DIR / "retrieval_recovery_bench.json"
-        cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=2)
-        print(json.dumps({name: report[name]["metrics"]["overall"]
-                          for name in ("baseline", "recovery")}, indent=2))
-        print(f"Full report in {path}")
-        return
     rows = run_retrieval(questions, build_graph(answer_model=_skip_answer), k)
     report = {"k": k, "metrics": retrieval_metrics(rows),
               "misses": retrieval_misses(rows), "results": rows}
@@ -782,9 +742,7 @@ def main():
 
 if __name__ == "__main__":
     if "--retrieval" in sys.argv[1:]:
-        arguments = [item for item in sys.argv[1:]
-                     if item not in {"--retrieval", "--compare-recovery"}]
-        retrieval_main(arguments[0] if arguments else None,
-                       compare="--compare-recovery" in sys.argv[1:])
+        arguments = [item for item in sys.argv[1:] if item != "--retrieval"]
+        retrieval_main(arguments[0] if arguments else None)
     else:
         main()

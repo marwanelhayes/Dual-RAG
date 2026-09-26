@@ -34,7 +34,6 @@ class State(TypedDict, total=False):
     final_context: str
     trace: list
     answer: str
-    recovery_done: bool
     spec_rankings: list
     observed_query_type: str
     citable_evidence: dict
@@ -1092,61 +1091,6 @@ def local_answer(prompt):
     return str(response.json().get("message", {}).get("content", "")).strip()
 
 
-def local_query(prompt):
-    """Generate one short recovery query using the configured local model."""
-    import httpx
-
-    host = str(cfg.LOCAL_LLM_HOST).rstrip("/")
-    response = httpx.post(
-        f"{host}/api/chat",
-        json={"model": cfg.LOCAL_LLM_MODEL, "stream": False, "think": False,
-              "messages": [{"role": "user", "content": prompt}],
-              "options": {"temperature": 0, "num_predict": 128}},
-        timeout=min(cfg.AGENT_TIMEOUT_S, 30))
-    response.raise_for_status()
-    return response.json().get("message", {}).get("content", "")
-
-
-def recovery_query(question, lane, prior, model):
-    """Keep the original question verbatim in a single lane-specific query."""
-    focus = {"spec": "requirements that define this behavior",
-             "rtl": "modules, signals, assignments or always blocks implementing this behavior"}[lane]
-    comparison = (" Focus on specified behaviors needing matching RTL evidence."
-                  if prior == COMPARISON else "")
-    prompt = (f"Return one short {lane.upper()} search query for {focus}.{comparison} "
-              "Do not answer the question. Preserve every signal, module, instruction, "
-              "register and numeric value exactly. No lists or explanations.\n"
-              f"Question: {question}")
-    generated = model(prompt)
-    if not isinstance(generated, str) or not generated.strip() or len(generated) > 600:
-        return None
-    # Whole-question retention also protects names no identifier regex recognizes.
-    return f"{question}\n{generated.strip()}"
-
-
-def fuse_recovery(question, rankings, reranker, limit):
-    """RRF query rankings, then cross-encode against the original question."""
-    from langchain_core.documents import Document
-    from retrieve import apply_authority, reciprocal_rank_fusion
-
-    records = {}
-    for ranking in rankings:
-        for item in ranking:
-            records.setdefault(item["id"], item)
-    ids = reciprocal_rank_fusion([list(dict.fromkeys(item["id"] for item in ranking))
-                                  for ranking in rankings])
-    scores = reranker.score_pairs((question, records[key]["text"]) for key in ids)
-    scores = apply_authority(
-        [Document(page_content=records[key]["text"], metadata=records[key].get("metadata", {}))
-         for key in ids], scores)
-    ranked = sorted(zip(ids, scores), key=lambda pair: pair[1], reverse=True)
-    # Original compiler exact hits retain precedence over generated-query matches.
-    exact = {item["id"] for item in rankings[0]
-             if item.get("metadata", {}).get("exact_match_type")}
-    ranked.sort(key=lambda pair: pair[0] not in exact)
-    return [dict(records[key], score=float(score)) for key, score in ranked[:limit]]
-
-
 class Runtime:
     """Hold lazy retrieval adapters and generated artifacts for one graph instance."""
 
@@ -1349,8 +1293,7 @@ class Runtime:
 
 def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                 spec_records=None, hierarchy=None, spec_signals=None, rtl=None,
-                bridge=None, reranker=None, lane_floors=None,
-                query_model=None, query_recovery=None):
+                bridge=None, reranker=None, lane_floors=None):
     """Compile the three-route LangGraph with structurally mandatory evidence lanes.
 
     Args:
@@ -1364,8 +1307,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         bridge: Optional in-memory bridge artifact.
         reranker: Optional cross-encoder scoring both lanes on one scale.
         lane_floors: Optional per-domain floors that skip background calibration.
-        query_model: Optional callable generating one recovery query.
-        query_recovery: Enable weak-lane recovery; defaults to configuration.
 
     Returns:
         Compiled LangGraph application.
@@ -1374,8 +1315,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
 
     runtime = Runtime(spec_retriever, rtl_retriever, answer_model, spec_records,
                       hierarchy, spec_signals, rtl, bridge, reranker, lane_floors)
-    recovery_enabled = cfg.AGENT_QUERY_RECOVERY if query_recovery is None else query_recovery
-    query_model = local_query if query_model is None else query_model
 
     def classify_node(state):
         """Record the wording-based route as a prior; evidence decides the real route.
@@ -1387,8 +1326,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             State update carrying the route prior and its trace event.
         """
         prior = classify_query(state["question"])
-        return {"route_prior": prior, "query_type": prior, "recovery_done": False,
-                "spec_rankings": [],
+        return {"route_prior": prior, "query_type": prior, "spec_rankings": [],
                 "trace": _append_trace(state, "route_prior", query_type=prior)}
 
     def spec_node(state):
@@ -1511,17 +1449,11 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             terms = reverse_bridge_terms(state.get("rtl_evidence", []),
                                          runtime.get_bridge())
             if terms:
-                domain_query = " ".join(terms)
-                if recovery_enabled:
-                    domain_query = state["question"] + "\n" + domain_query
-                raw = runtime.spec_search(domain_query,
+                raw = runtime.spec_search(" ".join(terms),
                                           getattr(cfg, "AGENT_SEARCH_K", 3))
                 extra = [_hit_record(item, "spec") for item in raw]
                 spec_rankings.append(extra)
-                spec_evidence = (fuse_recovery(state["question"], spec_rankings,
-                                               reranker, cfg.AGENT_SPEC_SEARCH_K)
-                                 if recovery_enabled else
-                                 _dedupe_evidence([*spec_evidence, *extra]))
+                spec_evidence = _dedupe_evidence([*spec_evidence, *extra])
         return {
             "spec_evidence": spec_evidence,
             "spec_rankings": spec_rankings,
@@ -1568,70 +1500,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                 route_prior=state.get("route_prior"), scores=scores, floors=floors,
                 credible=credible, absent_terms=absent),
         }
-
-    def recovery_node(state):
-        """Recover weak lanes once, with at most one domain and one model query each."""
-        current = dict(state)
-        reranker = runtime.get_reranker()
-        floors = runtime.get_lane_floors()
-        for lane in ("spec", "rtl"):
-            key = f"{lane}_evidence"
-            evidence = list(current.get(key, []))
-            blocks = current.get("rtl_blocks", []) if lane == "rtl" else []
-
-            def weak():
-                """Test whether the current lane still falls below its relevance floor."""
-                score = lane_strength(reranker, state["question"], [*blocks, *evidence],
-                                      sample=cfg.AGENT_LANE_SAMPLE + len(blocks))
-                return not credible_lanes({lane: score}, floors)[lane]
-
-            if not weak():
-                continue
-            search = runtime.spec_search if lane == "spec" else runtime.rtl_search
-            limit = cfg.AGENT_SPEC_SEARCH_K if lane == "spec" else cfg.AGENT_RTL_SEARCH_K
-            rankings = list(state["spec_rankings"]) if lane == "spec" else [evidence]
-            focus = ("What requirements define this behavior?" if lane == "spec" else
-                     "Which modules, signals, assignments or always blocks implement it?")
-            terms = (reverse_bridge_terms(current.get("rtl_evidence", []), runtime.get_bridge())
-                     if lane == "spec" else sum(bridge_targets(
-                         current.get("bridge_matches", []), current.get("module_matches", [])), []))
-            queries, error, calls = [], None, 0
-            if len(rankings) == 1:
-                query = state["question"] + "\n" + focus + " " + " ".join(terms)
-                queries.append(query)
-                rankings.append([_hit_record(hit, lane) for hit in search(query, limit)])
-                evidence = fuse_recovery(state["question"], rankings, reranker, limit)
-            if weak():
-                calls = 1
-                try:
-                    query = recovery_query(state["question"], lane,
-                                           state.get("route_prior"), query_model)
-                    if query is None:
-                        error = "InvalidQuery"
-                except Exception as exc:
-                    # Optional generation failure must not discard existing evidence.
-                    query, error = None, type(exc).__name__
-                if query and query not in [state["question"], *queries]:
-                    queries.append(query)
-                    rankings.append([_hit_record(hit, lane) for hit in search(query, limit)])
-                    evidence = fuse_recovery(state["question"], rankings, reranker, limit)
-            current[key] = evidence
-            current["trace"] = _append_trace(
-                current, "query_recovery", lane=lane, queries=queries,
-                llm_calls=calls, error=error, record_ids=[item["id"] for item in evidence])
-            if lane == "spec":
-                current["spec_signals"] = select_spec_signals(
-                    state["question"], evidence, runtime.get_spec_signals())
-                current.update(bridge_node(current))
-                signals, modules = bridge_targets(current["bridge_matches"],
-                                                   current["module_matches"])
-                new_blocks = align_block_ids(surrounding_rtl_blocks(
-                    runtime.get_rtl(), signals, modules, limit=cfg.AGENT_RTL_BLOCKS),
-                    runtime.get_rtl_records())
-                current["rtl_blocks"] = _dedupe_evidence(
-                    [*current.get("rtl_blocks", []), *new_blocks])[:cfg.AGENT_RTL_BLOCKS]
-        current["recovery_done"] = True
-        return current
 
     def merge_node(state):
         """Merge evidence under hard character budgets.
@@ -1705,7 +1573,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_node("lookup_bridge", bridge_node)
     graph.add_node("expand", expand_node)
     graph.add_node("allocate", allocate_node)
-    graph.add_node("recover", recovery_node)
     graph.add_node("merge", merge_node)
     graph.add_node("answer", answer_node)
     graph.add_edge(START, "classify")
@@ -1715,12 +1582,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_edge("retrieve_rtl", "lookup_bridge")
     graph.add_edge("lookup_bridge", "expand")
     graph.add_edge("expand", "allocate")
-    graph.add_conditional_edges("allocate", lambda state:
-                                "recover" if recovery_enabled
-                                and not state.get("recovery_done")
-                                and not all(state["lane_credible"].values()) else "merge",
-                                {"recover": "recover", "merge": "merge"})
-    graph.add_edge("recover", "allocate")
+    graph.add_edge("allocate", "merge")
     graph.add_edge("merge", "answer")
     graph.add_edge("answer", END)
     return graph.compile()

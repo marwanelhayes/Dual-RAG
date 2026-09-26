@@ -107,122 +107,6 @@ def test_dedup_keeps_a_larger_chunk_that_adds_requirements():
     assert agent.drop_near_duplicates([long, short]) == [long]
 
 
-def _recovery_graph(searches, model, reranker=None, **kwargs):
-    return agent.build_graph(
-        spec_retriever=searches[0], rtl_retriever=searches[1],
-        answer_model=lambda prompt: "answer", spec_records=[], hierarchy={"sections": []},
-        spec_signals=[], rtl={"modules": {}}, bridge={},
-        reranker=reranker or _Reranker({"relevant": 1}, default=-9),
-        lane_floors=_FLOORS, query_recovery=True, query_model=model, **kwargs)
-
-
-def test_recovery_leaves_strong_lanes_at_one_query_without_generation():
-    calls = []
-
-    def search(query, k):
-        calls.append(query)
-        return [_doc("hit", "relevant")]
-
-    def forbidden(prompt):
-        raise AssertionError("strong lanes must not generate queries")
-
-    state = agent.run(_recovery_graph([search, search], forbidden), "fpu_result_valid 32")
-    assert len(calls) == 2
-    assert not state["recovery_done"]
-    assert not any(event["event"] == "query_recovery" for event in state["trace"])
-
-
-def test_recovery_rescores_domain_query_before_spending_an_llm_call():
-    calls, prompts = [], []
-
-    def spec(query, k):
-        calls.append(query)
-        return [_doc("new" if len(calls) > 1 else "old",
-                     "relevant" if len(calls) > 1 else "noise")]
-
-    state = agent.run(_recovery_graph(
-        [spec, lambda query, k: [_doc("rtl", "relevant")]], prompts.append), "requirements")
-    assert len(calls) == 2 and prompts == []
-    assert state["lane_credible"] == {"spec": True, "rtl": True}
-    assert state["spec_evidence"][0]["id"] == "new"
-    assert sum(event["event"] == "lane_allocation" for event in state["trace"]) == 2
-
-
-def test_recovery_bounds_queries_and_keeps_identifiers_and_values_verbatim():
-    question = "Does fpu implement FADD.S using fpu_result_valid and x1 at 32 and 0x10?"
-    searches, prompts = {"spec": [], "rtl": []}, []
-
-    def search(lane):
-        def retrieve(query, k):
-            searches[lane].append(query)
-            return [_doc(lane + str(len(searches[lane])), "noise")]
-        return retrieve
-
-    def model(prompt):
-        prompts.append(prompt)
-        return "floating point completion evidence"
-
-    state = agent.run(_recovery_graph([search("spec"), search("rtl")], model), question)
-    assert len(prompts) == 2
-    assert "SPEC search" in prompts[0] and "RTL search" in prompts[1]
-    assert all("specified behaviors" in prompt for prompt in prompts)
-    assert all(len(queries) == 3 for queries in searches.values())
-    assert all(query.startswith(question) for queries in searches.values() for query in queries)
-    assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
-    assert sum(event.get("llm_calls", 0) for event in state["trace"]) == 2
-
-
-def test_recovery_model_failure_keeps_evidence_and_finishes():
-    def broken(prompt):
-        raise TimeoutError("offline")
-
-    state = agent.run(_recovery_graph(
-        [lambda query, k: [_doc("spec", "noise")],
-         lambda query, k: [_doc("rtl", "relevant")]], broken), "requirements")
-    assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
-    assert state["spec_evidence"][0]["id"] == "spec"
-    event = next(event for event in state["trace"] if event["event"] == "query_recovery")
-    assert event["error"] == "TimeoutError" and event["llm_calls"] == 1
-
-
-def test_existing_reverse_bridge_query_consumes_domain_slot_before_llm_recovery():
-    records, hierarchy, signals, rtl, bridge = _runtime_data()
-    queries, prompts = [], []
-
-    def spec(query, k):
-        queries.append(query)
-        return [_doc("spec#new" if len(queries) == 3 else "spec#1",
-                     "relevant" if len(queries) == 3 else "noise", section_id="sec:fpu")]
-
-    def model(prompt):
-        prompts.append(prompt)
-        return "rounding requirements"
-
-    app = agent.build_graph(
-        spec, lambda query, k: [_doc("rtl:fpu", "relevant", module="fpu")],
-        lambda prompt: "answer", records, hierarchy, signals, rtl, bridge,
-        reranker=_Reranker({"relevant": 1}, default=-9), lane_floors=_FLOORS,
-        query_model=model, query_recovery=True)
-    state = agent.run(app, "Does fpu implement rounding_mode?")
-    assert len(queries) == 3 and len(prompts) == 1
-    assert "rounding_mode" in queries[1]
-    assert state["spec_evidence"][0]["id"] == "spec#new"
-    assert state["lane_credible"] == {"spec": True, "rtl": True}
-
-
-def test_recovery_rrf_deduplicates_ranks_then_reranks_with_exact_precedence():
-    a = agent._hit_record(_doc("a", "noise", exact_match_type="signal"), "rtl")
-    b = agent._hit_record(_doc("b", "noise"), "rtl")
-    c = agent._hit_record(_doc("c", "noise"), "rtl")
-    # c wins RRF over b even though b occurs earlier and is repeated in one ranking.
-    rankings = [[a, b, b, b, c], [c, b]]
-    assert [item["id"] for item in agent.fuse_recovery(
-        "question", rankings, _Reranker(), 3)] == ["a", "c", "b"]
-    assert [item["id"] for item in agent.fuse_recovery(
-        "question", [[a, b], [dict(c, text="best")]],
-        _Reranker({"best": 10}), 2)] == ["a", "c"]
-
-
 def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     calls = []
     records, hierarchy, signals, rtl, bridge = _runtime_data()
@@ -679,3 +563,14 @@ def test_targeted_blocks_are_relabelled_with_store_chunk_ids():
 
     assert aligned[0]["id"] == "rtl:construct:cache:always:415-459"
     assert aligned[1]["id"] == "cache:9"
+
+
+def test_query_recovery_is_gone():
+    import inspect
+
+    import retrieve
+
+    for name in ("fuse_recovery", "recovery_query", "local_query"):
+        assert not hasattr(agent, name)
+    assert not hasattr(retrieve, "reciprocal_rank_fusion")
+    assert "query_recovery" not in inspect.signature(agent.build_graph).parameters

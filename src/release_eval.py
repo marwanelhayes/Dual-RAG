@@ -49,7 +49,7 @@ def run_cases(dataset, app=None):
     """Generate real answers once; never substitute a retrieval-only answer stub."""
     import agent
 
-    app = agent.build_graph(query_recovery=False) if app is None else app
+    app = agent.build_graph() if app is None else app
     rows = []
     for case in dataset["cases"]:
         started = time.perf_counter()

@@ -262,42 +262,6 @@ def test_retrieval_metrics_slice_by_route_and_naming():
     assert bench.retrieval_misses(rows) == [{"id": "B", "question": None, "rtl": ["r1"]}]
 
 
-def test_recovery_metrics_count_dual_evidence_at_k_and_query_cost():
-    rows = [{"id": "one", "naming": None, "expected_query_type": "COMPARISON",
-             "route_correct": True, "seconds": 2, "query_llm_calls": 1,
-             "spec": bench.lane_result(["s"], ["s"], 1),
-             "rtl": bench.lane_result(["noise", "r"], ["r"], 1)}]
-    overall = bench.retrieval_metrics(rows)["overall"]
-    assert overall["dual_evidence_recall_at_k"] == 0
-    assert overall["query_llm_calls"] == 1 and overall["mean_seconds"] == 2
-    assert bench.retrieval_row({"id": "one", "question": "q"}, {
-        "trace": [{"event": "query_recovery", "llm_calls": 1},
-                  {"event": "query_recovery", "llm_calls": 1}]}, 5)["query_llm_calls"] == 2
-
-
-def test_paired_recovery_benchmark_disables_answers_and_alternates_order(monkeypatch):
-    import agent
-
-    calls, options = [], []
-
-    def factory(**kwargs):
-        options.append(kwargs)
-        return kwargs["query_recovery"]
-
-    def run(app, question):
-        calls.append((app, question))
-        return {"query_type": "SPEC", "trace": []}
-
-    monkeypatch.setattr(agent, "run", run)
-    questions = [{"id": name, "question": name, "expected_query_type": "SPEC"}
-                 for name in ("one", "two")]
-    report = bench.compare_recovery(questions, graph_factory=factory)
-    assert calls == [(False, "one"), (True, "one"),  # warmup
-                     (False, "one"), (True, "one"), (True, "two"), (False, "two")]
-    assert all(option["answer_model"] is bench._skip_answer for option in options)
-    assert report["baseline"]["metrics"]["overall"]["questions"] == 2
-
-
 def test_section_key_uses_outline_number_name_or_table_label():
     prose = {"document_id": "axi", "chunk_type": "prose", "section_number": "A2.3.1",
              "section_name": "Valid-Ready signals"}

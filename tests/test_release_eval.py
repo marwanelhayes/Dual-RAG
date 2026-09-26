@@ -116,5 +116,5 @@ def test_release_runner_uses_real_answer_path_and_records_generation_failures(mo
         "answer": "INSUFFICIENT EVIDENCE", "answer_status": "rejected",
         "answer_validation": {"errors": ["model_error:ConnectError"]}})
     rows = release.run_cases(dataset)
-    assert options == [{"query_recovery": False}]
+    assert options == [{}]
     assert all(row["status"] == "rejected" for row in rows)
