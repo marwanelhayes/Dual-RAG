@@ -265,3 +265,60 @@ Deferred option: title / context similarity scoring with thresholds.
 Why not now: its above-0.45 candidates fed agent expansion with `PCIe` → `pc_adder`.
 
 Reopen when: a gold section → module set exists to measure it.
+
+## DF-20: Spec exact-identifier lane
+
+Decided 2026-09-26. Current choice: spec `Retriever` = BM25 ∪ dense → cross-encoder.
+
+Deferred option: `identifier_terms` / `exact_document_ids` literal lane pinning up to
+`top_k // 2` chunks containing a question identifier.
+
+Why not now: sets not selective (`MODE` 467 chunks, `RISC` 353, `RV32I` 116); BM25 already
+ranks the same literal tokens; `exact_terms=` had no production caller.
+
+Reopen when: identifier questions drop on `retrieve.spec.section_recall_at_k` after q3.
+
+## DF-21: Frozen small-LLM document role classifier
+
+Decided 2026-09-26. Current choice: `roles.document_role_scores` word counting feeds
+`apply_authority` (normative outranks explanatory).
+
+Deferred option: a "system 1" classifier with frozen weights (e.g. Qwen, the user's "open
+jev style" idea) labelling each document normative or explanatory.
+
+Reopen when: word counting mislabels a source, or a new corpus document lands.
+
+## DF-22: Stated per-source role override
+
+Decided 2026-09-26. Current choice: roles inferred only.
+
+Deferred option: `cfg.SOURCE_ROLES = {doc_name: role}` overriding inference.
+
+Why not now: users are not expected to state document types.
+
+Reopen when: a user states a document's type.
+
+## DF-23: Casefold and normalized exact-lookup tiers
+
+Decided 2026-09-26. Current choice: RTL exact lookup matches names case-exactly, plus
+phrase matches on `normalized_name`.
+
+Deferred option: casefold and `normalize_identifier` tiers in `_term_strength`.
+
+Why not now: bench: normalized fired 0 times; casefold fired 7, all wrong (English
+"rounding" → function `Rounding`, "MODE" → signal `mode`), pinned ahead of gold.
+
+Reopen when: users type identifiers in a different case or separator style than the RTL.
+
+## DF-24: Query stop words and minimum term length
+
+Decided 2026-09-26. Current choice: every identifier-shaped query word is a lookup term;
+`signal_terms` still keeps all-lowercase words away from signal names.
+
+Deferred option: `_QUERY_STOP_WORDS` and `len >= 3` filter in `_query_terms`.
+
+Why not now: no stop word is an RTL name (15 are SystemVerilog reserved words); the length
+filter hid `PC` / `WE`.
+
+Reopen when: a capitalised article or short word pins a wrong signal (watch
+`SPEC_PRIV_MCAUSE`: `M` → `non_restoring_divider`).

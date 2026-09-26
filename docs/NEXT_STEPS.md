@@ -4,8 +4,9 @@ Handoff from the 2026-09-21/24 simplification sessions. Method and session promp
 [`docs/SIMPLIFICATION_METHOD.md`](SIMPLIFICATION_METHOD.md). Decided specs and queues:
 [`docs/specs/ingest.md`](specs/ingest.md), [`docs/specs/spec_signals.md`](specs/spec_signals.md),
 [`docs/specs/embed.md`](specs/embed.md), [`docs/specs/rtl_ingest.md`](specs/rtl_ingest.md),
-[`docs/specs/rtl_embed.md`](specs/rtl_embed.md), [`docs/specs/bridge.md`](specs/bridge.md).
-Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-19).
+[`docs/specs/rtl_embed.md`](specs/rtl_embed.md), [`docs/specs/bridge.md`](specs/bridge.md),
+[`docs/specs/retrieve.md`](specs/retrieve.md).
+Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-24).
 
 ## Where we are
 
@@ -127,8 +128,10 @@ test PDFs have points but no printed heading, and it would delete body text.
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
 ending "... going for retrieve.py".
 
-1. **Walk `retrieve.py`** (exact lookup and `RTLRetriever` moved in at rt1; `Document` hit
-   type; window folding), then **`agent.py`** (pending lists below).
+1. **Run the `retrieve.py` queue** ([`docs/specs/retrieve.md`](specs/retrieve.md), walked
+   2026-09-26): q0 stage-local metrics, experiments `q-exp/no-rerank` and `q-exp/no-owned`
+   on throwaway branches, then q1-q8. Then **walk `agent.py`** (pending lists below and in
+   the retrieve spec).
 2. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
    collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
    (DF), or propagate only from `interface_prefix` links.
