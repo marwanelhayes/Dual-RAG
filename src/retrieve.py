@@ -379,7 +379,7 @@ class RTLRetriever:
             top_k: Maximum result count.
 
         Returns:
-            LangChain documents in final rank order.
+            Document and ``None`` score pairs in final rank order.
         """
         wanted = top_k
         exact = exact_lookup(query, self.records)
@@ -417,7 +417,7 @@ class RTLRetriever:
                 prefix.append(document)
                 seen.add(chunk_id)
         if len(prefix) >= wanted:
-            return prefix[:wanted]
+            return [(document, None) for document in prefix[:wanted]]
         hybrid = self._hybrid()
         ranked = hybrid.search(query, top_k=wanted + len(prefix))
         output = list(prefix)
@@ -450,4 +450,4 @@ class RTLRetriever:
             pinned_ids = {document.metadata.get("chunk_id") for document in pinned}
             output = [*pinned, *(document for document in reranked
                                  if document.metadata.get("chunk_id") not in pinned_ids)]
-        return output[:wanted]
+        return [(document, None) for document in output[:wanted]]

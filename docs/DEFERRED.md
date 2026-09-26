@@ -322,3 +322,17 @@ filter hid `PC` / `WE`.
 
 Reopen when: a capitalised article or short word pins a wrong signal (watch
 `SPEC_PRIV_MCAUSE`: `M` → `non_restoring_divider`).
+
+## DF-25: Normalized names in `signal_names`
+
+Decided 2026-09-26 (after q7). Current choice: `signal_names` holds declaration names as the
+source spells them.
+
+Deferred option: also store each declaration's `normalized_name`, so a query spelling
+`csr_file` exact-hits signal `CsrFile`.
+
+Why not now: the only bench effect is `CMP_MINFO_CSR_EXACT` (-1 gold construct), where the
+question already names module `csr_file`; the gain came from a module-name / signal-name
+coincidence.
+
+Reopen when: questions spell signals in snake_case form and miss their mixed-case RTL names.
