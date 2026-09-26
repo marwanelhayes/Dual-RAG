@@ -92,3 +92,19 @@ stage artifact changes (a12).
 | a10 | `agent/bridge-schema-keys` | Q6, `hierarchy_id` | zero |
 | a11 | `agent/rtl-chunks` | records from `rtl_chunks.jsonl`, freshness on them | zero |
 | a12 | `ingest/drop-agent-section-fields` | ingest + spec_signals minus keys | minus keys |
+
+## Outcome (2026-09-26)
+
+All steps run; commits and MLflow runs in [`docs/NEXT_STEPS.md`](../NEXT_STEPS.md).
+
+| | a0 | a12 |
+|---|---|---|
+| `retrieval.context.spec_section_recall` | 0.575 | **0.740** (0.748 before build noise) |
+| `retrieval.context.rtl_exact_recall` | 0.308 | **0.600** |
+| mean context chars | 9.2k | 17.8k (max ~5.9k bge tokens) |
+| model calls gated before generation | 7/60 | only when a required domain has no citable passage |
+| `src/agent.py` lines | 1787 | 773 |
+
+Deviations: the callable-adapter seam stays as one protocol, `adapter(query, k)` (tests pass
+lambdas); `BRIDGE_QUERY_CANDIDATES` stays (bridge reads it); `chunk_index` also dropped at a12
+(its only reader was hierarchy expansion).

@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `03d2903` + docs. Tests: 273 passed. Decision metrics:
+Branch `simplify`, head `ac9d39e` + docs. Tests: 252 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -109,6 +109,32 @@ signal hit whose structures included the gold task. `signal_names` holds only or
 The walk's Q11 finding ("retrieve reads only `original_name`") missed that q4 still matched
 signal `normalized_name`. Decided 2026-09-26: accept the loss (DF-25).
 
+Agent queue run 2026-09-26. Columns: context spec section / context RTL exact / mean context
+chars (decision: `retrieval.context.*`, gold inside `citable_evidence`); agent@5 stayed 0.683 /
+0.500-0.508.
+
+| Step | Commit | MLflow run | context spec / rtl / chars | Notes |
+|---|---|---|---|---|
+| a0 `agent/metrics` | `4ee7f5c` | `533d7f56` | 0.575 / 0.308 / 9.2k | baseline |
+| a1 `agent/drop-recovery` | `f7dd3b7` | `d9c659aa` | 0.575 / 0.308 / 9.2k | zero diff |
+| a2 `agent/drop-dead-code` | `cae5694` | `f63b873c` | 0.575 / 0.308 / 9.2k | zero diff |
+| a3 `agent/drop-hierarchy-expansion` | `4eac585` | `12cd04b9` | 0.575 / 0.308 / 9.2k | |
+| a4 `agent/drop-rtl-blocks` | `d2ca848` | `4e2d6b67` | 0.575 / **0.508** / 9.2k | 13 questions gain |
+| a5 `agent/drop-reverse-requery` | `5f783ae` | `eb73a010` | 0.575 / 0.508 / 9.2k | |
+| a6 `agent/drop-lane-floors` | `61dfd26` | `8bd8123a` | 0.575 / 0.525 / 10.4k | linear graph |
+| a7 `agent/whole-passages` (5/5) | `b7f8ba5` | `69a8e6b4` | **0.683** / 0.508 / 11.8k | RTL -0.017: sixth construct no longer fits |
+| a8 `agent/drop-signal-rows` | `f4aaf03` | `bf3105c5` | 0.683 / 0.508 / 11.6k | |
+| a9 `sweep/agent_k` (8/8) | `0921811` | `1bb31243`, `5dba40b2`, `24505982` (5/8, 8/5, 8/8) | **0.748 / 0.600** / 17.9k | max ~5.9k bge tokens |
+| a10 `agent/bridge-schema-keys` | `05b1d33` | `4458a76f` | 0.748 / 0.600 / 17.9k | |
+| a11 `agent/rtl-chunks` | `9e90e2a` | `025bcf91` | 0.748 / 0.600 / 17.9k | zero diff |
+| a12 `ingest/drop-agent-section-fields` | `ac9d39e` | `80b73054` | 0.740 / 0.600 / 17.8k | minus keys proved; -1 passage is index-build noise |
+| noise `noise/embed-rebuild` | `ac9d39e` | `3290cbce` | 0.740 / 0.600 / 17.8k | same inputs, rebuilt index |
+
+a12: chunks and signals equal the old minus the dropped keys, yet rank 8 changed in 3 AXI
+questions. Rebuilding the spec index from identical chunks changes the dense top-30 (order and
+set), so index construction is non-deterministic (Chroma HNSW or GPU embedding); tail ranks move
+between builds. Retrieval@5 and stage metrics were identical across the two rebuilds.
+
 Ingest 10 (-0.025): gold rewarded prose copies of the rounding-mode table; the table chunk is
 still retrieved. Ingest 14 (-0.034): the default 256-token cap, fixed by the sweep.
 
@@ -153,14 +179,18 @@ test PDFs have points but no printed heading, and it would delete body text.
 Start the next session with `/grill-me` and the prompt in `docs/SIMPLIFICATION_METHOD.md`,
 ending "... going for retrieve.py".
 
-1. **Run the `agent.py` queue** ([`docs/specs/agent.md`](specs/agent.md), walked 2026-09-26):
-   a0 context metrics, then a1-a12.
-2. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
+1. **Decide index determinism** (`embed.py`): identical chunks give a different dense top-30
+   after a rebuild. Find whether embeddings or HNSW construction differ, then fix or accept
+   (e.g. exact search at 3.6k chunks) before trusting one-passage diffs.
+2. **Answer bench** (Ollama `qwen3:4b`, `AGENT_NUM_CTX` 8192): never run on this branch; the
+   agent now always calls the model when required domains are citable.
+3. Walk `answer_contract.py`, `api.py`, `release_eval.py`, `bench.py` (not walked).
+4. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
    collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
    (DF), or propagate only from `interface_prefix` links.
 
 Done 2026-09-23: step 9b, `embed.py` walk + e0-e5 (Chroma), `rtl_ingest.py` walk + r0-r5.
-Done 2026-09-26: `retrieve.py` walk + q0-q8.
+Done 2026-09-26: `retrieve.py` walk + q0-q8; `agent.py` walk + a0-a12.
 Done 2026-09-24: `rtl_embed.py` walk + rt0-rt11; ingest 10-15; spec_signals s2-s7;
 `bridge.py` walk + b0-b10; `ARESETn` tokenization; `faiss-cpu` / `langchain-community`
 uninstalled from `.venv`.
