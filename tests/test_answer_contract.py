@@ -56,22 +56,21 @@ def test_truncated_or_unknown_location_passages_cannot_authorize_quotes():
     assert agent.citable_evidence(state, agent._spec_context([item], [])) == {}
 
 
-@pytest.mark.parametrize("weak_lane", ["spec", "rtl"])
-def test_comparison_intent_survives_one_weak_lane_and_skips_generation(weak_lane):
+@pytest.mark.parametrize("empty_lane", ["spec", "rtl"])
+def test_comparison_without_a_citable_domain_skips_generation(empty_lane):
+    import inspect
+
     calls = []
 
-    class Scorer:
-        def score_pairs(self, pairs):
-            return [-9 if weak_lane in text else 1 for _, text in pairs]
+    def search(lane):
+        return lambda q, k: [] if lane == empty_lane else [Document(
+            page_content=lane, metadata={"chunk_id": lane, "start_page": 1,
+                                         "file": "rtl/test.sv", "line": 1})]
 
-    def doc(lane):
-        return Document(page_content=lane, metadata={"chunk_id": lane, "start_page": 1,
-                                                    "file": "rtl/test.sv", "line": 1})
-
-    app = agent.build_graph(lambda q, k: [doc("spec")], lambda q, k: [doc("rtl")],
-                            lambda prompt: calls.append(prompt), [], [],
-                            {"modules": {}}, {}, reranker=Scorer(),
-                            lane_floors={"spec": -6, "rtl": -6})
+    assert {"reranker", "lane_floors"}.isdisjoint(
+        inspect.signature(agent.build_graph).parameters)
+    app = agent.build_graph(search("spec"), search("rtl"),
+                            lambda prompt: calls.append(prompt), [], [], {"modules": {}}, {})
     state = agent.run(app, "Does the RTL implement every specified behavior?")
     assert state["query_type"] == agent.COMPARISON
     assert state["answer_status"] == "insufficient_evidence"
@@ -79,18 +78,12 @@ def test_comparison_intent_survives_one_weak_lane_and_skips_generation(weak_lane
 
 
 def test_real_graph_accepts_only_source_validated_comparison_excerpts():
-    class Scorer:
-        def score_pairs(self, pairs):
-            return [1 for _ in pairs]
-
     spec = Document(page_content=CATALOG["[spec:s1 p.12]"]["text"],
                     metadata={"chunk_id": "s1", "start_page": 12})
     rtl = Document(page_content=CATALOG["[rtl:cache.sv:10]"]["text"],
                    metadata={"chunk_id": "r1", "file": "rtl/cache.sv", "line": 10})
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
-                            lambda prompt: json.dumps(response()), [], [],
-                            {"modules": {}}, {}, reranker=Scorer(),
-                            lane_floors={"spec": -6, "rtl": -6})
+                            lambda prompt: json.dumps(response()), [], [], {"modules": {}}, {})
     state = agent.run(app, "Does the RTL implement AWVALID?")
     assert state["answer_status"] == "evidence_found"
     assert state["answer_validation"]["valid"]
@@ -98,18 +91,12 @@ def test_real_graph_accepts_only_source_validated_comparison_excerpts():
 
 
 def test_strong_other_lane_cannot_promote_a_spec_request_into_comparison():
-    class Scorer:
-        def score_pairs(self, pairs):
-            return [1 for _ in pairs]
-
     spec = Document(page_content=CATALOG["[spec:s1 p.12]"]["text"],
                     metadata={"chunk_id": "s1", "start_page": 12})
     rtl = Document(page_content="assign MAWValid = pending;",
                    metadata={"chunk_id": "r1", "file": "rtl/cache.sv", "line": 10})
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
-                            lambda prompt: response(["[spec:s1 p.12]"]), [], [],
-                            {"modules": {}}, {}, reranker=Scorer(),
-                            lane_floors={"spec": -6, "rtl": -6})
+                            lambda prompt: response(["[spec:s1 p.12]"]), [], [], {"modules": {}}, {})
     state = agent.run(app, "What does AWVALID indicate?")
     assert state["query_type"] == agent.SPEC
     assert state["answer_status"] == "evidence_found"

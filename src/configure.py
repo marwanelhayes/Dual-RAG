@@ -158,14 +158,6 @@ AGENT_TIMEOUT_S = 300
 AGENT_RTL_SEARCH_K = 8
 # Sentence-overlap chunking splits one spec passage across neighbours, so a section needs slots.
 AGENT_SPEC_SEARCH_K = 8
-# Cross-encoders rate prose above code, so each lane's floor is calibrated per domain.
-AGENT_LANE_SAMPLE = 3
-LANE_CALIBRATION_PATH = OUTPUT_DIR / "lane_calibration.json"
-LANE_CALIBRATION_SAMPLES = 200
-LANE_CALIBRATION_QUANTILE = 0.95
-LANE_FLOOR_FALLBACK = -6.0
-# A lane below the floor keeps a small slice, so weak-but-real evidence stays inspectable.
-AGENT_WEAK_LANE_SHARE = 0.25
 AGENT_CONTEXT_CHARS = 12500
 AGENT_SPEC_CONTEXT_CHARS = 4500
 AGENT_RTL_CONTEXT_CHARS = 5500

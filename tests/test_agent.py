@@ -10,22 +10,6 @@ def _doc(chunk_id, text, **metadata):
     return Document(page_content=text, metadata={"chunk_id": chunk_id, **metadata})
 
 
-_FLOORS = {"spec": -6.0, "rtl": -6.0}
-
-
-class _Reranker:
-    """Score lane candidates deterministically instead of loading a cross-encoder."""
-
-    def __init__(self, scores=None, default=0.0):
-        self.scores = scores or {}
-        self.default = default
-
-    def score_pairs(self, pairs):
-        return [next((score for marker, score in self.scores.items() if marker in text),
-                     self.default)
-                for _, text in pairs]
-
-
 def _runtime_data():
     records = [{
         "chunk_id": "spec#1", "section_id": "sec:fpu", "subsection_id": "sec:round",
@@ -97,32 +81,27 @@ def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
 
     app = agent.build_graph(
         spec_search, rtl_search, lambda prompt: "answer", records,
-        signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
+        signals, rtl, bridge)
     state = agent.run(app, "What rounding modes are required?")
 
     assert calls == ["spec", "rtl"]
     assert [event["event"] for event in state["trace"]] == [
         "route_prior", "spec_retrieval", "rtl_retrieval", "bridge_lookup",
-        "lane_allocation", "evidence_merge", "answer",
+        "evidence_merge", "answer",
     ]
 
 
 def test_requested_route_is_separate_from_observed_evidence():
     records, signals, rtl, bridge = _runtime_data()
-    reranker = _Reranker({"module fpu": 2.0}, default=-9.0)
     app = agent.build_graph(
         lambda query, k: [_doc("spec#1", "unrelated prose", section_id="sec:fpu")],
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
-        lambda prompt: "answer", records, signals, rtl, bridge,
-        reranker=reranker, lane_floors=_FLOORS)
+        lambda prompt: "answer", records, signals, rtl, bridge)
 
     state = agent.run(app, "What causes a stall?")
 
-    assert state["route_prior"] == agent.SPEC
     assert state["query_type"] == agent.SPEC
-    assert state["answer_status"] == "insufficient_evidence"
-    assert state["lane_credible"] == {"spec": False, "rtl": True}
 
 
 def test_comparison_label_needs_both_lanes_above_the_floor():
@@ -134,7 +113,7 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
         lambda prompt: "implemented with cited evidence",
-        records, signals, rtl, bridge, reranker=_Reranker(), lane_floors=_FLOORS)
+        records, signals, rtl, bridge)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
@@ -149,65 +128,13 @@ def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     app = agent.build_graph(
         lambda query, k: [], lambda query, k: [],
         lambda prompt: model_calls.append(prompt) or "unsafe",
-        records, signals, rtl={"modules": {}}, bridge=bridge,
-        reranker=_Reranker(), lane_floors=_FLOORS)
+        records, signals, rtl={"modules": {}}, bridge=bridge)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
     assert model_calls == []
     assert state["answer"].startswith("INSUFFICIENT EVIDENCE")
     assert state["trace"][-1] == {"event": "answer", "model_called": False}
-
-
-def test_weak_lane_keeps_only_a_slice_of_the_context_budget():
-    state = {
-        "question": "q", "query_type": agent.SPEC,
-        "spec_evidence": [{"id": "s1", "text": "spec " * 2000, "metadata": {}}],
-        "rtl_evidence": [{"id": "r1", "text": "rtl " * 2000, "metadata": {}}],
-        "lane_credible": {"spec": True, "rtl": False},
-    }
-
-    context = agent.merge_evidence(state)
-    balanced = agent.merge_evidence({**state,
-                                     "lane_credible": {"spec": True, "rtl": True}})
-
-    assert context.count("rtl ") < balanced.count("rtl ")
-    assert context.count("spec ") == balanced.count("spec ")
-    assert len(context) < len(balanced)
-
-
-def test_lane_floors_are_measured_against_each_domains_own_background():
-    prose = [{"text": "The manager must not wait for AWREADY before asserting AWVALID."},
-             {"text": "Register x0 is hardwired to zero in the base integer ISA."},
-             {"text": "The mtvec MODE field selects direct or vectored trap entry."}]
-
-    class _Scale:
-        """Return a fixed background so the quantile, not the model, is under test."""
-
-        def __init__(self, values):
-            self.values = values
-
-        def score_pairs(self, pairs):
-            return self.values[:len(list(pairs))]
-
-    probes = agent.background_queries(prose, limit=3)
-
-    assert len(probes) == 3 and probes[0].startswith("The manager must not wait")
-    assert agent.background_floor(_Scale([-9.0, -8.0, -2.0]), prose, probes,
-                                  samples=3, quantile=0.95) == -2.0
-    assert agent.background_floor(_Scale([-9.0, -8.0, -2.0]), prose, probes,
-                                  samples=3, quantile=0.0) == -9.0
-    assert agent.background_floor(None, prose, probes) == cfg.LANE_FLOOR_FALLBACK
-    assert agent.background_floor(_Scale([]), [], probes) == cfg.LANE_FLOOR_FALLBACK
-
-
-def test_credible_lanes_apply_the_floor_of_their_own_domain():
-    scores = {"spec": -4.0, "rtl": -4.0}
-
-    assert agent.credible_lanes(scores, {"spec": 0.0, "rtl": -6.0}) == {
-        "spec": False, "rtl": True}
-    assert agent.credible_lanes({"spec": None, "rtl": 1.0}, {"spec": -6.0, "rtl": -6.0}) == {
-        "spec": False, "rtl": True}
 
 
 def test_signal_selection_is_grounded_in_retrieved_provenance():
@@ -320,8 +247,7 @@ def test_spec_evidence_is_the_retrieved_passages_only():
         spec_retriever=lambda query, k: [_doc("doc#0010#001", "1", section_id="section",
                                               chunk_index=1)],
         rtl_retriever=lambda query, k: [], answer_model=lambda prompt: "answer",
-        spec_records=records, spec_signals=[], rtl={"modules": {}}, bridge={},
-        reranker=_Reranker(), lane_floors=_FLOORS)
+        spec_records=records, spec_signals=[], rtl={"modules": {}}, bridge={})
 
     state = agent.run(app, "What rounding modes are required?")
 
@@ -334,8 +260,7 @@ def test_rtl_evidence_is_the_retrieved_records_only():
         spec_retriever=lambda query, k: [_doc("spec#1", "Rounding mode selects RNE.",
                                               section_id="sec:fpu", start_page=12)],
         rtl_retriever=lambda query, k: [], answer_model=lambda prompt: "answer",
-        spec_records=records, spec_signals=signals, rtl=rtl, bridge=bridge,
-        reranker=_Reranker(), lane_floors=_FLOORS)
+        spec_records=records, spec_signals=signals, rtl=rtl, bridge=bridge)
 
     state = agent.run(app, "Does fpu implement rounding_mode?")
 
@@ -357,7 +282,7 @@ def test_a_weak_spec_lane_is_not_requeried_through_the_bridge():
         rtl_retriever=lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                              file="rtl/fpu.sv", line=1)],
         answer_model=lambda prompt: "answer", spec_records=records, spec_signals=signals,
-        rtl=rtl, bridge=bridge, reranker=_Reranker(default=-9.0), lane_floors=_FLOORS)
+        rtl=rtl, bridge=bridge)
 
     agent.run(app, "What does fpu do?")
 

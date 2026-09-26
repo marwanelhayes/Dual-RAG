@@ -1,7 +1,6 @@
 """Route questions through specification RAG, RTL RAG, or an enforced comparison path."""
 
 import json
-import math
 import re
 import sys
 from pathlib import Path
@@ -21,9 +20,6 @@ class State(TypedDict, total=False):
 
     question: str
     query_type: str
-    route_prior: str
-    lane_scores: dict
-    lane_credible: dict
     spec_evidence: list
     spec_signals: list
     bridge_matches: list
@@ -160,102 +156,6 @@ def classify_query(question):
     if _RTL_INSPECTION.search(text):
         return RTL
     return SPEC
-
-
-def lane_strength(reranker, question, evidence, sample=None):
-    """Score one lane's best evidence on the cross-encoder scale shared by both lanes.
-
-    Args:
-        reranker: Cross-encoder adapter, or ``None`` when scoring is unavailable.
-        question: User question paired with each candidate.
-        evidence: Lane evidence records in rank order.
-        sample: Optional candidate count; defaults to the configured sample.
-
-    Returns:
-        Best pair score, or ``None`` when the lane returned nothing scoreable.
-    """
-    if sample is None:
-        sample = int(cfg.AGENT_LANE_SAMPLE)
-    texts = [item.get("text", "") for item in list(evidence)[:sample] if item.get("text")]
-    if not texts or reranker is None:
-        return None
-    scores = reranker.score_pairs((question, text) for text in texts)
-    return max(scores) if scores else None
-
-
-def background_queries(records, limit=None, words=20):
-    """Sample unrelated natural-language probes that stand in for real questions.
-
-    Args:
-        records: Documentation chunks, whose prose resembles a user question.
-        limit: Optional probe count.
-        words: Words kept from each sampled chunk.
-
-    Returns:
-        Short natural-language query strings.
-    """
-    if limit is None:
-        limit = max(int(cfg.LANE_CALIBRATION_SAMPLES) // 2, 1)
-    texts = [str(record.get("text", "")) for record in records
-             if str(record.get("text", "")).strip()]
-    if not texts:
-        return []
-    stride = max(len(texts) // limit, 1)
-    return [" ".join(texts[index].split()[:words])
-            for index in range(0, len(texts), stride)][:limit]
-
-
-def background_floor(reranker, records, queries, samples=None, quantile=None):
-    """Measure how a domain scores pairs that are known to be unrelated.
-
-    A cross-encoder rates fluent prose above source code at equal relevance, so a
-    shared constant floor would starve the code lane. Real questions are natural
-    language, so the background pairs unrelated natural-language queries with this
-    domain's own chunks, which measures the domain's noise without hand tuning.
-
-    Args:
-        reranker: Cross-encoder adapter.
-        records: Retrieval records for one domain.
-        queries: Unrelated natural-language queries used as the background probe.
-        samples: Optional mismatched-pair count.
-        quantile: Optional quantile of the background taken as the floor.
-
-    Returns:
-        Score floor for this domain, or the configured fallback when unmeasurable.
-    """
-    fallback = float(cfg.LANE_FLOOR_FALLBACK)
-    texts = [str(record.get("text", "")) for record in records
-             if str(record.get("text", "")).strip()]
-    queries = [query for query in queries if str(query).strip()]
-    if reranker is None or not texts or not queries:
-        return fallback
-    if samples is None:
-        samples = int(cfg.LANE_CALIBRATION_SAMPLES)
-    if quantile is None:
-        quantile = float(cfg.LANE_CALIBRATION_QUANTILE)
-    stride = max(len(texts) // 7, 1)
-    pairs = [(queries[index % len(queries)], texts[(index * stride) % len(texts)])
-             for index in range(samples)]
-    scores = sorted(reranker.score_pairs(pairs))
-    if not scores:
-        return fallback
-    position = min(math.ceil(quantile * (len(scores) - 1)), len(scores) - 1)
-    return scores[position]
-
-
-def credible_lanes(scores, floors):
-    """Decide which lanes cleared their own domain's floor.
-
-    Args:
-        scores: Lane name to best pair score, where ``None`` means no evidence.
-        floors: Lane name to score floor.
-
-    Returns:
-        Lane name to credibility flag.
-    """
-    fallback = float(cfg.LANE_FLOOR_FALLBACK)
-    return {lane: score is not None and score >= floors.get(lane, fallback)
-            for lane, score in scores.items()}
 
 
 def _hit_record(hit, domain):
@@ -589,15 +489,8 @@ def merge_evidence(state):
     active = int(has_spec) + int(has_rtl) + int(has_bridge)
     overhead = min(350, max(100, total_limit // 4))
     available = max(total_limit - overhead, active * 48)
-    credible = state.get("lane_credible") or {"spec": has_spec, "rtl": has_rtl}
-    weak = float(cfg.AGENT_WEAK_LANE_SHARE)
     if has_spec and has_rtl:
         spec_share, rtl_share = 0.40, 0.45
-        # A lane that ran but stayed under the floor keeps a slice for inspection only.
-        if credible.get("spec") and not credible.get("rtl"):
-            spec_share, rtl_share = 0.85, 0.45 * weak
-        elif credible.get("rtl") and not credible.get("spec"):
-            spec_share, rtl_share = 0.40 * weak, 0.85
     else:
         spec_share, rtl_share = 0.85, 0.85
     bridge_share = max(0.10, 1.0 - spec_share - rtl_share)
@@ -701,7 +594,7 @@ class Runtime:
 
     def __init__(self, spec_retriever=None, rtl_retriever=None, answer_model=None,
                  spec_records=None, spec_signals=None, rtl=None,
-                 bridge=None, reranker=None, lane_floors=None):
+                 bridge=None):
         """Create a runtime with optional hermetic test adapters.
 
         Args:
@@ -712,15 +605,10 @@ class Runtime:
             spec_signals: Optional in-memory structured spec signals.
             rtl: Optional in-memory RTL artifact.
             bridge: Optional in-memory bridge artifact.
-            reranker: Optional cross-encoder used to score both lanes on one scale.
-            lane_floors: Optional per-domain floors that skip background calibration.
 
         Returns:
             None.
         """
-        self._reranker = reranker
-        self._rtl_records = None
-        self._lane_floors = lane_floors
         self._spec_retriever = spec_retriever
         self._rtl_retriever = rtl_retriever
         self.answer_model = answer_model or local_answer
@@ -780,54 +668,6 @@ class Runtime:
                     "cross-domain bridge is stale; run python src/bridge.py")
         return self.bridge
 
-    def get_reranker(self):
-        """Return the cross-encoder that scores both lanes on one comparable scale.
-
-        Returns:
-            Reranker adapter, or ``None`` when no cross-encoder is available.
-        """
-        if self._reranker is None:
-            from retrieve import Reranker
-
-            self._reranker = Reranker()
-        return self._reranker
-
-    def get_lane_floors(self):
-        """Return each domain's calibrated relevance floor, measured once and cached.
-
-        Returns:
-            Lane name to score floor.
-        """
-        if self._lane_floors is None:
-            cached = _read_json(cfg.LANE_CALIBRATION_PATH, {})
-            records = {"spec": self.get_spec_records(), "rtl": self.get_rtl_records()}
-            counts = {lane: len(items) for lane, items in records.items()}
-            if cached.get("counts") == counts and "floors" in cached:
-                self._lane_floors = cached["floors"]
-            else:
-                reranker = self.get_reranker()
-                queries = background_queries(records["spec"])
-                self._lane_floors = {
-                    lane: background_floor(reranker, items, queries)
-                    for lane, items in records.items()}
-                cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                with open(cfg.LANE_CALIBRATION_PATH, "w", encoding="utf-8") as handle:
-                    json.dump({"counts": counts, "floors": self._lane_floors}, handle,
-                              indent=2)
-        return self._lane_floors
-
-    def get_rtl_records(self):
-        """Return the RTL retrieval records used for corpus-wide literal checks.
-
-        Returns:
-            RTL retrieval record list.
-        """
-        if self._rtl_records is None:
-            import rtl_embed
-
-            self._rtl_records = rtl_embed.retrieval_records(self.get_rtl())
-        return self._rtl_records
-
     def spec_search(self, query, k):
         """Search the specification RAG through the configured adapter.
 
@@ -880,7 +720,7 @@ class Runtime:
 
 def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                 spec_records=None, spec_signals=None, rtl=None,
-                bridge=None, reranker=None, lane_floors=None):
+                bridge=None):
     """Compile the three-route LangGraph with structurally mandatory evidence lanes.
 
     Args:
@@ -891,8 +731,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         spec_signals: Optional in-memory structured spec signals.
         rtl: Optional in-memory RTL representation.
         bridge: Optional in-memory bridge artifact.
-        reranker: Optional cross-encoder scoring both lanes on one scale.
-        lane_floors: Optional per-domain floors that skip background calibration.
 
     Returns:
         Compiled LangGraph application.
@@ -900,7 +738,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     from langgraph.graph import END, START, StateGraph
 
     runtime = Runtime(spec_retriever, rtl_retriever, answer_model, spec_records,
-                      spec_signals, rtl, bridge, reranker, lane_floors)
+                      spec_signals, rtl, bridge)
 
     def classify_node(state):
         """Record the wording-based route as a prior; evidence decides the real route.
@@ -912,7 +750,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             State update carrying the route prior and its trace event.
         """
         prior = classify_query(state["question"])
-        return {"route_prior": prior, "query_type": prior,
+        return {"query_type": prior,
                 "trace": _append_trace(state, "route_prior", query_type=prior)}
 
     def spec_node(state):
@@ -1002,32 +840,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                     if item.get("metadata", {}).get("module")))),
         }
 
-    def allocate_node(state):
-        """Score both lanes on one scale and label the route from what was retrieved.
-
-        Args:
-            state: Current graph state.
-
-        Returns:
-            State update with lane scores, the observed route, and its trace event.
-        """
-        reranker = runtime.get_reranker()
-        scores = {
-            "spec": lane_strength(reranker, state["question"],
-                                  state.get("spec_evidence", [])),
-            "rtl": lane_strength(reranker, state["question"], state.get("rtl_evidence", [])),
-        }
-        floors = runtime.get_lane_floors()
-        credible = credible_lanes(scores, floors)
-        route = state.get("route_prior", SPEC)
-        return {
-            "lane_scores": scores, "lane_credible": credible, "query_type": route,
-            "trace": _append_trace(
-                state, "lane_allocation", query_type=route,
-                route_prior=state.get("route_prior"), scores=scores, floors=floors,
-                credible=credible),
-        }
-
     def merge_node(state):
         """Merge evidence under hard character budgets.
 
@@ -1045,7 +857,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                     truncated="[TRUNCATED]" in context)}
 
     def answer_node(state):
-        """Reason only after both lanes were searched and at least one cleared the floor.
+        """Ask the model only when every domain the route requires has a citable passage.
 
         Args:
             state: Current graph state.
@@ -1053,43 +865,27 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         Returns:
             State update with the answer or an abstention, and its trace event.
         """
-        credible = state.get("lane_credible", {})
-        has_spec = bool(state.get("spec_evidence"))
-        has_rtl = bool(state.get("rtl_evidence"))
-        comparison = state.get("route_prior") == COMPARISON or state["query_type"] == COMPARISON
+        from answer_contract import render_answer, validate_answer
+
+        comparison = state["query_type"] == COMPARISON
+        required = {"spec", "rtl"} if comparison else {state["query_type"].lower()}
+        visible = state.get("citable_evidence", {})
         validation = {"valid": False, "errors": [], "claims": []}
         status = "insufficient_evidence"
-        if comparison and not (credible.get("spec") and credible.get("rtl")
-                               and has_spec and has_rtl):
-            missing = [name for name, present in
-                       (("specification", credible.get("spec") and has_spec),
-                        ("RTL", credible.get("rtl") and has_rtl)) if not present]
-            answer = "INSUFFICIENT EVIDENCE: missing credible " + " and ".join(missing) + " evidence."
-            called = False
-        elif not credible.get(state["query_type"].lower()) and not comparison:
-            answer = ("INSUFFICIENT EVIDENCE: the requested domain did not return "
-                      "evidence above its relevance floor.")
-            called = False
+        called = required <= {item["domain"] for item in visible.values()}
+        if not called:
+            answer = "INSUFFICIENT EVIDENCE: complete citable passages are missing from the prompt."
         else:
-            from answer_contract import render_answer, validate_answer
-
-            required = {"spec", "rtl"} if comparison else {state["query_type"].lower()}
-            visible = state.get("citable_evidence", {})
-            if not required <= {item["domain"] for item in visible.values()}:
-                answer = "INSUFFICIENT EVIDENCE: complete citable passages are missing from the prompt."
-                called = False
-            else:
-                called = True
-                try:
-                    raw = runtime.answer_model(state["final_context"])
-                    data, errors = validate_answer(raw, visible, required)
-                except Exception as exc:
-                    data, errors = None, ["model_error:" + type(exc).__name__]
-                validation = {"valid": data is not None, "errors": errors,
-                              "claims": data["claims"] if data else []}
-                status = data["status"] if data else "rejected"
-                answer = (render_answer(data, comparison) if data else
-                          "INSUFFICIENT EVIDENCE: the generated response failed source validation.")
+            try:
+                raw = runtime.answer_model(state["final_context"])
+                data, errors = validate_answer(raw, visible, required)
+            except Exception as exc:
+                data, errors = None, ["model_error:" + type(exc).__name__]
+            validation = {"valid": data is not None, "errors": errors,
+                          "claims": data["claims"] if data else []}
+            status = data["status"] if data else "rejected"
+            answer = (render_answer(data, comparison) if data else
+                      "INSUFFICIENT EVIDENCE: the generated response failed source validation.")
         return {"answer": answer, "answer_status": status, "answer_validation": validation,
                 "trace": _append_trace(state, "answer", model_called=called)}
 
@@ -1098,7 +894,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_node("retrieve_spec", spec_node)
     graph.add_node("retrieve_rtl", rtl_node)
     graph.add_node("lookup_bridge", bridge_node)
-    graph.add_node("allocate", allocate_node)
     graph.add_node("merge", merge_node)
     graph.add_node("answer", answer_node)
     graph.add_edge(START, "classify")
@@ -1106,8 +901,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_edge("classify", "retrieve_spec")
     graph.add_edge("retrieve_spec", "retrieve_rtl")
     graph.add_edge("retrieve_rtl", "lookup_bridge")
-    graph.add_edge("lookup_bridge", "allocate")
-    graph.add_edge("allocate", "merge")
+    graph.add_edge("lookup_bridge", "merge")
     graph.add_edge("merge", "answer")
     graph.add_edge("answer", END)
     return graph.compile()
