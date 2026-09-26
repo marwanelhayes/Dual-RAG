@@ -361,3 +361,22 @@ def test_stage_retrieval_scores_each_retriever_on_the_raw_question():
 
     assert bench._lane_summary(rows, "spec")["section_recall_at_k"] == 1.0
     assert bench._lane_summary(rows, "rtl")["exact_id_recall_at_k"] == 1.0
+
+
+def test_context_recall_counts_gold_the_model_can_cite():
+    """Context metrics score what reached the model, not what was retrieved."""
+    question = {"id": "q", "question": "?", "relevant_spec_ids": ["axi#0042#000"],
+                "relevant_spec_sections": [
+                    {"chunk_id": "axi#0042#000", "section": "axi::A2.3.1", "page": 30}],
+                "relevant_rtl_ids": ["rtl:cache", "rtl:fetch_stage"]}
+    state = {"query_type": "COMPARISON", "final_context": "x" * 40,
+             "spec_evidence": [{"id": "axi#0051#003"}],
+             "rtl_evidence": [{"id": "rtl:cache"}, {"id": "rtl:fetch_stage"}],
+             "citable_evidence": {
+                 "[spec:axi#0051#003 p.30]": {"domain": "spec", "id": "axi#0051#003"},
+                 "[rtl:cache.sv:1]": {"domain": "rtl", "id": "rtl:cache"}}}
+
+    row = bench.retrieval_row(question, state, 5, sections={"axi#0051#003": "axi::A2.3.1"})
+    context = bench.retrieval_metrics([row])["overall"]["context"]
+
+    assert context == {"spec_section_recall": 1.0, "rtl_exact_recall": 0.5, "chars": 40}

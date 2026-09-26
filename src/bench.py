@@ -455,7 +455,33 @@ def retrieval_row(question, state, k, sections=None):
     if row["spec"] and sections is not None:
         row["spec"]["section_recall_at_k"] = section_recall(
             spec_ids, question.get("relevant_spec_sections", []), sections, k)
+    row["context"] = context_recall(question, state, sections or {})
     return row
+
+
+def context_recall(question, state, sections):
+    """Score the gold the answer model can cite, i.e. what survived context assembly.
+
+    Args:
+        question: Gold case record.
+        state: Final graph state carrying ``citable_evidence`` and ``final_context``.
+        sections: Chunk ID to ``section_key`` map.
+
+    Returns:
+        Spec section recall and RTL exact recall over citable passages (None without gold),
+        and the context size in characters.
+    """
+    cited = [item for item in state.get("citable_evidence", {}).values()]
+    spec = [item["id"] for item in cited if item["domain"] == "spec"]
+    rtl = {item["id"] for item in cited if item["domain"] == "rtl"}
+    relevant_rtl = question.get("relevant_rtl_ids", [])
+    return {
+        "spec_section_recall": section_recall(
+            spec, question.get("relevant_spec_sections", []), sections, len(spec)),
+        "rtl_exact_recall": (_mean(item in rtl for item in relevant_rtl)
+                             if relevant_rtl else None),
+        "chars": len(state.get("final_context", "")),
+    }
 
 
 def run_retrieval(questions, app=None, k=5):
@@ -581,6 +607,10 @@ def retrieval_metrics(rows):
             "query_failures": sum(len(row.get("query_errors", [])) for row in subset),
             "spec": _lane_summary(subset, "spec"),
             "rtl": _lane_summary(subset, "rtl"),
+            "context": {
+                key: _mean((row["context"][key] for row in subset
+                            if row.get("context", {}).get(key) is not None), default=0.0)
+                for key in ("spec_section_recall", "rtl_exact_recall", "chars")},
         }
 
     routes = sorted({row["expected_query_type"] for row in rows if row["expected_query_type"]})

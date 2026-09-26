@@ -68,8 +68,8 @@ Kept although planned otherwise: `langchain_core.Document` hit type (Q12; `langg
 
 ## Metrics (`track.py`)
 
-Decision: `agent.context.spec_section_recall`, `agent.context.rtl_exact_recall` (gold in
-`citable_evidence`). Guards: `agent.context.chars`, `retrieval.*`, `retrieve.*`. The answer
+Decision: `retrieval.context.spec_section_recall`, `retrieval.context.rtl_exact_recall` (gold in
+`citable_evidence`). Guards: `retrieval.context.chars`, `retrieval.*`, `retrieve.*`. The answer
 bench (Ollama) is not run in this walk.
 
 ## Execution queue
