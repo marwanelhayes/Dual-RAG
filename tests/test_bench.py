@@ -176,7 +176,7 @@ def _retrieval_graph(answer_calls):
     return agent.build_graph(
         spec_retriever=spec_search, rtl_retriever=rtl_search, answer_model=answer_model,
         spec_records=[], spec_signals=[],
-        rtl={"modules": {}}, bridge={"signal_alignments": [], "unresolved_signals": [],
+        bridge={"signal_alignments": [], "unresolved_signals": [],
                                      "module_alignments": []})
 
 

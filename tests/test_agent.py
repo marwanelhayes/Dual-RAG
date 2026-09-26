@@ -22,20 +22,6 @@ def _runtime_data():
         "section_id": "sec:fpu", "subsection_id": "sec:round", "chunk_id": "spec#1",
         "table_id": "tbl:1",
     }]
-    rtl = {"modules": {"fpu": {
-        "module_id": "rtl::mod::fpu", "original_name": "fpu", "normalized_name": "fpu",
-        "normalized_tokens": ["fpu"], "file": "rtl/fpu.sv", "start_line": 1,
-        "end_line": 40, "source_code": "module fpu; endmodule", "preamble": "", "ports": [],
-        "signals": [], "parameters": [], "instances": [], "always_blocks": [{
-            "construct_id": "rtl:block:fpu:20", "block_id": "rtl::blk::fpu::always::20-32",
-            "kind": "always", "construct_type": "ALWAYS_COMB", "original_name": "always@20",
-            "file": "rtl/fpu.sv", "start_line": 20, "end_line": 32,
-            "signals_read": ["rm_i"], "signals_written": ["result_o"],
-            "source_code": "always_comb result_o = rm_i;",
-            "source_text": "always_comb result_o = rm_i;",
-        }], "functions_tasks": [], "assignment_groups": [], "assignments": [],
-        "structural_chunks": [],
-    }}}
     bridge = {
         "signal_alignments": [{
             "spec_signal_id": "specsig:rounding_mode",
@@ -53,7 +39,7 @@ def _runtime_data():
             "confidence": 0.91, "confidence_level": "STRONG",
         }],
     }
-    return records, signals, rtl, bridge
+    return records, signals, bridge
 
 
 def test_classifier_exposes_exactly_three_routes():
@@ -68,7 +54,7 @@ def test_classifier_exposes_exactly_three_routes():
 
 def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     calls = []
-    records, signals, rtl, bridge = _runtime_data()
+    records, signals, bridge = _runtime_data()
 
     def spec_search(query, k):
         calls.append("spec")
@@ -81,7 +67,7 @@ def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
 
     app = agent.build_graph(
         spec_search, rtl_search, lambda prompt: "answer", records,
-        signals, rtl, bridge)
+        signals, bridge)
     state = agent.run(app, "What rounding modes are required?")
 
     assert calls == ["spec", "rtl"]
@@ -92,12 +78,12 @@ def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
 
 
 def test_requested_route_is_separate_from_observed_evidence():
-    records, signals, rtl, bridge = _runtime_data()
+    records, signals, bridge = _runtime_data()
     app = agent.build_graph(
         lambda query, k: [_doc("spec#1", "unrelated prose", section_id="sec:fpu")],
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
-        lambda prompt: "answer", records, signals, rtl, bridge)
+        lambda prompt: "answer", records, signals, bridge)
 
     state = agent.run(app, "What causes a stall?")
 
@@ -105,7 +91,7 @@ def test_requested_route_is_separate_from_observed_evidence():
 
 
 def test_comparison_label_needs_both_lanes_above_the_floor():
-    records, signals, rtl, bridge = _runtime_data()
+    records, signals, bridge = _runtime_data()
     app = agent.build_graph(
         lambda query, k: [_doc("spec#1", "Rounding modes are required.",
                                section_id="sec:fpu", subsection_id="sec:round",
@@ -113,7 +99,7 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
         lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                file="rtl/fpu.sv", line=1)],
         lambda prompt: "implemented with cited evidence",
-        records, signals, rtl, bridge)
+        records, signals, bridge)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
@@ -124,11 +110,11 @@ def test_comparison_label_needs_both_lanes_above_the_floor():
 
 def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     model_calls = []
-    records, signals, rtl, bridge = _runtime_data()
+    records, signals, bridge = _runtime_data()
     app = agent.build_graph(
         lambda query, k: [], lambda query, k: [],
         lambda prompt: model_calls.append(prompt) or "unsafe",
-        records, signals, rtl={"modules": {}}, bridge=bridge)
+        records, signals, bridge=bridge)
 
     state = agent.run(app, "Does the RTL implement every rounding mode?")
 
@@ -245,7 +231,7 @@ def test_spec_evidence_is_the_retrieved_passages_only():
         spec_retriever=lambda query, k: [_doc("doc#0010#001", "1", section_id="section",
                                               chunk_index=1)],
         rtl_retriever=lambda query, k: [], answer_model=lambda prompt: "answer",
-        spec_records=records, spec_signals=[], rtl={"modules": {}}, bridge={})
+        spec_records=records, spec_signals=[], bridge={})
 
     state = agent.run(app, "What rounding modes are required?")
 
@@ -253,12 +239,12 @@ def test_spec_evidence_is_the_retrieved_passages_only():
 
 
 def test_rtl_evidence_is_the_retrieved_records_only():
-    records, signals, rtl, bridge = _runtime_data()
+    records, signals, bridge = _runtime_data()
     app = agent.build_graph(
         spec_retriever=lambda query, k: [_doc("spec#1", "Rounding mode selects RNE.",
                                               section_id="sec:fpu", start_page=12)],
         rtl_retriever=lambda query, k: [], answer_model=lambda prompt: "answer",
-        spec_records=records, spec_signals=signals, rtl=rtl, bridge=bridge)
+        spec_records=records, spec_signals=signals, bridge=bridge)
 
     state = agent.run(app, "Does fpu implement rounding_mode?")
 
@@ -268,7 +254,7 @@ def test_rtl_evidence_is_the_retrieved_records_only():
 
 
 def test_a_weak_spec_lane_is_not_requeried_through_the_bridge():
-    records, signals, rtl, bridge = _runtime_data()
+    records, signals, bridge = _runtime_data()
     queries = []
 
     def spec(query, k):
@@ -280,7 +266,7 @@ def test_a_weak_spec_lane_is_not_requeried_through_the_bridge():
         rtl_retriever=lambda query, k: [_doc("rtl:fpu", "module fpu", module="fpu",
                                              file="rtl/fpu.sv", line=1)],
         answer_model=lambda prompt: "answer", spec_records=records, spec_signals=signals,
-        rtl=rtl, bridge=bridge)
+        bridge=bridge)
 
     agent.run(app, "What does fpu do?")
 
@@ -304,3 +290,21 @@ def test_signals_and_section_alignments_match_evidence_by_hierarchy_id():
 
     assert agent.select_spec_signals("what?", evidence, [signal]) == [signal]
     assert agent.lookup_bridge([], evidence, bridge)[1] == bridge["module_alignments"]
+
+
+def test_rtl_records_come_from_the_rtl_chunks_artifact(monkeypatch, tmp_path):
+    import inspect
+
+    import retrieve
+
+    path = tmp_path / "rtl_chunks.jsonl"
+    path.write_text('{"chunk_id": "rtl:fpu", "text": "module fpu"}\n')
+    monkeypatch.setattr(cfg, "RTL_CHUNKS_PATH", path)
+    monkeypatch.setattr("embed.index_manifest_status", lambda *args: {"fresh": True})
+    seen = []
+    monkeypatch.setattr(retrieve.RTLRetriever, "search",
+                        lambda self, query, top_k: seen.append(self.records) or [])
+
+    assert "rtl" not in inspect.signature(agent.build_graph).parameters
+    agent.Runtime().rtl_search("q", 1)
+    assert seen == [[{"chunk_id": "rtl:fpu", "text": "module fpu"}]]

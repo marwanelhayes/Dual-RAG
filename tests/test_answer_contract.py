@@ -68,7 +68,7 @@ def test_comparison_without_a_citable_domain_skips_generation(empty_lane):
     assert {"reranker", "lane_floors"}.isdisjoint(
         inspect.signature(agent.build_graph).parameters)
     app = agent.build_graph(search("spec"), search("rtl"),
-                            lambda prompt: calls.append(prompt), [], [], {"modules": {}}, {})
+                            lambda prompt: calls.append(prompt), [], [], {})
     state = agent.run(app, "Does the RTL implement every specified behavior?")
     assert state["query_type"] == agent.COMPARISON
     assert state["answer_status"] == "insufficient_evidence"
@@ -81,7 +81,7 @@ def test_real_graph_accepts_only_source_validated_comparison_excerpts():
     rtl = Document(page_content=CATALOG["[rtl:cache.sv:10]"]["text"],
                    metadata={"chunk_id": "r1", "file": "rtl/cache.sv", "line": 10})
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
-                            lambda prompt: json.dumps(response()), [], [], {"modules": {}}, {})
+                            lambda prompt: json.dumps(response()), [], [], {})
     state = agent.run(app, "Does the RTL implement AWVALID?")
     assert state["answer_status"] == "evidence_found"
     assert state["answer_validation"]["valid"]
@@ -94,7 +94,7 @@ def test_strong_other_lane_cannot_promote_a_spec_request_into_comparison():
     rtl = Document(page_content="assign MAWValid = pending;",
                    metadata={"chunk_id": "r1", "file": "rtl/cache.sv", "line": 10})
     app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
-                            lambda prompt: response(["[spec:s1 p.12]"]), [], [], {"modules": {}}, {})
+                            lambda prompt: response(["[spec:s1 p.12]"]), [], [], {})
     state = agent.run(app, "What does AWVALID indicate?")
     assert state["query_type"] == agent.SPEC
     assert state["answer_status"] == "evidence_found"

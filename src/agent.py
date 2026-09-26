@@ -446,8 +446,7 @@ class Runtime:
     """Hold lazy retrieval adapters and generated artifacts for one graph instance."""
 
     def __init__(self, spec_retriever=None, rtl_retriever=None, answer_model=None,
-                 spec_records=None, spec_signals=None, rtl=None,
-                 bridge=None):
+                 spec_records=None, spec_signals=None, bridge=None):
         """Create a runtime with optional hermetic test adapters.
 
         Args:
@@ -456,7 +455,6 @@ class Runtime:
             answer_model: Optional bounded-context answer callable.
             spec_records: Optional in-memory specification chunks.
             spec_signals: Optional in-memory structured spec signals.
-            rtl: Optional in-memory RTL artifact.
             bridge: Optional in-memory bridge artifact.
 
         Returns:
@@ -467,7 +465,6 @@ class Runtime:
         self.answer_model = answer_model or local_answer
         self.spec_records = spec_records
         self.spec_signals = spec_signals
-        self.rtl = rtl
         self.bridge = bridge
 
     def get_spec_records(self):
@@ -491,16 +488,6 @@ class Runtime:
             data = _read_json(path, {"signals": []})
             self.spec_signals = data.get("signals", data if isinstance(data, list) else [])
         return self.spec_signals
-
-    def get_rtl(self):
-        """Return cached module-centric Verilator artifact.
-
-        Returns:
-            The artifact, read from disk on first use and cached thereafter.
-        """
-        if self.rtl is None:
-            self.rtl = _read_json(cfg.RTL_PATH, {"modules": {}, "warnings": []})
-        return self.rtl
 
     def get_bridge(self):
         """Return cached cross-domain alignment artifact.
@@ -556,11 +543,10 @@ class Runtime:
             Retriever result sequence.
         """
         if self._rtl_retriever is None:
-            import rtl_embed
             from embed import index_manifest_status
             from retrieve import RTLRetriever
 
-            records = rtl_embed.retrieval_records(self.get_rtl())
+            records = _read_jsonl(cfg.RTL_CHUNKS_PATH)
             status = index_manifest_status(
                 records, cfg.RTL_INDEX_DIR, cfg.RTL_MANIFEST_PATH)
             if not status["fresh"]:
@@ -572,8 +558,7 @@ class Runtime:
 
 
 def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
-                spec_records=None, spec_signals=None, rtl=None,
-                bridge=None):
+                spec_records=None, spec_signals=None, bridge=None):
     """Compile the three-route LangGraph with structurally mandatory evidence lanes.
 
     Args:
@@ -582,7 +567,6 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         answer_model: Optional answer callable for tests or alternate local models.
         spec_records: Optional in-memory specification records.
         spec_signals: Optional in-memory structured spec signals.
-        rtl: Optional in-memory RTL representation.
         bridge: Optional in-memory bridge artifact.
 
     Returns:
@@ -591,7 +575,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     from langgraph.graph import END, START, StateGraph
 
     runtime = Runtime(spec_retriever, rtl_retriever, answer_model, spec_records,
-                      spec_signals, rtl, bridge)
+                      spec_signals, bridge)
 
     def classify_node(state):
         """Record the wording-based route as a prior; evidence decides the real route.
