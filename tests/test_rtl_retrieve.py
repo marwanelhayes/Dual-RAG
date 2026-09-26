@@ -258,3 +258,14 @@ def test_exact_lookup_needs_the_name_spelled_as_the_rtl_states_it():
                                  records) == []
     assert [hit.metadata["chunk_id"] for hit in retrieve.exact_lookup(
         "What does Rounding return?", records)] == ["rtl:construct:flp_mul:func:1-2"]
+
+
+def test_short_signal_names_are_exact_addressable():
+    records = [{"chunk_id": "rtl:fetch_stage", "record_id": "m",
+                "context_header": "RTL > fetch_stage", "text": "", "module": "fetch_stage",
+                "source_type": "module", "lookup_terms": [],
+                "signal_metadata": [{"signal_id": "s", "original_name": "PC"}]}]
+
+    hits = retrieve.exact_lookup("How is PC updated?", records)
+
+    assert [hit.metadata["symbol_name"] for hit in hits] == ["PC"]

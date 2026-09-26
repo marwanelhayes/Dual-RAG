@@ -15,12 +15,6 @@ _IDENTIFIER = re.compile(
 )
 # RTL records too long for one window continue in ``<chunk_id>:wN`` windows.
 _WINDOW = re.compile(r":w\d+$")
-_QUERY_STOP_WORDS = frozenset({
-    "the", "and", "for", "from", "into", "what", "where", "which", "who",
-    "does", "how", "this", "that", "with", "begin", "end", "else", "case",
-    "module", "input", "output", "wire", "logic", "assign", "always", "initial",
-    "function", "task", "return", "when", "then", "transfer",
-})
 
 
 def tokenize(text):
@@ -255,20 +249,6 @@ class Retriever:
         return ranked[:top_k]
 
 
-def _query_terms(query):
-    """Extract sufficiently distinctive identifier-like query terms.
-
-    Args:
-        query: Raw retrieval question.
-
-    Returns:
-        Identifier-shaped terms, excluding short words and RTL stop words.
-    """
-    return [term for term in _IDENTIFIER.findall(query)
-            if (term.lower().startswith("0x") or len(term) >= 3)
-            and term.casefold() not in _QUERY_STOP_WORDS]
-
-
 def _term_strength(query_terms, candidates):
     """Score a candidate name the query spells exactly as the RTL states it.
 
@@ -311,7 +291,7 @@ def exact_lookup(query, records, k=None):
     Returns:
         LangChain documents ordered by match strength, signal hits annotated.
     """
-    query_terms = _query_terms(query)
+    query_terms = _IDENTIFIER.findall(query)
     query_tokens = identifier_tokens(query)
     # Exact hits are pinned first, so plain words colliding with a signal name cannot earn one.
     signal_terms = [term for term in query_terms
