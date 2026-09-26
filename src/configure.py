@@ -154,10 +154,9 @@ LOCAL_LLM_HOST = "http://localhost:11434"
 # Whole passages from both lanes fit one 8,192-token window.
 AGENT_NUM_CTX = 8192
 AGENT_TIMEOUT_S = 300
-# One RTL answer spans a module row plus its blocks, so this lane needs more than the spec.
-AGENT_RTL_SEARCH_K = 5
-# Sentence-overlap chunking splits one spec passage across neighbours, so a section needs slots.
-AGENT_SPEC_SEARCH_K = 5
+# Passages shown per lane, whole (sweep/agent_k: 8/8 max ~5.9k bge tokens of 8,192).
+AGENT_RTL_SEARCH_K = 8
+AGENT_SPEC_SEARCH_K = 8
 
 # A fixed sentinel lets the graph route insufficient evidence deterministically.
 AGENT_INSUFFICIENT = "INSUFFICIENT"
