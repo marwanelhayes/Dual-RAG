@@ -21,6 +21,8 @@ MANIFEST_PATH = OUTPUT_DIR / "embed_manifest.json"
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 EMBED_DEVICE = "cuda"
 EMBED_BATCH = int(os.environ.get("EMBED_BATCH", 64))
+# A multimodal encoder (EmbeddingGemma 2) loads only its text tower to fit the GPU.
+EMBED_TEXT_ONLY = os.environ.get("EMBED_TEXT_ONLY", "") == "1"
 
 # BGE's asymmetric training requires this prefix only on queries; passages stay bare.
 EMBED_QUERY_PREFIX = os.environ.get(

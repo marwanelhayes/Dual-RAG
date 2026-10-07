@@ -91,7 +91,9 @@ class Embedder:
         self.batch = batch
         # Move weights once so later batches avoid repeated host-to-device transfers.
         self.device = available_device(device)
-        self.model = SentenceTransformer(model, device=self.device)
+        text_only = ({"config_kwargs": {"vision_config": None, "audio_config": None}}
+                     if cfg.EMBED_TEXT_ONLY else {})
+        self.model = SentenceTransformer(model, device=self.device, **text_only)
 
     def embed_documents(self, texts):
         """Encode a list of passages into vectors.

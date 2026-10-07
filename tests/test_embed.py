@@ -124,6 +124,27 @@ def test_embedder_prefixes_passages_and_queries_with_their_configured_prompts(mo
     assert seen == [["doc: passage"], "query: question"]
 
 
+def test_text_only_embedder_drops_vision_and_audio_encoders(monkeypatch):
+    """A multimodal encoder loads only its text tower; plain encoders get no extra config."""
+    import sys
+    import types
+
+    loaded = []
+
+    class FakeModel:
+        def __init__(self, name, device, **kwargs):
+            loaded.append(kwargs)
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        types.SimpleNamespace(SentenceTransformer=FakeModel))
+    monkeypatch.setattr(embed.cfg, "EMBED_TEXT_ONLY", False)
+    embed.Embedder(device="cpu")
+    monkeypatch.setattr(embed.cfg, "EMBED_TEXT_ONLY", True)
+    embed.Embedder(device="cpu")
+
+    assert loaded == [{}, {"config_kwargs": {"vision_config": None, "audio_config": None}}]
+
+
 class TopicEmbedder:
     """Stand-in encoder mapping text about alpha and beta onto orthogonal axes."""
 

@@ -5,7 +5,8 @@ pymupdf==1.28.0
 # torch's default Linux wheel is CUDA-enabled, so `pip install torch` already gives the
 # GPU build that EMBED_DEVICE="cuda" in configure.py needs - no special index URL required
 torch>=2.2
-sentence-transformers>=3.0
+torchvision              # EmbeddingGemma 2's processor imports it, even text-only
+sentence-transformers>=6.1   # EmbeddingGemma 2 needs 6.1+
 chromadb>=1.0            # persistent vector index; the encoder alone uses the GPU
 langchain-core>=0.3      # Document, the hit type retrieval consumers read
 
