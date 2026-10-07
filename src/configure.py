@@ -17,19 +17,21 @@ SPEC_SIGNALS_PATH = OUTPUT_DIR / "spec_signals.json"
 INDEX_DIR = OUTPUT_DIR / "spec_index"
 MANIFEST_PATH = OUTPUT_DIR / "embed_manifest.json"
 
-# Embedding settings fit the BGE encoder within the 4 GB GPU budget.
-EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+# Embedding settings fit the BGE encoder within the 4 GB GPU budget; sweeps override them.
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 EMBED_DEVICE = "cuda"
-EMBED_BATCH = 64
+EMBED_BATCH = int(os.environ.get("EMBED_BATCH", 64))
 
-# BGE's asymmetric training requires this prefix only on queries.
-EMBED_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+# BGE's asymmetric training requires this prefix only on queries; passages stay bare.
+EMBED_QUERY_PREFIX = os.environ.get(
+    "EMBED_QUERY_PREFIX", "Represent this sentence for searching relevant passages: ")
+EMBED_DOCUMENT_PREFIX = os.environ.get("EMBED_DOCUMENT_PREFIX", "")
 
 # Encoder-token caps picked by the sweep/chunk_tokens grid; the environment overrides them.
 MAX_CHUNK_TOKENS = int(os.environ.get("MAX_CHUNK_TOKENS", 384))
 MAX_TABLE_CHUNK_TOKENS = int(os.environ.get("MAX_TABLE_CHUNK_TOKENS", 128))
 # Header plus body must fit the encoder window; a longer chunk fails the run.
-ENCODER_MAX_TOKENS = 512
+ENCODER_MAX_TOKENS = int(os.environ.get("ENCODER_MAX_TOKENS", 512))
 OVERLAP_SENTENCES = 2
 REVISION_SCAN_PAGES = 4
 
@@ -106,7 +108,7 @@ RTL_INDEX_DIR = OUTPUT_DIR / "rtl_index"
 # Validate the RTL index manifest before allowing dense lookup against compiler artifacts.
 RTL_MANIFEST_PATH = OUTPUT_DIR / "rtl_embed_manifest.json"
 # Largest surface that keeps every measured RTL chunk inside the encoder's 512 tokens.
-RTL_CHUNK_CHARS = 1200
+RTL_CHUNK_CHARS = int(os.environ.get("RTL_CHUNK_CHARS", 1200))
 RTL_TOP_MODULE = "riscv_top"
 VERILATOR_ARGS = ["-Wno-fatal", "--top-module", RTL_TOP_MODULE,
                   "-y", str(RTL_DIR), str(RTL_DIR / "shared_pkg.sv"),

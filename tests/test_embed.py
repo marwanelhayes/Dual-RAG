@@ -95,6 +95,35 @@ def test_embedder_always_normalizes_passages_and_queries(monkeypatch):
     assert calls == [True, True]
 
 
+def test_embedder_prefixes_passages_and_queries_with_their_configured_prompts(monkeypatch):
+    """EmbeddingGemma prompts both sides; BGE's empty passage prefix leaves passages bare."""
+    import sys
+    import types
+
+    import numpy as np
+
+    seen = []
+
+    class FakeModel:
+        def __init__(self, name, device):
+            pass
+
+        def encode(self, texts, **kwargs):
+            seen.append(texts)
+            return np.zeros((len(texts), 2)) if isinstance(texts, list) else np.zeros(2)
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        types.SimpleNamespace(SentenceTransformer=FakeModel))
+    monkeypatch.setattr(embed.cfg, "EMBED_DOCUMENT_PREFIX", "doc: ")
+    monkeypatch.setattr(embed.cfg, "EMBED_QUERY_PREFIX", "query: ")
+    embedder = embed.Embedder(device="cpu")
+
+    embedder.embed_documents(["passage"])
+    embedder.embed_query("question")
+
+    assert seen == [["doc: passage"], "query: question"]
+
+
 class TopicEmbedder:
     """Stand-in encoder mapping text about alpha and beta onto orthogonal axes."""
 

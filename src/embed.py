@@ -104,7 +104,7 @@ class Embedder:
         """
         # BGE embeds passages bare; progress exposes the pipeline's slow stage.
         vecs = self.model.encode(
-            texts,
+            [cfg.EMBED_DOCUMENT_PREFIX + text for text in texts],
             batch_size=self.batch,
             normalize_embeddings=True,
             show_progress_bar=True,

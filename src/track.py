@@ -15,7 +15,7 @@ import configure as cfg
 
 TRACKING_URI = f"sqlite:///{cfg.ROOT / 'mlflow.db'}"
 EXPERIMENT = "chipver"
-TOKEN_LIMIT = 512
+TOKEN_LIMIT = cfg.ENCODER_MAX_TOKENS
 CHUNK_SAMPLE_LINES = 200
 # AXI Tables B1.1-B1.7 read from the PDF, independent of ingest.
 AXI_CHANNEL_GOLD = cfg.ROOT / "eval" / "axi_channel_signals.json"
