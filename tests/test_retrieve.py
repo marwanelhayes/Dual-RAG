@@ -112,3 +112,8 @@ def test_reranker_decides_even_when_the_question_names_an_identifier():
     hits = retriever.search("What constrains AWVALID?", top_k=1)
 
     assert [doc.metadata["chunk_id"] for doc, _ in hits] == ["semantic"]
+
+
+def test_sentence_punctuation_does_not_change_a_bm25_token():
+    assert retrieve.tokenize("The AWVALID signal. See Table A2.2, then rm_i.") == [
+        "the", "awvalid", "signal", "see", "table", "a2.2", "then", "rm_i"]
