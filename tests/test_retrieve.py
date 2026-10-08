@@ -145,3 +145,32 @@ def test_the_reranker_runs_in_half_precision_on_the_gpu(monkeypatch):
     assert retrieve.Reranker(model="m", device="cuda").model.halved == \
         retrieve.available_device("cuda").startswith("cuda")
     assert not retrieve.Reranker(model="m", device="cpu").model.halved
+
+
+def test_a_retriever_without_a_vector_store_ranks_lexical_candidates_only():
+    documents = {key: _doc(key, key) for key in ("a", "b", "c")}
+    retriever = retrieve.Retriever(documents, _StaticRanker(["b", "a"]), None,
+                                   _ReverseReranker())
+
+    assert retriever.candidates("anything", n=2) == ["b", "a"]
+
+
+def test_loading_without_an_index_loads_no_embedder(monkeypatch):
+    def no_embedder(*args, **kwargs):
+        raise AssertionError("embedder loaded")
+
+    monkeypatch.setattr(retrieve, "Embedder", no_embedder)
+    records = [{"chunk_id": "rtl:a", "context_header": "RTL > a", "text": "module a"}]
+
+    retriever = retrieve.Retriever.load(records, index_dir=None, reranker=_ReverseReranker())
+
+    assert retriever.store is None
+
+
+def test_the_rtl_lane_loads_without_its_vector_index(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(retrieve.Retriever, "load",
+                        classmethod(lambda cls, **kwargs: seen.update(kwargs) or "hybrid"))
+
+    assert retrieve.RTLRetriever([])._hybrid() == "hybrid"
+    assert seen["index_dir"] is None

@@ -686,7 +686,7 @@ def stage_retrieval_report(questions, k=5):
     embedder, reranker = Embedder(), shared_reranker()
     spec = Retriever.load(spec_records, embedder=embedder, reranker=reranker)
     rtl = RTLRetriever(rtl_records, hybrid=Retriever.load(
-        rtl_records, cfg.RTL_INDEX_DIR, embedder=embedder, reranker=reranker))
+        rtl_records, None, reranker=reranker))
     sections = {chunk["chunk_id"]: section_key(chunk) for chunk in spec_records}
     rows = stage_retrieval(questions, spec, rtl, k, sections)
     return {"metrics": {lane: _lane_summary(rows, lane) for lane in ("spec", "rtl")},

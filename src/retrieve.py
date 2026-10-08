@@ -187,7 +187,7 @@ class Retriever:
         Args:
             documents: Documents keyed by stable chunk identifier.
             bm25: Lexical ranking adapter.
-            store: Dense vector-store adapter.
+            store: Dense vector-store adapter, or None for a lexical-only lane.
             reranker: Cross-encoder ranking adapter.
 
         Returns:
@@ -204,7 +204,8 @@ class Retriever:
 
         Args:
             records: Domain records the index was built from.
-            index_dir: Directory containing the matching Chroma index.
+            index_dir: Directory containing the matching Chroma index, or None to rank
+                lexical candidates only.
             embedder: Optional shared embedding adapter.
             reranker: Optional cross-encoder adapter.
 
@@ -212,8 +213,8 @@ class Retriever:
             A fully assembled retriever.
         """
         documents = {record["chunk_id"]: record_to_document(record) for record in records}
-        embedder = embedder or Embedder()
-        store = VectorStore.load(index_dir, records, embedder=embedder)
+        store = (None if index_dir is None
+                 else VectorStore.load(index_dir, records, embedder=embedder or Embedder()))
         return cls(documents, BM25Index.build(documents), store, reranker or shared_reranker())
 
     def candidates(self, query, n=cfg.RETRIEVE_CANDIDATES):
@@ -228,7 +229,7 @@ class Retriever:
         """
         lexical = self.bm25.search(query, n)
         dense = [document.metadata["chunk_id"]
-                 for document, _ in self.store.search(query, k=n)]
+                 for document, _ in (self.store.search(query, k=n) if self.store else [])]
         # The reranker scores every candidate, so the lanes only need a union.
         return list(dict.fromkeys(lexical + dense))
 
@@ -358,14 +359,14 @@ class RTLRetriever:
         self.hybrid = hybrid
 
     def _hybrid(self):
-        """Load BM25, Chroma, and cross-encoder adapters only when exact lookup is short.
+        """Load BM25 and cross-encoder adapters only when exact lookup is short.
 
         Returns:
             The shared hybrid retriever, constructed on first use.
         """
         if self.hybrid is None:
-            self.hybrid = Retriever.load(
-                records=self.records, index_dir=cfg.RTL_INDEX_DIR)
+            # Dense vectors over RTL summaries lowered RTL recall; names and the reranker carry it.
+            self.hybrid = Retriever.load(records=self.records, index_dir=None)
         return self.hybrid
 
     def search(self, query, top_k=cfg.RETRIEVE_TOP_K):
