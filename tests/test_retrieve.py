@@ -174,3 +174,21 @@ def test_the_rtl_lane_loads_without_its_vector_index(monkeypatch):
 
     assert retrieve.RTLRetriever([])._hybrid() == "hybrid"
     assert seen["index_dir"] is None
+
+
+def test_reranker_scores_are_raw_logits_whatever_the_model_head(monkeypatch):
+    import torch
+
+    seen = {}
+
+    class SigmoidHead:
+        def predict(self, pairs, batch_size, activation_fn=None):
+            seen["activation"] = activation_fn
+            return [0.5 for _ in pairs]
+
+    reranker = retrieve.Reranker.__new__(retrieve.Reranker)
+    reranker.batch, reranker.model = 4, SigmoidHead()
+
+    reranker.score_pairs([("q", "d")])
+
+    assert isinstance(seen["activation"], torch.nn.Identity)

@@ -143,12 +143,16 @@ class Reranker:
             pairs: Sequence of two-string tuples.
 
         Returns:
-            Floating-point cross-encoder logits in input order.
+            Raw cross-encoder logits in input order, never sigmoid probabilities.
         """
         pairs = list(pairs)
         if not pairs:
             return []
-        scores = self.model.predict(pairs, batch_size=self.batch)
+        import torch
+
+        # Raw logits keep the authority weight on one scale for sigmoid and identity heads.
+        scores = self.model.predict(pairs, batch_size=self.batch,
+                                    activation_fn=torch.nn.Identity())
         return [float(score) for score in scores]
 
     def rank(self, query, documents, authority_weight=None):
