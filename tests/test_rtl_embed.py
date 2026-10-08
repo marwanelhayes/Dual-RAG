@@ -372,3 +372,11 @@ def test_every_port_name_is_expanded_into_terms(tmp_path):
     text = "\n".join(record["text"] for record in re_.retrieval_records(rtl))
 
     assert all(f"address {index}" in text for index in range(20))
+
+
+def test_records_past_the_encoder_window_are_reported(monkeypatch):
+    monkeypatch.setattr(cfg, "ENCODER_MAX_TOKENS", 12)
+    records = [{"chunk_id": "rtl:small", "context_header": "H", "text": "abc"},
+               {"chunk_id": "rtl:big", "context_header": "H", "text": "x" * 20}]
+
+    assert re_.over_encoder_window(records, count_tokens=len) == ["rtl:big"]

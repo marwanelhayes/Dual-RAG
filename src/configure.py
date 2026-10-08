@@ -109,14 +109,14 @@ RTL_CHUNKS_PATH = OUTPUT_DIR / "rtl_chunks.jsonl"
 RTL_INDEX_DIR = OUTPUT_DIR / "rtl_index"
 # Validate the RTL index manifest before allowing dense lookup against compiler artifacts.
 RTL_MANIFEST_PATH = OUTPUT_DIR / "rtl_embed_manifest.json"
-# Largest surface that keeps every measured RTL chunk inside the encoder's 512 tokens.
+# Character budget per RTL window; rtl_embed fails the run when a window overruns the encoder.
 RTL_CHUNK_CHARS = int(os.environ.get("RTL_CHUNK_CHARS", 1200))
 # The top module is the one no other source instantiates; set this only when several are.
 RTL_TOP_MODULE = os.environ.get("RTL_TOP_MODULE") or None
 # Packages and the top's file are passed explicitly; -y resolves every other module.
 VERILATOR_ARGS = ["-Wno-fatal", "-y", str(RTL_DIR)]
 
-# This design's vocabulary, kept out of the shared normalizer so another corpus can swap it.
+# Processor-design shorthand (field vocabulary, not this core's); swap it for other domains.
 RTL_ABBREVIATIONS = {
     "alu": ("arithmetic", "logic", "unit"),
     "csr": ("control", "status", "register"),

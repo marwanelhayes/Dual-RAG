@@ -334,6 +334,22 @@ def retrieval_records(rtl):
     return [*chunks(rtl), *_structural_records(rtl)]
 
 
+def over_encoder_window(records, count_tokens):
+    """Return the records whose embedded text would be truncated by the encoder.
+
+    Args:
+        records: Retrieval records with ``context_header`` and ``text``.
+        count_tokens: Encoder-token counter for one text.
+
+    Returns:
+        Chunk ids whose header plus text, with two special tokens, exceed
+        ``cfg.ENCODER_MAX_TOKENS``.
+    """
+    return [record["chunk_id"] for record in records
+            if count_tokens(record["context_header"] + "\n\n" + record["text"]) + 2
+            > cfg.ENCODER_MAX_TOKENS]
+
+
 def main():
     """Write retrieval records, embed them, and write the index manifest.
 
@@ -345,6 +361,12 @@ def main():
     with open(cfg.RTL_PATH, encoding="utf-8") as source:
         rtl = json.load(source)
     records = retrieval_records(rtl)
+    # A character budget tuned on one design can overrun the encoder on denser RTL.
+    from ingest import count_tokens
+    over = over_encoder_window(records, count_tokens)
+    if over:
+        raise SystemExit(f"{len(over)} RTL chunks over the encoder window {over[:5]}; "
+                         "lower RTL_CHUNK_CHARS")
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg.RTL_CHUNKS_PATH, "w", encoding="utf-8") as output:
         for record in records:
