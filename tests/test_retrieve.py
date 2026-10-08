@@ -127,3 +127,21 @@ def test_every_retriever_shares_one_loaded_reranker(monkeypatch):
     assert retrieve.shared_reranker() is retrieve.shared_reranker()
     assert len(loaded) == 1
     retrieve.shared_reranker.cache_clear()
+
+
+def test_the_reranker_runs_in_half_precision_on_the_gpu(monkeypatch):
+    import sentence_transformers
+
+    class FakeCrossEncoder:
+        def __init__(self, model, device):
+            self.halved = False
+
+        def half(self):
+            self.halved = True
+            return self
+
+    monkeypatch.setattr(sentence_transformers, "CrossEncoder", FakeCrossEncoder)
+
+    assert retrieve.Reranker(model="m", device="cuda").model.halved == \
+        retrieve.available_device("cuda").startswith("cuda")
+    assert not retrieve.Reranker(model="m", device="cpu").model.halved

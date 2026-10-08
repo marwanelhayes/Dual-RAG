@@ -132,6 +132,9 @@ class Reranker:
         self.batch = batch
         self.device = available_device(device)
         self.model = CrossEncoder(model, device=self.device)
+        # Half precision halves weights and activations so a large reranker fits a small GPU.
+        if str(self.device).startswith("cuda"):
+            self.model = self.model.half()
 
     def score_pairs(self, pairs):
         """Score bounded text pairs for bridge or retrieval reranking.
