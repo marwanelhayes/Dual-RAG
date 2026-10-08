@@ -107,7 +107,9 @@ Linear LangGraph, every question runs both lanes:
 - **retrieve_rtl**: exact lookup on compiler-stated names and the constructs that read or
   write a matched signal, then BM25 candidates reranked by the same cross-encoder; windows
   fold into their record; top `AGENT_RTL_SEARCH_K`.
-- **lookup_bridge**: alignments for the spec signals and sections found in the evidence.
+- **lookup_bridge**: alignments for the spec signals that a local GLiNER2 tagger
+  (`SIGNAL_TAGGER_MODEL`) finds named in the question or spec passages, and for the evidence
+  sections.
 - **merge**: whole passages (spec, bridge rows, RTL) within `AGENT_NUM_CTX`; no truncation.
 - **answer**: the local model (`LOCAL_LLM_MODEL`) returns source-quoted claims checked by
   `answer_contract.validate_answer`; when a required domain has no citable evidence the agent

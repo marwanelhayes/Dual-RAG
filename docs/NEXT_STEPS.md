@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `cff008c` + docs (2026-10-08 section below). Tests: 273 passed. Decision metrics:
+Branch `simplify`, head `6a67d2c` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -184,6 +184,12 @@ Dirty duplicate runs (superseded by clean ones with the same tag): `5380d353`
 the untracked `video/`, now in `.git/info/exclude`.
 
 Next:
+
+| `agent/gliner-signal-tagger` | `6a67d2c` | `5ed16289` | 0.698 / 0.575 | GLiNER2 tags signal names in question + passages for bridge lookup; gold-module bridge rows 5 → 6 of 20 comparison questions, 6 → 9 mentions; +0.23 s/q |
+
+GLiNER2 (`fastino/gliner2-base-v1`) as the spec-signal extractor instead of the table rules
+(scratch): AXI channel recall held at 1.0 but bridge AXI precision fell 0.94 → 0.37 (`Y`/`N`
+presence columns became names, the CSR address table was classed as properties); rejected.
 
 Authority weight on raw logits (scratch): 0 → section 0.690 / MRR 0.601; 0.5 → 0.698 /
 0.593; 1 (kept) → 0.698 / 0.605; 2 → 0.710 / 0.580. Weight 2 gains one gold section and loses

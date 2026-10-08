@@ -33,8 +33,10 @@ validation rules (`answer_contract.py`, not walked).
 1. **Graph (LangGraph, kept for learning)**: `classify → retrieve_spec → retrieve_rtl →
    lookup_bridge → merge → answer`, linear.
 2. **classify**: `classify_query` regexes → `query_type`.
-3. **retrieve_spec**: `Retriever.search(question, AGENT_SPEC_K)`; `select_spec_signals`
-   (provenance by `chunk_id`, `table_ids`, `hierarchy_id`; name overlap) for the bridge only.
+3. **retrieve_spec**: `Retriever.search(question, AGENT_SPEC_K)`; `select_spec_signals` keeps
+   the spec signals whose names the local GLiNER2 tagger (`SIGNAL_TAGGER_MODEL`, fp16 on CUDA,
+   about 240 ms per question) labels as a signal or register in the question or retrieved
+   passages, for the bridge only (`agent/gliner-signal-tagger`).
 4. **retrieve_rtl**: `RTLRetriever.search(question, AGENT_RTL_K)` over `rtl_chunks.jsonl`.
 5. **lookup_bridge**: signal alignments + unresolved rows by spec signal id/name; module
    alignments by `spec_section_id` ∈ evidence `hierarchy_id`; read `bridge.json` keys directly.
