@@ -129,7 +129,6 @@ RTL_ABBREVIATIONS = {
     "pc": ("program", "counter"),
     "rm": ("rounding", "mode"),
     "rnd": ("rounding",),
-    "wb": ("writeback",),
 }
 set_abbreviation_aliases(RTL_ABBREVIATIONS)
 

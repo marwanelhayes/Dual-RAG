@@ -36,3 +36,8 @@ def test_an_active_low_n_after_an_acronym_is_its_own_token():
     assert naming.identifier_tokens("ARESETn", expand_abbreviations=False) == ["areset", "n"]
     assert naming.identifier_tokens("HRESETn", expand_abbreviations=False) == ["hreset", "n"]
     assert naming.identifier_tokens("MAWAddr", expand_abbreviations=False) == ["maw", "addr"]
+
+
+def test_a_prefix_shared_by_two_hardware_meanings_is_not_expanded():
+    # "wb" is a pipeline's writeback and a Wishbone bus; guessing one mislabels the other.
+    assert naming.identifier_tokens("wb_gpio") == ["wb", "gpio"]
