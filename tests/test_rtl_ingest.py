@@ -3,6 +3,8 @@
 import json
 import xml.etree.ElementTree as ET
 
+import pytest
+
 import rtl_ingest as ri
 
 
@@ -363,3 +365,45 @@ def test_a_module_cites_the_header_above_it_back_to_the_previous_module(tmp_path
     # The previous module's extent already runs up to this one's start line.
     assert ri.module_preamble(extents, "second", source) == ""
     assert built(tmp_path, monkeypatch)["modules"]["parent"]["preamble"] == ""
+
+
+def _write_design(directory, files):
+    """Write SystemVerilog sources into a temporary RTL directory."""
+    for name, text in files.items():
+        (directory / name).write_text(text, encoding="utf-8")
+
+
+def test_design_sources_finds_the_uninstantiated_top_and_every_package(tmp_path):
+    _write_design(tmp_path, {
+        "bus_pkg.sv": "package bus_pkg;\n  typedef logic [7:0] byte_t;\nendpackage\n",
+        "defs.sv": "`define WIDTH 8\n",
+        "child.sv": "module child(input logic a);\nendmodule\n",
+        "soc.sv": ("// soc wraps child\nmodule soc(input logic a);\n"
+                   "  child u_child(.a(a));\nendmodule : soc\n"),
+        "notes.sv": "// soc is the top of this design\nmodule helper;\n  soc u_soc();\nendmodule\n",
+        "chip.sv": "module chip;\n  helper u_helper();\nendmodule\n",
+    })
+
+    sources, top = ri.design_sources(tmp_path)
+
+    assert [path.name for path in sources] == ["bus_pkg.sv", "chip.sv"]
+    assert top == "chip"
+
+
+def test_design_sources_asks_for_a_top_when_several_modules_are_uninstantiated(tmp_path):
+    _write_design(tmp_path, {
+        "a.sv": "module a;\nendmodule\n",
+        "b.sv": "module b;\nendmodule\n",
+    })
+
+    with pytest.raises(SystemExit, match="RTL_TOP_MODULE"):
+        ri.design_sources(tmp_path)
+
+
+def test_design_sources_honours_a_configured_top(tmp_path):
+    _write_design(tmp_path, {
+        "a.sv": "module a;\nendmodule\n",
+        "b.sv": "module b;\nendmodule\n",
+    })
+
+    assert ri.design_sources(tmp_path, top="b") == ([tmp_path / "b.sv"], "b")

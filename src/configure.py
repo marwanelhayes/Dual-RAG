@@ -111,10 +111,10 @@ RTL_INDEX_DIR = OUTPUT_DIR / "rtl_index"
 RTL_MANIFEST_PATH = OUTPUT_DIR / "rtl_embed_manifest.json"
 # Largest surface that keeps every measured RTL chunk inside the encoder's 512 tokens.
 RTL_CHUNK_CHARS = int(os.environ.get("RTL_CHUNK_CHARS", 1200))
-RTL_TOP_MODULE = "riscv_top"
-VERILATOR_ARGS = ["-Wno-fatal", "--top-module", RTL_TOP_MODULE,
-                  "-y", str(RTL_DIR), str(RTL_DIR / "shared_pkg.sv"),
-                  str(RTL_DIR / "riscv_top.sv")]
+# The top module is the one no other source instantiates; set this only when several are.
+RTL_TOP_MODULE = os.environ.get("RTL_TOP_MODULE") or None
+# Packages and the top's file are passed explicitly; -y resolves every other module.
+VERILATOR_ARGS = ["-Wno-fatal", "-y", str(RTL_DIR)]
 
 # This design's vocabulary, kept out of the shared normalizer so another corpus can swap it.
 RTL_ABBREVIATIONS = {

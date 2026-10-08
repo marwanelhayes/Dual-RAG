@@ -1050,13 +1050,54 @@ def parse_warnings(text):
     return out
 
 
-def run_verilator(extra, mdir=None):
+_SV_COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+_PACKAGE_DECLARATION = re.compile(r"^\s*package\s+(?:automatic\s+|static\s+)?\w+", re.M)
+_MODULE_DECLARATION = re.compile(
+    r"^\s*module\s+(?:automatic\s+|static\s+)?([A-Za-z_]\w*)", re.M)
+
+
+def design_sources(rtl_dir, top=None):
+    """Find a design's package files and its top module from the sources alone.
+
+    Args:
+        rtl_dir: Directory holding the design's ``.sv`` files.
+        top: Optional configured top module; skips detection.
+
+    Returns:
+        ``(sources, top)``: package files in name order then the top's file, and the
+        top module name. Everything else Verilator resolves through ``-y``.
+
+    Raises:
+        SystemExit: When zero or several modules are never instantiated and no top is set.
+    """
+    code = {path: _SV_COMMENT.sub("", path.read_text(encoding="utf-8", errors="replace"))
+            for path in sorted(Path(rtl_dir).glob("*.sv"))}
+    # ponytail: name order, a package importing another sorts after it only by luck.
+    packages = [path for path, text in code.items() if _PACKAGE_DECLARATION.search(text)]
+    declared = {name: path for path, text in code.items()
+                for name in _MODULE_DECLARATION.findall(text)}
+    # The top is the module no other source names and its own file never instantiates.
+    tops = [top] if top else [
+        name for name, home in declared.items()
+        if not any(re.search(rf"\b{name}\b", text)
+                   for path, text in code.items() if path != home)
+        and not re.search(rf"\b{name}\s+(?:#\s*\(|\w+\s*\()",
+                          _MODULE_DECLARATION.sub("", code[home]))]
+    if len(tops) != 1 or tops[0] not in declared:
+        raise SystemExit(f"cannot pick one top module from {sorted(tops)}; "
+                         "set RTL_TOP_MODULE")
+    return [*packages, declared[tops[0]]], tops[0]
+
+
+def run_verilator(extra, sources, top, mdir=None):
     """Run Verilator and fail before writing an artifact when it reports an error.
 
     Raises SystemExit when Verilator reports an error.
 
     Args:
         extra: Mode arguments placed before the configured arguments.
+        sources: Package files and the top module's file.
+        top: Top module name.
         mdir: Optional Verilator output directory.
 
     Returns:
@@ -1064,7 +1105,8 @@ def run_verilator(extra, mdir=None):
     """
     import subprocess
 
-    args = ["verilator", *extra, *cfg.VERILATOR_ARGS]
+    args = ["verilator", *extra, *cfg.VERILATOR_ARGS, "--top-module", top,
+            *map(str, sources)]
     if mdir:
         args += ["--Mdir", str(mdir)]
     result = subprocess.run(args, capture_output=True, text=True)
@@ -1074,12 +1116,13 @@ def run_verilator(extra, mdir=None):
     return output
 
 
-def build(xml_path, lint_text):
+def build(xml_path, lint_text, top=None):
     """Assemble the versioned module-centric RTL artifact.
 
     Args:
         xml_path: Verilator XML dump to read.
         lint_text: Raw lint output collected from the lint-only pass.
+        top: Top module name used when the XML marks none.
 
     Returns:
         The complete ``rtl.json`` payload.
@@ -1090,7 +1133,7 @@ def build(xml_path, lint_text):
     module_records = modules(root, files, declarations)
     top = next((source_name(element.get("origName") or element.get("name"))
                 for element in root.iter("module") if element.get("topModule") in {"1", "true"}),
-               source_name(cfg.RTL_TOP_MODULE))
+               top and source_name(top))
     return {
         "schema_version": SCHEMA_VERSION,
         "top_module": top,
@@ -1112,10 +1155,11 @@ def main():
 
     if not cfg.RTL_DIR.exists():
         raise SystemExit(f"no RTL at {cfg.RTL_DIR}")
-    lint_text = run_verilator(["--lint-only"])
+    sources, top = design_sources(cfg.RTL_DIR, cfg.RTL_TOP_MODULE)
+    lint_text = run_verilator(["--lint-only"], sources, top)
     with tempfile.TemporaryDirectory() as mdir:
-        run_verilator(["--xml-only"], mdir)
-        data = build(Path(mdir) / f"V{cfg.RTL_TOP_MODULE}.xml", lint_text)
+        run_verilator(["--xml-only"], sources, top, mdir)
+        data = build(Path(mdir) / f"V{top}.xml", lint_text, top)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg.RTL_PATH, "w", encoding="utf-8") as output:
         json.dump(data, output, ensure_ascii=False, indent=1)
