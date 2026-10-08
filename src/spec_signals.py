@@ -8,7 +8,7 @@ import configure as cfg
 from ingest import load_chunks
 from naming import identifier_tokens, normalize_identifier
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 EXPLICIT_NAME_HEADERS = frozenset({"signal", "signal name", "port", "port name"})
@@ -100,6 +100,7 @@ def _signal_record(record, signal_id, name, row_index, **stated):
         "normalized_tokens": identifier_tokens(name),
         "width": None,
         "source": None,
+        "address": None,
         "description": None,
         "document_id": record["document_id"],
         "hierarchy_id": record["hierarchy_id"],
@@ -163,11 +164,11 @@ def signals_from_table(record, occurrences=None):
         occurrences[base_id] = occurrences.get(base_id, 0) + 1
         signal_id = (base_id if occurrences[base_id] == 1 else
                      f"{base_id}::{occurrences[base_id]}")
-        # Width and source are the cells as written; readers parse what they need.
+        # Width, source, and address are the cells as written; readers parse what they need.
         signal = _signal_record(
             record, signal_id, name, row_index,
             width=_cell(row, width_index), source=_cell(row, source_index),
-            description=_cell(row, description_index),
+            address=_cell(row, address_index), description=_cell(row, description_index),
             table_id=table_id, table_label=table_label, table_caption=record["caption"])
         signals.append(signal)
     return signals

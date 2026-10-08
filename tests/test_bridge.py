@@ -318,3 +318,69 @@ def test_a_csr_links_to_the_enum_member_that_declares_it():
     assert (link["rtl_enum_name"], link["rtl_member_name"], link["rtl_member_value"]) == (
         "csr_index_t", "mstatus", 0)
     assert link["provenance"]["rtl"]["file"] == "csr_defs.sv"
+
+
+def _register_table(*rows, table="spec::table::7"):
+    """Return a spec artifact of address-table rows ``(name, address)``."""
+    base = _spec()["signals"][0]
+    return {"signals": [{**base, "signal_id": f"spec::signal::riscv::7::{name}", "name": name,
+                         "normalized_name": None, "width": None, "table_id": table,
+                         "address": address} for name, address in rows]}
+
+
+def _csr_rtl(*members, enum="csr_index_t"):
+    """Return an RTL artifact declaring one enum of ``(name, value)`` members."""
+    rtl = _rtl(("csr_file", _module("csr_file", "rtl::module::csr_file", [])))
+    rtl["enums"] = [{"enum_id": f"rtl::enum::pkg::{enum}", "original_name": enum, "items": [
+        {"original_name": name, "value": value, "value_source": f"12'h{value:X}",
+         "file": "pkg.sv", "line": 1} for name, value in members]}]
+    return rtl
+
+
+def _member_links(spec, rtl):
+    artifact = bridge.build_bridge(spec, rtl, _hierarchy())
+    return sorted((row["spec_original_name"], row["rtl_original_name"], row["method"],
+                   row["confidence_level"]) for row in artifact["signal_alignments"])
+
+
+def test_a_renamed_register_links_by_address_inside_a_confirmed_map():
+    spec = _register_table(("mstatus", "0x300"), ("mie", "0x304"), ("mtval", "0x343"))
+    rtl = _csr_rtl(("mstatus", 0x300), ("mie", 0x304), ("mbadaddr", 0x343))
+
+    assert ("mtval", "mbadaddr", "address", bridge.MEDIUM) in _member_links(spec, rtl)
+
+
+def test_one_name_and_address_agreement_does_not_confirm_a_map():
+    spec = _register_table(("mstatus", "0x300"), ("mtval", "0x343"))
+    rtl = _csr_rtl(("mstatus", 0x300), ("mbadaddr", 0x343))
+
+    assert not any(link[2] == "address" for link in _member_links(spec, rtl))
+
+
+def test_an_equal_number_in_another_enum_is_not_an_address_link():
+    spec = _register_table(("mstatus", "0x300"), ("mie", "0x304"), ("fflags", "0x001"))
+    rtl = _csr_rtl(("mstatus", 0x300), ("mie", 0x304))
+    rtl["enums"].append({"enum_id": "rtl::enum::pkg::alu_t", "original_name": "alu_t",
+                         "items": [{"original_name": "SUB", "value": 1, "value_source": "5'h1",
+                                    "file": "pkg.sv", "line": 2}]})
+
+    assert not any(link[0] == "fflags" for link in _member_links(spec, rtl))
+
+
+def test_a_range_address_never_links():
+    spec = _register_table(("mstatus", "0x300"), ("mie", "0x304"), ("pmpcfg", "0x3A0-0x3A3"))
+    rtl = _csr_rtl(("mstatus", 0x300), ("mie", 0x304), ("pmp0", 0x3A0))
+
+    assert not any(link[0] == "pmpcfg" for link in _member_links(spec, rtl))
+
+
+def test_a_name_match_at_another_address_states_the_conflict():
+    spec = _register_table(("mstatus", "0x300"), ("mie", "0x304"), ("mcycle", "0xB00"))
+    rtl = _csr_rtl(("mstatus", 0x300), ("mie", 0x304), ("mcycle", 0xC00))
+
+    artifact = bridge.build_bridge(spec, rtl, _hierarchy())
+    rows = {row["spec_original_name"]: row for row in artifact["signal_alignments"]}
+
+    assert rows["mcycle"]["method"] == "identity"
+    assert rows["mcycle"]["address"] == {"spec": "0xB00", "rtl": "12'hC00", "status": "conflict"}
+    assert rows["mstatus"]["address"]["status"] == "equal"

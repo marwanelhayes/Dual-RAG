@@ -135,6 +135,8 @@ BRIDGE_PROVENANCE_SITES = 2
 BRIDGE_PREFIX_MAX_CHARS = 3
 BRIDGE_PREFIX_MIN_NAME = 4
 BRIDGE_PREFIX_MIN_PORTS = 2
+# An enum is a table's address map once this many members agree with its rows on name and number.
+BRIDGE_ADDRESS_MAP_MIN = 2
 # Unresolved shortlists may guide inspection without becoming persisted alignments.
 BRIDGE_QUERY_CANDIDATES = 3
 BRIDGE_PATH = OUTPUT_DIR / "bridge.json"

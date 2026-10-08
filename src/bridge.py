@@ -7,6 +7,7 @@ interface prefix the module's own ports share.
 
 from difflib import SequenceMatcher
 import hashlib
+from collections import Counter
 import json
 import math
 from pathlib import Path
@@ -16,7 +17,7 @@ import configure as cfg
 from naming import identifier_tokens, normalize_identifier, normalize_module_name
 
 
-SCHEMA_VERSION = "5.0"
+SCHEMA_VERSION = "5.1"
 STRONG = "STRONG"
 MEDIUM = "MEDIUM"
 UNRESOLVED = "UNRESOLVED"
@@ -221,6 +222,25 @@ def _path_fingerprint(path):
     return digest.hexdigest()
 
 
+_ADDRESS = re.compile(r"(?:\d*'[hH]|0[xX])([0-9A-Fa-f]+)|([0-9A-Fa-f]+)[hH]|(\d+)")
+
+
+def _address(cell):
+    """Parse one register-address cell into an integer.
+
+    Args:
+        cell: Address as written: ``0x343``, ``343h``, ``12'h343``, or decimal ``835``.
+
+    Returns:
+        The address, or None for empty cells, ranges, and anything else.
+    """
+    match = _ADDRESS.fullmatch(str(cell or "").strip().replace("_", ""))
+    if not match:
+        return None
+    digits = match.group(1) or match.group(2)
+    return int(digits, 16) if digits else int(match.group(3))
+
+
 def _canonical_spec_signal(raw):
     """Adapt one specification signal row into the bridge's internal shape.
 
@@ -237,6 +257,8 @@ def _canonical_spec_signal(raw):
         "original_name": name,
         "width": _width(raw.get("width")),
         "width_cell": raw.get("width"),
+        "address": _address(raw.get("address")),
+        "address_cell": raw.get("address"),
         "document_id": raw["document_id"],
         "hierarchy_id": raw["hierarchy_id"],
         "section_path": raw["section_path"],
@@ -509,17 +531,37 @@ def enum_members(rtl):
     """
     return sorted(({"enum_id": enum["enum_id"], "enum_name": enum["original_name"],
                     "original_name": item["original_name"], "value": item.get("value"),
+                    "value_source": item.get("value_source"),
                     "file": item.get("file"), "line": item.get("line")}
                    for enum in rtl.get("enums", []) for item in enum["items"]),
                   key=lambda row: (row["enum_id"], row["original_name"]))
 
 
-def _member_link(spec, member):
+def _address_evidence(spec, member):
+    """State how a spec address cell compares with the member's declared value.
+
+    Args:
+        spec: Canonical specification signal.
+        member: Row from ``enum_members``.
+
+    Returns:
+        ``{spec, rtl, status}`` with status ``equal``, ``conflict``, or ``symbolic``
+        (cell not a single number), or None when the spec states no address.
+    """
+    if spec["address_cell"] is None:
+        return None
+    status = ("symbolic" if spec["address"] is None
+              else "equal" if spec["address"] == member["value"] else "conflict")
+    return {"spec": spec["address_cell"], "rtl": member["value_source"], "status": status}
+
+
+def _member_link(spec, member, method="identity"):
     """Build one link row from a spec signal to the enum member that declares it.
 
     Args:
         spec: Canonical specification signal.
         member: Row from ``enum_members``.
+        method: ``identity`` (same name) or ``address`` (same number in a confirmed map).
 
     Returns:
         One ``signal_alignments`` row with ``rtl_kind`` ``enum_member``.
@@ -533,9 +575,10 @@ def _member_link(spec, member):
         "rtl_enum_name": member["enum_name"],
         "rtl_member_name": member["original_name"],
         "rtl_member_value": member["value"],
-        "method": "identity",
+        "method": method,
         "prefix": None,
-        "confidence_level": STRONG,
+        "address": _address_evidence(spec, member),
+        "confidence_level": STRONG if method == "identity" else MEDIUM,
         "provenance": {"spec": _spec_provenance(spec),
                        "rtl": {"file": member["file"], "line": member["line"]}},
     }
@@ -566,12 +609,29 @@ def link_signals(specs, rtl_rows, members=()):
             flat, method, prefix = found
             links.extend(_link(spec, rtl, method, prefix) for spec in by_flat[flat])
     # CSRs are declared as enumeration members (``csr_index_t.mstatus``), not as signals.
+    named = []
     for member in members:
         for expand in (False, True):
             flat = _flat_name(member["original_name"], expand=expand)
             if flat in by_flat:
-                links.extend(_member_link(spec, member) for spec in by_flat[flat])
+                named.extend((spec, member) for spec in by_flat[flat])
                 break
+    links.extend(_member_link(spec, member) for spec, member in named)
+    # A table and an enum agreeing on name and number twice are one address map.
+    agreements = Counter((spec["table_id"], member["enum_id"]) for spec, member in named
+                         if spec["address"] is not None and spec["address"] == member["value"])
+    maps = sorted(key for key, count in agreements.items()
+                  if count >= cfg.BRIDGE_ADDRESS_MAP_MIN)
+    numbered = {(member["enum_id"], member["value"]): member for member in members}
+    named_ids = {spec["signal_id"] for spec, _ in named}
+    for spec in specs:
+        if spec["signal_id"] in named_ids or spec["address"] is None:
+            continue
+        member = next((numbered[(enum_id, spec["address"])] for table_id, enum_id in maps
+                       if table_id == spec["table_id"]
+                       and (enum_id, spec["address"]) in numbered), None)
+        if member:
+            links.append(_member_link(spec, member, "address"))
     linked = {link["spec_signal_id"] for link in links}
     unresolved = [{
         "spec_signal_id": spec["signal_id"],

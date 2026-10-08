@@ -36,7 +36,10 @@ Non-goals: retrieval and query expansion (`agent.py`), identifier tokenisation r
      module (at least 2 of the module's ports are that prefix + a spec name); a port takes the
      longest spec name it matches (MEDIUM);
 3. **Targets:** RTL ports and signals for every tier; enum members for `identity` (CSRs are
-   declared as `csr_index_t` members).
+   declared as `csr_index_t` members) and for `address`: once an enum and a spec address table
+   agree on name and number for `BRIDGE_ADDRESS_MAP_MIN` (2) rows, a row whose address equals
+   a member's value links to it under another name (MEDIUM). Every enum-member link states
+   `address: {spec, rtl, status}` (`equal`, `conflict`, `symbolic`); ranges never link.
 4. **Width is stated, never a filter:** `{spec, rtl, status}` with status `equal`,
    `conflict`, `symbolic` (raw cell not an integer) or `unstated`.
 5. **Unresolved** spec rows keep up to 3 `SUGGESTED` candidates (fuzzy token overlap / edit

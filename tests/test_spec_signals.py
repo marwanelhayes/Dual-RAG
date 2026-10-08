@@ -84,7 +84,7 @@ def test_build_and_save_are_idempotent(tmp_path):
     assert first == second
     assert path.read_bytes() == first_bytes
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == spec_signals.SCHEMA_VERSION == 6
+    assert payload["schema_version"] == spec_signals.SCHEMA_VERSION == 7
     assert payload["signals"] == first
 
 
@@ -194,3 +194,14 @@ def test_signal_records_follow_the_consolidated_contract():
     assert not {"id", "original_name", "row_kind", "direction", "source_role",
                 "source_role_source", "section_title", "subsection_title",
                 "section_id", "subsection_id"} & set(signal)
+
+
+def test_address_table_rows_carry_their_address_cell_as_written():
+    listing = table_chunk(
+        ["Number", "Privilege", "Name", "Description"],
+        [["0x343", "MRW", "mtval", "Machine trap value."]])
+    ports = table_chunk(["Signal", "Width"], [["AWVALID", "1"]])
+
+    signals = spec_signals.build_spec_signals([listing, ports])
+
+    assert [signal["address"] for signal in signals] == ["0x343", None]
