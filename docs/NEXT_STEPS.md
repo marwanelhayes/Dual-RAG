@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `116ac78` + docs (2026-10-08 section below). Tests: 272 passed. Decision metrics:
+Branch `simplify`, head `cff008c` + docs (2026-10-08 section below). Tests: 273 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -171,6 +171,7 @@ on either decision metric reverted the change.
 | `retrieve/bge-reranker-v2-m3` | `6cc622c`, `b04dc40`, `cfa7f45` | `2d31c3c1` | 0.683 / **0.558** | shared + fp16 to fit 4 GB; spec MRR 0.590 → 0.542; 0.9 → 3.2 s/q |
 | `retrieve/rtl-lexical-only` | `733c3fb` | `c3ad224d` | 0.683 / **0.575** | RTL MRR 0.720; 2.8 s/q |
 | `rtl_embed/no-rtl-index` | `116ac78` | `68c40dd5` | 0.683 / 0.575 | RTL index, manifest, guard removed |
+| `retrieve/rerank-logits` | `cff008c` | `65447704` | **0.698** / 0.575 | v2-m3's sigmoid head let the authority shift outweigh relevance; raw logits: spec MRR 0.542 → 0.605, spec exact 0.604 |
 
 Scratch-only (not committed): RTL module description in the header (RTL MRR 0.761, RTL exact
 0.558) and table rows as sentences (spec section 0.667) both failed the decision rule.
@@ -187,9 +188,7 @@ Next:
 1. Close the remaining rank gap (gold in pool, out of top 5) without per-corpus training; a
    reranker fine-tuned on synthetic questions from these PDFs needs a second spec/RTL pair to
    be judged without leakage.
-2. Spec MRR dropped with `bge-reranker-v2-m3` (0.590 → 0.542) while section recall held;
-   look at the per-question diff before trusting spec rank order.
-3. Gold ids are tied to chunking: re-chunking re-strands exact ids (section recall survives).
+2. Gold ids are tied to chunking: re-chunking re-strands exact ids (section recall survives).
 
 ## Rhythm for every step
 
