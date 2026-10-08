@@ -5,7 +5,7 @@ from pathlib import Path
 
 import configure as cfg
 import rtl_embed as re_
-from embed import build_manifest, read_manifest
+import embed
 
 
 def _declaration(module, name, kind="SIGNAL", direction="internal", **metadata):
@@ -234,7 +234,7 @@ def test_two_readers_of_one_net_do_not_read_from_each_other(tmp_path):
     assert "reads:" not in text["rtl:control_unit"]
     assert "reads:" not in text["rtl:reg_file"]
 
-def test_main_embeds_on_every_run_and_writes_the_manifest(monkeypatch, tmp_path):
+def test_main_writes_retrieval_records_and_builds_no_vector_index(monkeypatch, tmp_path):
     source = tmp_path / "fpu_decoder.sv"
     source.write_text("module fpu_decoder; endmodule\n")
     output = tmp_path / "output"
@@ -242,31 +242,22 @@ def test_main_embeds_on_every_run_and_writes_the_manifest(monkeypatch, tmp_path)
     rtl_path = output / "rtl.json"
     rtl_path.write_text(json.dumps(_rtl(source)))
     chunks_path = output / "rtl_chunks.jsonl"
-    index_dir = output / "rtl_index"
-    manifest_path = output / "manifest.json"
-    builds = []
 
-    class FakeStore:
-        def save(self, path):
-            Path(path).mkdir(parents=True, exist_ok=True)
-
-    def fake_build(records):
-        builds.append(list(records))
-        return FakeStore()
+    def no_index(records):
+        raise AssertionError("RTL records are ranked lexically; no vector index is built")
 
     monkeypatch.setattr(cfg, "ROOT", tmp_path)
     monkeypatch.setattr(cfg, "OUTPUT_DIR", output)
     monkeypatch.setattr(cfg, "RTL_PATH", rtl_path)
     monkeypatch.setattr(cfg, "RTL_CHUNKS_PATH", chunks_path)
-    monkeypatch.setattr(cfg, "RTL_INDEX_DIR", index_dir)
-    monkeypatch.setattr(cfg, "RTL_MANIFEST_PATH", manifest_path)
-    monkeypatch.setattr(re_.VectorStore, "build", staticmethod(fake_build))
+    monkeypatch.setattr(embed.VectorStore, "build", staticmethod(no_index))
 
     re_.main()
-    re_.main()
 
-    assert len(builds) == 2
-    assert read_manifest(manifest_path) == build_manifest(builds[0])
+    written = [json.loads(line) for line in chunks_path.read_text().splitlines()]
+    assert [record["chunk_id"] for record in written] == [
+        record["chunk_id"] for record in re_.retrieval_records(json.loads(rtl_path.read_text()))]
+    assert sorted(path.name for path in output.iterdir()) == ["rtl.json", "rtl_chunks.jsonl"]
 
 
 def test_a_line_longer_than_a_window_is_split_rather_than_dropped():
@@ -373,10 +364,3 @@ def test_every_port_name_is_expanded_into_terms(tmp_path):
 
     assert all(f"address {index}" in text for index in range(20))
 
-
-def test_records_past_the_encoder_window_are_reported(monkeypatch):
-    monkeypatch.setattr(cfg, "ENCODER_MAX_TOKENS", 12)
-    records = [{"chunk_id": "rtl:small", "context_header": "H", "text": "abc"},
-               {"chunk_id": "rtl:big", "context_header": "H", "text": "x" * 20}]
-
-    assert re_.over_encoder_window(records, count_tokens=len) == ["rtl:big"]

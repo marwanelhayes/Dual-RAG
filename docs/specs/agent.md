@@ -42,7 +42,7 @@ validation rules (`answer_contract.py`, not walked).
    `AGENT_NUM_CTX = 8192`.
 7. **answer**: required domains (both for COMPARISON, else the routed one) must be citable,
    else abstain; model → `validate_answer` → `render_answer`.
-8. **Freshness guards** kept: spec index, RTL index (from `rtl_chunks.jsonl`), bridge
+8. **Freshness guards** kept: spec index, RTL records present (`rtl_chunks.jsonl`), bridge
    fingerprints.
 9. **Hit type**: `(Document, score)` from both retrievers; `_hit_record` drops its bare-hit
    branch.

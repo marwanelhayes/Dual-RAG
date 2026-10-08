@@ -1,6 +1,6 @@
 """Build module-first RTL retrieval records from ``output/rtl.json``.
 
-Only modules and useful compiler-bounded structural blocks are vectorized.  Signal
+Only modules and useful compiler-bounded structural blocks become records.  Signal
 declarations remain exact-addressable metadata on their owning module instead of becoming
 thousands of tiny semantic documents.
 """
@@ -9,7 +9,6 @@ import json
 import re
 
 import configure as cfg
-from embed import VectorStore, build_manifest, write_manifest
 from naming import identifier_tokens
 
 
@@ -334,24 +333,8 @@ def retrieval_records(rtl):
     return [*chunks(rtl), *_structural_records(rtl)]
 
 
-def over_encoder_window(records, count_tokens):
-    """Return the records whose embedded text would be truncated by the encoder.
-
-    Args:
-        records: Retrieval records with ``context_header`` and ``text``.
-        count_tokens: Encoder-token counter for one text.
-
-    Returns:
-        Chunk ids whose header plus text, with two special tokens, exceed
-        ``cfg.ENCODER_MAX_TOKENS``.
-    """
-    return [record["chunk_id"] for record in records
-            if count_tokens(record["context_header"] + "\n\n" + record["text"]) + 2
-            > cfg.ENCODER_MAX_TOKENS]
-
-
 def main():
-    """Write retrieval records, embed them, and write the index manifest.
+    """Write the RTL retrieval records; the RTL lane ranks them lexically, unembedded.
 
     Returns:
         None.
@@ -361,12 +344,6 @@ def main():
     with open(cfg.RTL_PATH, encoding="utf-8") as source:
         rtl = json.load(source)
     records = retrieval_records(rtl)
-    # A character budget tuned on one design can overrun the encoder on denser RTL.
-    from ingest import count_tokens
-    over = over_encoder_window(records, count_tokens)
-    if over:
-        raise SystemExit(f"{len(over)} RTL chunks over the encoder window {over[:5]}; "
-                         "lower RTL_CHUNK_CHARS")
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg.RTL_CHUNKS_PATH, "w", encoding="utf-8") as output:
         for record in records:
@@ -375,10 +352,6 @@ def main():
     structures = len(records) - modules
     print(f"{len(records)} RTL records ({modules} modules, {structures} structures) "
           f"-> {cfg.RTL_CHUNKS_PATH.relative_to(cfg.ROOT)}")
-    store = VectorStore.build(records)
-    store.save(cfg.RTL_INDEX_DIR)
-    write_manifest(build_manifest(records), cfg.RTL_MANIFEST_PATH)
-    print(f"indexed -> {cfg.RTL_INDEX_DIR.relative_to(cfg.ROOT)}")
 
 if __name__ == "__main__":
     main()

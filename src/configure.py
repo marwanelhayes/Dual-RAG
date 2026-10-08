@@ -106,10 +106,7 @@ RTL_PATH = OUTPUT_DIR / "rtl.json"
 
 # Index English RTL surfaces separately so they never compete with specification chunks.
 RTL_CHUNKS_PATH = OUTPUT_DIR / "rtl_chunks.jsonl"
-RTL_INDEX_DIR = OUTPUT_DIR / "rtl_index"
-# Validate the RTL index manifest before allowing dense lookup against compiler artifacts.
-RTL_MANIFEST_PATH = OUTPUT_DIR / "rtl_embed_manifest.json"
-# Character budget per RTL window; rtl_embed fails the run when a window overruns the encoder.
+# Character budget per RTL window, so one window stays a focused reranker passage.
 RTL_CHUNK_CHARS = int(os.environ.get("RTL_CHUNK_CHARS", 1200))
 # The top module is the one no other source instantiates; set this only when several are.
 RTL_TOP_MODULE = os.environ.get("RTL_TOP_MODULE") or None

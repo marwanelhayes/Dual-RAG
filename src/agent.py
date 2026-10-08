@@ -578,15 +578,12 @@ class Runtime:
             Retriever result sequence.
         """
         if self._rtl_retriever is None:
-            from embed import index_manifest_status
             from retrieve import RTLRetriever
 
             records = _read_jsonl(cfg.RTL_CHUNKS_PATH)
-            status = index_manifest_status(
-                records, cfg.RTL_INDEX_DIR, cfg.RTL_MANIFEST_PATH)
-            if not status["fresh"]:
+            if not records:
                 raise ArtifactFreshnessError(
-                    f"RTL index is stale ({status['reason']}); run python src/rtl_embed.py")
+                    "no RTL retrieval records; run python src/rtl_embed.py")
             self._rtl_retriever = RTLRetriever(records)
         adapter = self._rtl_retriever
         return adapter(query, k) if callable(adapter) else adapter.search(query, top_k=k)

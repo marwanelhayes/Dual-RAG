@@ -6,8 +6,8 @@ Decided 2026-09-24 in the simplification pass. Deferred options live in
 ## Domain
 
 `rtl_embed.py` projects `output/rtl.json` into RTL retrieval records
-(`output/rtl_chunks.jsonl`) and embeds them into the Chroma index `output/rtl_index` with
-`embed.Embedder` / `embed.VectorStore`. Units: one module record and one record per
+(`output/rtl_chunks.jsonl`), ranked by exact lookup, BM25, and the reranker; they are not
+embedded (dense vectors lowered RTL recall, `retrieve/rtl-lexical-only`). Units: one module record and one record per
 structural block (always, function/task, assignment group), each split into whole-line
 windows when it exceeds the budget.
 

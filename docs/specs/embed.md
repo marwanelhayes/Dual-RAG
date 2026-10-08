@@ -8,8 +8,7 @@ chunks).
 
 `embed.py` turns chunk records into a searchable vector index. It owns three things:
 the encoder (`Embedder`), the store (`VectorStore`), and the index's freshness manifest.
-`rtl_embed.py` reuses `Embedder` and `VectorStore` for the RTL index, so both indexes
-change together.
+The RTL lane is ranked lexically and has no index (`retrieve/rtl-lexical-only`).
 
 Non-goals: chunk sizing and token caps (ingest steps 13-14 own them), metadata truth
 (`chunks.jsonl` / `rtl_chunks.jsonl` own it), retrieval fusion and reranking (`retrieve.py`).
@@ -22,8 +21,7 @@ Non-goals: chunk sizing and token caps (ingest steps 13-14 own them), metadata t
 2. **Encoder.** `BAAI/bge-small-en-v1.5` (512 tokens, 384 dims) on `cuda`, falling back to
    CPU (`available_device`). Passages are encoded bare; queries get `EMBED_QUERY_PREFIX`
    (BGE asymmetric convention). Vectors are always L2-normalised (no config knob).
-3. **Store: Chroma.** One persistent Chroma directory per index (`output/spec_index`,
-   `output/rtl_index`), each with one collection `chunks`, `space="cosine"`, embeddings
+3. **Store: Chroma.** One persistent Chroma directory (`output/spec_index`) with one collection `chunks`, `space="cosine"`, embeddings
    supplied by `Embedder` (no Chroma embedding function, telemetry off). Each entry holds
    `id` (= `chunk_id`), the embedding, and the embedded text only. One directory per index
    (not one client with two collections) keeps "index dir exists" meaning "this index was

@@ -15,10 +15,11 @@ def test_stage_order_builds_each_domain_before_the_bridge():
     ]
 
 
-def test_parser_only_order_skips_both_indexes():
+def test_parser_only_order_skips_the_spec_index_and_keeps_rtl_records():
     names = [path.name for _, path in build.stage_scripts(include_embeddings=False)]
 
-    assert names == ["ingest.py", "spec_signals.py", "rtl_ingest.py", "bridge.py"]
+    assert names == ["ingest.py", "spec_signals.py", "rtl_ingest.py", "rtl_embed.py",
+                     "bridge.py"]
 
 
 def test_every_stage_runs_as_a_plain_script_without_flags():
@@ -63,7 +64,7 @@ def test_pipeline_invokes_isolated_stages_in_order(monkeypatch):
     build.run_pipeline(include_embeddings=False)
 
     assert [Path(command).name for command, _, _ in calls] == [
-        "ingest.py", "spec_signals.py", "rtl_ingest.py", "bridge.py",
+        "ingest.py", "spec_signals.py", "rtl_ingest.py", "rtl_embed.py", "bridge.py",
     ]
     assert all(cwd == build.cfg.ROOT and check for _, cwd, check in calls)
 

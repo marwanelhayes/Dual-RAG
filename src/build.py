@@ -73,7 +73,7 @@ def stage_scripts(include_embeddings=True):
     """Return rebuild scripts in dependency order.
 
     Args:
-        include_embeddings: Include both domain vector-index stages.
+        include_embeddings: Include the specification vector-index stage.
 
     Returns:
         Stage label and script-path pairs.
@@ -81,9 +81,9 @@ def stage_scripts(include_embeddings=True):
     source = Path(__file__).resolve().parent
     stages = (("spec ingestion", "ingest.py"), ("spec signals", "spec_signals.py"),
               ("spec index", "embed.py"), ("RTL ingestion", "rtl_ingest.py"),
-              ("RTL index", "rtl_embed.py"), ("cross-domain bridge", "bridge.py"))
+              ("RTL records", "rtl_embed.py"), ("cross-domain bridge", "bridge.py"))
     return [(label, source / name) for label, name in stages
-            if include_embeddings or name not in ("embed.py", "rtl_embed.py")]
+            if include_embeddings or name != "embed.py"]
 
 
 def stage_command(script):
@@ -126,7 +126,7 @@ def main(argv=None):
     parser.add_argument("--clean", action="store_true",
                         help="remove all generated artifacts before rebuilding")
     parser.add_argument("--no-embeddings", action="store_true",
-                        help="skip both vector-index stages for a parser/bridge-only rebuild")
+                        help="skip the spec vector index for a parser/bridge-only rebuild")
     args = parser.parse_args(argv)
     if args.clean:
         clean_generated_data()
