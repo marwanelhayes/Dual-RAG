@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `5465ef9` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
+Branch `simplify`, head `1dd9f92` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -188,6 +188,8 @@ Next:
 | `agent/gliner-signal-tagger` | `6a67d2c` | `5ed16289` | 0.698 / 0.575 | GLiNER2 tags signal names in question + passages for bridge lookup; gold-module bridge rows 5 → 6 of 20 comparison questions, 6 → 9 mentions; +0.23 s/q |
 
 | `bridge/drop-same-net` | `5465ef9` | `dfcae3b9` | 0.698 / 0.575 | all 19 `same_net` links were wrong; AXI precision 0.940 → 0.972, recall 1.000; module alignments 136 → 120 (`link_support` counted them) |
+
+| `eval/bridge-gold-csr` | `1dd9f92` | `cc3e2aa8` | 0.698 / 0.575 | +37 gold rows; baseline csr_recall 1.0, renamed_linked 0.0, renamed_suggested 0.0, collision_links 16, unlinkable_unresolved 1.0 |
 
 GLiNER2 (`fastino/gliner2-base-v1`) as the spec-signal extractor instead of the table rules
 (scratch): AXI channel recall held at 1.0 but bridge AXI precision fell 0.94 → 0.37 (`Y`/`N`
