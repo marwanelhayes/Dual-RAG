@@ -1,5 +1,5 @@
 {
- "description": "AXI channel signals the RTL implements: spec name, RTL port (D/I-prefixed aliases on riscv_processor), and the module(s) whose output drives it. Hand-checked against rtl/*.sv on 2026-09-24.",
+ "description": "AXI channel signals the RTL implements: spec name, RTL port (D/I-prefixed aliases on riscv_processor), and the module(s) whose output drives it. Hand-checked against rtl/*.sv on 2026-09-24. csr_links, renamed_links, non_links and unlinkable added 2026-10-08: CSR addresses read from spec table cells and rtl/shared_pkg.sv csr_index_t; collisions read from the cited RTL declarations.",
  "signals": [
   {
    "spec_name": "AWADDR",
@@ -185,5 +185,244 @@
     "cache"
    ]
   }
+ ],
+ "csr_links": [
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::4::fcsr",
+   "rtl_name": "fcsr",
+   "address": "0x003"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::4::fflags",
+   "rtl_name": "fflags",
+   "address": "0x001"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::4::frm",
+   "rtl_name": "frm",
+   "address": "0x002"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mcause",
+   "rtl_name": "mcause",
+   "address": "0x342"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::medeleg",
+   "rtl_name": "medeleg",
+   "address": "0x302"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mepc",
+   "rtl_name": "mepc",
+   "address": "0x341"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mhartid",
+   "rtl_name": "mhartid",
+   "address": "0xF14"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mideleg",
+   "rtl_name": "mideleg",
+   "address": "0x303"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mie",
+   "rtl_name": "mie",
+   "address": "0x304"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mip",
+   "rtl_name": "mip",
+   "address": "0x344"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::misa",
+   "rtl_name": "misa",
+   "address": "0x301"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mscratch",
+   "rtl_name": "mscratch",
+   "address": "0x340"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mstatus",
+   "rtl_name": "mstatus",
+   "address": "0x300"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mtvec",
+   "rtl_name": "mtvec",
+   "address": "0x305"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mvendorid",
+   "rtl_name": "mvendorid",
+   "address": "0xF11"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_unprivileged::75::fcsr",
+   "rtl_name": "fcsr",
+   "address": "0x003"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_unprivileged::75::fflags",
+   "rtl_name": "fflags",
+   "address": "0x001"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_unprivileged::75::frm",
+   "rtl_name": "frm",
+   "address": "0x002"
+  }
+ ],
+ "renamed_links": [
+  {
+   "spec_signal_id": "spec::signal::riscv_privileged::7::mtval",
+   "rtl_name": "mbadaddr",
+   "address": "0x343",
+   "note": "RTL csr_index_t names address 0x343 'mbadaddr', the spec 'mtval'"
+  },
+  {
+   "spec_signal_id": "spec::signal::riscv_unprivileged::75::cycle",
+   "rtl_name": "mcycle",
+   "address": "0xC00",
+   "note": "RTL csr_index_t names address 0xC00 'mcycle', the spec 'cycle'"
+  }
+ ],
+ "non_links": [
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A15.3::addr",
+   "rtl_module": "csr_file",
+   "rtl_name": "Address",
+   "source": "rtl/csr_file.sv:32",
+   "declaration": "input [ADDR_WIDTH-1:0] Address,       // Fault address (for mbadaddr)",
+   "reason": "trap fault address (mbadaddr), not the DVM message Addr field"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A2.3::valid",
+   "rtl_module": "cache",
+   "rtl_name": "valid",
+   "source": "rtl/cache.sv:110",
+   "declaration": "logic valid [SETS][WAY];",
+   "reason": "operation-start strobe or cache-line valid bits, not the transport VALID"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A2.3::valid",
+   "rtl_module": "flp_add_sub",
+   "rtl_name": "valid",
+   "source": "rtl/flp_add_sub.sv:39",
+   "declaration": "input   logic valid,                   // Operation valid (start)",
+   "reason": "operation-start strobe or cache-line valid bits, not the transport VALID"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A2.3::valid",
+   "rtl_module": "flp_div",
+   "rtl_name": "valid",
+   "source": "rtl/flp_div.sv:43",
+   "declaration": "input  logic valid,                     // Operation valid (start)",
+   "reason": "operation-start strobe or cache-line valid bits, not the transport VALID"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A2.3::valid",
+   "rtl_module": "flp_mul",
+   "rtl_name": "valid",
+   "source": "rtl/flp_mul.sv:41",
+   "declaration": "input  logic valid,                     // Operation valid (start)",
+   "reason": "operation-start strobe or cache-line valid bits, not the transport VALID"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A2.3::valid",
+   "rtl_module": "flp_sqrt",
+   "rtl_name": "valid",
+   "source": "rtl/flp_sqrt.sv:38",
+   "declaration": "input   logic valid,                     // Operation valid (start)",
+   "reason": "operation-start strobe or cache-line valid bits, not the transport VALID"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A2.3::valid",
+   "rtl_module": "risc_fpu",
+   "rtl_name": "valid",
+   "source": "rtl/risc_fpu.sv:34",
+   "declaration": "input  logic valid,                      // Operation valid signal",
+   "reason": "operation-start strobe or cache-line valid bits, not the transport VALID"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A3.20::wdata",
+   "rtl_module": "fp_reg_file",
+   "rtl_name": "WData",
+   "source": "rtl/fp_reg_file.sv:28",
+   "declaration": "input [DATA_WIDTH-1:0] WData,    // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A3.20::wdata",
+   "rtl_module": "risc_mem",
+   "rtl_name": "WData",
+   "source": "rtl/risc_mem.sv:30",
+   "declaration": "input signed [DATA_WIDTH-1:0] WData,   // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::A3.20::wdata",
+   "rtl_module": "risc_reg_file",
+   "rtl_name": "WData",
+   "source": "rtl/risc_reg_file.sv:29",
+   "declaration": "input signed [DATA_WIDTH-1:0] WData,   // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::B1.2::wdata",
+   "rtl_module": "fp_reg_file",
+   "rtl_name": "WData",
+   "source": "rtl/fp_reg_file.sv:28",
+   "declaration": "input [DATA_WIDTH-1:0] WData,    // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::B1.2::wdata",
+   "rtl_module": "risc_mem",
+   "rtl_name": "WData",
+   "source": "rtl/risc_mem.sv:30",
+   "declaration": "input signed [DATA_WIDTH-1:0] WData,   // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::B1.2::wdata",
+   "rtl_module": "risc_reg_file",
+   "rtl_name": "WData",
+   "source": "rtl/risc_reg_file.sv:29",
+   "declaration": "input signed [DATA_WIDTH-1:0] WData,   // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::B2.2::wdata",
+   "rtl_module": "fp_reg_file",
+   "rtl_name": "WData",
+   "source": "rtl/fp_reg_file.sv:28",
+   "declaration": "input [DATA_WIDTH-1:0] WData,    // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::B2.2::wdata",
+   "rtl_module": "risc_mem",
+   "rtl_name": "WData",
+   "source": "rtl/risc_mem.sv:30",
+   "declaration": "input signed [DATA_WIDTH-1:0] WData,   // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  },
+  {
+   "spec_signal_id": "spec::signal::axi_spec::B2.2::wdata",
+   "rtl_module": "risc_reg_file",
+   "rtl_name": "WData",
+   "source": "rtl/risc_reg_file.sv:29",
+   "declaration": "input signed [DATA_WIDTH-1:0] WData,   // Write data",
+   "reason": "register-file write-data port, not the AXI W channel"
+  }
+ ],
+ "unlinkable": [
+  "spec::signal::riscv_unprivileged::75::time"
  ]
 }

@@ -271,6 +271,41 @@ def bridge_metrics(bridge, gold):
     return dict(metrics)
 
 
+def bridge_gold_metrics(bridge, gold):
+    """Score the bridge on hand-checked CSR, renamed, collision, and unlinkable rows.
+
+    Args:
+        bridge: Decoded ``bridge.json``.
+        gold: ``bridge_gold.json`` sections ``csr_links``, ``renamed_links`` (same thing
+            under another name), ``non_links`` (name collisions), and ``unlinkable``
+            (spec rows the RTL does not implement).
+
+    Returns:
+        Recall of CSR and renamed pairs, renamed pairs among suggestions, collision links
+        still present, and the share of unlinkable rows left unresolved.
+    """
+    linked = {(link["spec_signal_id"], link["rtl_original_name"])
+              for link in bridge.get("signal_alignments", [])}
+    sited = {(link["spec_signal_id"], link.get("rtl_module_name"), link["rtl_original_name"])
+             for link in bridge.get("signal_alignments", [])}
+    suggested = {(row["spec_signal_id"], candidate["rtl_original_name"])
+                 for row in bridge.get("unresolved_signals", [])
+                 for candidate in row.get("candidates", [])}
+    linked_specs = {spec for spec, _ in linked}
+    share = lambda rows, found: sum(
+        (row["spec_signal_id"], row["rtl_name"]) in found for row in rows) / len(rows)
+    return {
+        "bridge.csr_recall": share(gold["csr_links"], linked),
+        "bridge.renamed_linked": share(gold["renamed_links"], linked),
+        "bridge.renamed_suggested": share(gold["renamed_links"], suggested),
+        "bridge.collision_links": sum(
+            (row["spec_signal_id"], row["rtl_module"], row["rtl_name"]) in sited
+            for row in gold["non_links"]),
+        "bridge.unlinkable_unresolved": sum(
+            spec not in linked_specs for spec in gold["unlinkable"]) / len(gold["unlinkable"]),
+    }
+
+
 def _git(*args):
     """Return one git command's trimmed stdout, run from the project root.
 
@@ -331,7 +366,9 @@ def pipeline_metrics():
     with open(cfg.BRIDGE_PATH, encoding="utf-8") as handle:
         bridge = json.load(handle)
     with open(BRIDGE_GOLD, encoding="utf-8") as handle:
-        metrics.update(bridge_metrics(bridge, json.load(handle)["signals"]))
+        gold = json.load(handle)
+    metrics.update(bridge_metrics(bridge, gold["signals"]))
+    metrics.update(bridge_gold_metrics(bridge, gold))
     if cfg.RETRIEVAL_PATH.exists():
         with open(cfg.RETRIEVAL_PATH, encoding="utf-8") as handle:
             report = json.load(handle)

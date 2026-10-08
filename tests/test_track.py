@@ -185,3 +185,32 @@ def test_bridge_metrics_score_axi_links_against_the_gold_ports():
     assert metrics["bridge.links.interface_prefix"] == 1
     assert metrics["bridge.links_to.signal"] == 4
     assert metrics["bridge.unresolved.no link"] == 2
+
+
+def test_bridge_gold_metrics_score_csr_renamed_collision_and_unlinkable_rows():
+    gold = {
+        "csr_links": [{"spec_signal_id": "s::mstatus", "rtl_name": "mstatus"},
+                      {"spec_signal_id": "s::mie", "rtl_name": "mie"}],
+        "renamed_links": [{"spec_signal_id": "s::mtval", "rtl_name": "mbadaddr"},
+                          {"spec_signal_id": "s::cycle", "rtl_name": "mcycle"}],
+        "non_links": [{"spec_signal_id": "s::wdata", "rtl_module": "risc_mem",
+                       "rtl_name": "WData"},
+                      {"spec_signal_id": "s::valid", "rtl_module": "risc_fpu",
+                       "rtl_name": "valid"}],
+        "unlinkable": ["s::time"],
+    }
+    link = lambda spec, module, name: {"spec_signal_id": spec, "rtl_module_name": module,
+                                       "rtl_original_name": name}
+    bridge = {
+        "signal_alignments": [link("s::mstatus", None, "mstatus"),
+                              link("s::wdata", "risc_mem", "WData")],
+        "unresolved_signals": [
+            {"spec_signal_id": "s::cycle", "candidates": [{"rtl_original_name": "mcycle"}]},
+            {"spec_signal_id": "s::time", "candidates": []}],
+    }
+
+    metrics = track.bridge_gold_metrics(bridge, gold)
+
+    assert metrics == {"bridge.csr_recall": 0.5, "bridge.renamed_linked": 0.0,
+                       "bridge.renamed_suggested": 0.5, "bridge.collision_links": 1,
+                       "bridge.unlinkable_unresolved": 1.0}
