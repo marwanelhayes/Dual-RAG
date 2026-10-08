@@ -1,5 +1,8 @@
 """Hermetic contracts for the three-route Dual-RAG LangGraph."""
 
+import json
+import re
+
 from langchain_core.documents import Document
 
 import agent
@@ -308,3 +311,43 @@ def test_rtl_records_come_from_the_rtl_chunks_artifact(monkeypatch, tmp_path):
     assert "rtl" not in inspect.signature(agent.build_graph).parameters
     agent.Runtime().rtl_search("q", 1)
     assert seen == [[{"chunk_id": "rtl:fpu", "text": "module fpu"}]]
+
+
+def _write_design_names(tmp_path, monkeypatch, rtl_names, spec_names):
+    """Point the router at a tiny design and specification signal table."""
+    rtl = {"modules": {"core": {"original_name": "core",
+                                "ports": [{"original_name": name} for name in rtl_names],
+                                "signals": [], "parameters": [], "instances": []}}}
+    spec = {"signals": [{"name": name} for name in spec_names]}
+    (tmp_path / "rtl.json").write_text(json.dumps(rtl), encoding="utf-8")
+    (tmp_path / "spec_signals.json").write_text(json.dumps(spec), encoding="utf-8")
+    monkeypatch.setattr(cfg, "RTL_PATH", tmp_path / "rtl.json")
+    monkeypatch.setattr(cfg, "SPEC_SIGNALS_PATH", tmp_path / "spec_signals.json")
+    agent._design_names.cache_clear()
+
+
+def test_a_bus_signal_with_an_underscore_routes_to_the_specification(tmp_path, monkeypatch):
+    _write_design_names(tmp_path, monkeypatch, ["StallD"], ["CYC_O"])
+
+    assert agent.classify_query("What does CYC_O indicate on the Wishbone bus?") == agent.SPEC
+    agent._design_names.cache_clear()
+
+
+def test_a_name_only_the_design_declares_routes_to_the_rtl(tmp_path, monkeypatch):
+    _write_design_names(tmp_path, monkeypatch, ["StallD", "rm_i"], ["CYC_O"])
+
+    assert agent.classify_query("What sets StallD?") == agent.RTL
+    assert agent.classify_query("WHAT SETS STALLD?") == agent.RTL
+    agent._design_names.cache_clear()
+
+
+def test_router_names_no_particular_standard():
+    assert not re.search(r"axi|risc|timer", agent._SPEC_SOURCE.pattern + agent._LOCAL_SOURCE.pattern
+                         + agent._IMPLEMENTATION_SUBJECT.pattern, re.IGNORECASE)
+
+
+def test_asking_whether_anything_behaves_as_specified_is_a_comparison():
+    assert agent.classify_query(
+        "Does the link training behave as the PCIe specification requires?") == agent.COMPARISON
+    assert agent.classify_query(
+        "Does the specification allow READY to be asserted before VALID?") == agent.SPEC

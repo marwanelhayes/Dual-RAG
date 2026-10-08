@@ -1,5 +1,6 @@
 """Route questions through specification RAG, RTL RAG, or an enforced comparison path."""
 
+import functools
 import json
 import re
 import sys
@@ -88,19 +89,21 @@ _RTL = re.compile(
     r"\b(?:rtl|systemverilog|verilog|module|always_(?:ff|comb|latch)|always\s+block|"
     r"driv(?:e|en|er|es)|readers?|writers?|instance|instantiate|source\s+line|\.sv)\b",
     re.IGNORECASE)
-_RTL_IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9$]*_[A-Za-z0-9_$]+\b")
+# Identifier-shaped words: an underscore, a digit, an inner capital, or all capitals.
+_IDENTIFIER_WORD = re.compile(
+    r"\b(?:[A-Za-z]\w*_\w*|[A-Za-z]+\d\w*|[A-Za-z]*[a-z][A-Z]\w*|[A-Z]{2,}\w*)\b")
 _SPEC_SOURCE = re.compile(
     r"\b(?:spec(?:ification)?|specified|standard|manual|protocol|isa|architecture|"
-    r"architectural|axi4?|risc-v)\b", re.IGNORECASE)
+    r"architectural)\b", re.IGNORECASE)
 _LOCAL_SOURCE = re.compile(
     r"(?:\b(?:rtl|systemverilog|verilog|codebase|code\s+path|repository|repo|dut|"
     r"netlist|silicon|source\s+(?:code|line)|hardware\s+sources?|generated\s+hardware)\b|"
     r"\b(?:this|the|current|shipped)\s+(?:design|core|processor|pipeline|cache|decoder|"
-    r"interface|memory\s+interface|implementation|hardware|unit|timer\s+interrupt)\b|"
+    r"interface|memory\s+interface|implementation|hardware|unit)\b|"
     r"\.sv\b)", re.IGNORECASE)
 _IMPLEMENTATION_SUBJECT = re.compile(
     r"\b(?:rtl|design|core|processor|pipeline|memory\s+interface|cache|decoder|interface|"
-    r"module|unit|hardware|dut|netlist|silicon|implementation|timer\s+interrupt)\b",
+    r"module|unit|hardware|dut|netlist|silicon|implementation)\b",
     re.IGNORECASE)
 _COMPARISON_RELATION = re.compile(
     r"\b(?:implement(?:ed|s|ing)?|missing|omit(?:ted)?|gaps?|coverage|cover(?:s|ed)?|"
@@ -112,6 +115,10 @@ _COMPARISON_RELATION = re.compile(
 _COMPARISON_COMMAND = re.compile(
     r"^\s*(?:compare|cross[- ]check|audit|validate|verify|check\s+whether)\b",
     re.IGNORECASE)
+# "Does X work the way the spec describes?" asks for conformance whatever X is.
+_CONFORMANCE = re.compile(
+    r"\b(?:works?|behaves?|operates?|functions?)\b.*\b(?:the\s+way|as)\b.*"
+    r"\b(?:describ|specif|defin|requir|mandat)\w*", re.IGNORECASE)
 _CAPABILITY_QUESTION = re.compile(r"^\s*(?:does|do|can|is|are|could)\b", re.IGNORECASE)
 _CATEGORY_CHOICE = re.compile(r"^\s*what\s+(?:kind|type)\s+of\b", re.IGNORECASE)
 _RTL_INSPECTION = re.compile(
@@ -121,6 +128,31 @@ _RTL_INSPECTION = re.compile(
     r"what\s+(?:writes?|drives?|generates?|assigns?|expression|logic|fan-in)\b|"
     r"how\s+(?:is|are)\b.*\b(?:chosen|generated|assigned|driven|read|written|updated|"
     r"calculated|computed|produced)\b)", re.IGNORECASE)
+
+
+@functools.cache
+def _design_names():
+    """Return the casefolded names only the design declares, not any spec signal table.
+
+    Returns:
+        Identifier-shaped module, port, signal, parameter, and instance names from
+        ``rtl.json`` minus the specification's signal names; empty when either artifact
+        is missing.
+    """
+    try:
+        modules = json.loads(cfg.RTL_PATH.read_text(encoding="utf-8"))["modules"]
+        signals = json.loads(cfg.SPEC_SIGNALS_PATH.read_text(encoding="utf-8"))["signals"]
+    except (OSError, KeyError, ValueError):
+        return frozenset()
+    rtl = {module.get("original_name", key) for key, module in modules.items()}
+    rtl.update(item.get("original_name") or item.get("name")
+               for module in modules.values()
+               for field in ("ports", "signals", "parameters", "instances")
+               for item in module.get(field, []))
+    spec = {row.get("name") for row in signals}
+    # A plain lowercase word such as ``valid`` or ``mode`` reads as prose, not a name.
+    return frozenset(str(name).casefold() for name in rtl - spec
+                     if name and _IDENTIFIER_WORD.fullmatch(str(name)))
 
 
 def classify_query(question):
@@ -134,7 +166,8 @@ def classify_query(question):
     """
     text = question or ""
     has_spec_source = bool(_SPEC_SOURCE.search(text))
-    has_identifier = bool(_RTL_IDENTIFIER.search(text))
+    names = _design_names()
+    has_identifier = any(word.casefold() in names for word in _IDENTIFIER_WORD.findall(text))
     has_local_source = bool(_LOCAL_SOURCE.search(text)) or has_identifier
     has_implementation_subject = bool(_IMPLEMENTATION_SUBJECT.search(text))
     has_comparison_relation = bool(_COMPARISON_RELATION.search(text))
@@ -145,6 +178,8 @@ def classify_query(question):
     if has_comparison_relation and (has_local_source or has_implementation_subject):
         return COMPARISON
     if _CAPABILITY_QUESTION.search(text) and has_local_source:
+        return COMPARISON
+    if _CAPABILITY_QUESTION.search(text) and has_spec_source and _CONFORMANCE.search(text):
         return COMPARISON
     if (_CATEGORY_CHOICE.search(text)
             and (has_local_source or has_implementation_subject or has_comparison_relation)):
