@@ -239,20 +239,51 @@ def _dedupe_evidence(records):
     return result
 
 
-def _name_tokens(value):
-    """Return simple normalized name tokens without requiring model weights.
+# Spans a tagger returns must be one identifier; phrases such as "VALID signals" are prose.
+_SIGNAL_SPAN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+SIGNAL_TYPES = {"signal": "a hardware interface signal or port name",
+                "register": "a control or status register name"}
 
-    Args:
-        value: Identifier or prose surface.
+
+@functools.cache
+def _signal_tagger():
+    """Load the local GLiNER2 signal tagger once, in half precision on CUDA.
 
     Returns:
-        Lowercase alphanumeric tokens.
+        The GLiNER2 model in eval mode.
     """
-    return set(re.findall(r"[a-z0-9]+", str(value or "").lower()))
+    from gliner2 import GLiNER2
+
+    from embed import available_device
+
+    device = available_device(cfg.SIGNAL_TAGGER_DEVICE)
+    model = GLiNER2.from_pretrained(cfg.SIGNAL_TAGGER_MODEL).to(device)
+    return (model.half() if str(device).startswith("cuda") else model).eval()
+
+
+def tag_signal_names(texts):
+    """Tag the signal and register names a set of texts mentions.
+
+    Args:
+        texts: Question and evidence passages.
+
+    Returns:
+        Casefolded name to its best tag confidence, identifier-shaped spans only.
+    """
+    tagged = {}
+    for output in _signal_tagger().batch_extract_entities(
+            list(texts), SIGNAL_TYPES, batch_size=cfg.SIGNAL_TAGGER_BATCH,
+            threshold=cfg.SIGNAL_TAGGER_THRESHOLD, include_confidence=True):
+        for entities in output["entities"].values():
+            for entity in entities:
+                if _SIGNAL_SPAN.fullmatch(entity["text"]):
+                    name = entity["text"].casefold()
+                    tagged[name] = max(tagged.get(name, 0.0), entity["confidence"])
+    return tagged
 
 
 def select_spec_signals(question, evidence, signals, limit=8):
-    """Select table-derived spec signals supported by retrieved chunks or sections.
+    """Select spec signals whose names the question or retrieved passages mention.
 
     Args:
         question: User question.
@@ -261,25 +292,17 @@ def select_spec_signals(question, evidence, signals, limit=8):
         limit: Maximum signals retained for bridge lookup.
 
     Returns:
-        Relevant signal records in deterministic score order.
+        One signal record per tagged name, highest tag confidence first.
     """
-    chunk_ids = {item["id"] for item in evidence}
-    hierarchy_ids = {item["metadata"].get("hierarchy_id") for item in evidence} - {None}
-    table_ids = {table_id for item in evidence
-                 for table_id in item["metadata"].get("table_ids", [])}
-    query_tokens = _name_tokens(question)
-    ranked = []
-    for position, signal in enumerate(signals):
-        overlap = len(query_tokens.intersection(
-            _name_tokens(signal.get("name")) | _name_tokens(signal.get("normalized_name"))))
-        provenance = (signal.get("chunk_id") in chunk_ids
-                      or signal.get("table_id") in table_ids
-                      or signal.get("hierarchy_id") in hierarchy_ids)
-        if not provenance and not overlap:
-            continue
-        ranked.append((overlap, int(provenance), -position, signal))
-    ranked.sort(reverse=True, key=lambda item: item[:3])
-    return [item[-1] for item in ranked[:limit]]
+    tagged = tag_signal_names([question, *(item.get("text", "") for item in evidence)])
+    selected, seen = [], set()
+    for signal in sorted((signal for signal in signals
+                          if str(signal.get("name", "")).casefold() in tagged),
+                         key=lambda signal: -tagged[signal["name"].casefold()]):
+        if signal["name"].casefold() not in seen:
+            seen.add(signal["name"].casefold())
+            selected.append(signal)
+    return selected[:limit]
 
 
 def lookup_bridge(signals, spec_evidence, artifact, limit=12):

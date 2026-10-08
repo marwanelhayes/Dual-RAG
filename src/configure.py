@@ -146,6 +146,12 @@ BENCH_PATH = OUTPUT_DIR / "bench.json"
 QUESTION_SET_PATH = ROOT / "eval" / "question_set.json"
 RETRIEVAL_PATH = OUTPUT_DIR / "retrieval_bench.json"
 
+# A local GLiNER2 tagger decides which spec signals the question and evidence name.
+SIGNAL_TAGGER_MODEL = "fastino/gliner2-base-v1"
+SIGNAL_TAGGER_DEVICE = "cuda"
+SIGNAL_TAGGER_BATCH = 4
+SIGNAL_TAGGER_THRESHOLD = 0.5
+
 # A single small local model reasons only over the final bounded evidence package.
 LOCAL_LLM_MODEL = "qwen3:4b"
 LOCAL_LLM_HOST = "http://localhost:11434"

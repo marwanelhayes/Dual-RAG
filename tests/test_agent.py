@@ -126,32 +126,44 @@ def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     assert state["trace"][-1] == {"event": "answer", "model_called": False}
 
 
-def test_signal_selection_is_grounded_in_retrieved_provenance():
+def test_signal_selection_follows_names_the_tagger_finds(monkeypatch):
+    monkeypatch.setattr(agent, "tag_signal_names", lambda texts: {"rounding_mode": 0.8})
     signals = [
         {"signal_id": "a", "name": "rounding_mode", "chunk_id": "spec#1"},
-        {"signal_id": "b", "name": "unrelated", "chunk_id": "spec#2"},
+        {"signal_id": "b", "name": "unrelated", "chunk_id": "spec#1"},
     ]
-    evidence = [{"id": "spec#1", "metadata": {"section_id": "rounding"}}]
+    evidence = [{"id": "spec#1", "text": "rounding_mode selects RNE", "metadata": {}}]
 
     selected = agent.select_spec_signals("rounding behavior", evidence, signals)
 
     assert [item["signal_id"] for item in selected] == ["a"]
 
 
-def test_signal_selection_rejects_description_overlap_and_broad_parent_sections():
-    signals = [{
-        "signal_id": "axi", "name": "ARMMUVALID",
-        "description": "floating-point implementation metadata",
-        "section_id": "broad", "subsection_id": "unrelated", "chunk_id": "axi#1",
-    }]
-    evidence = [{"id": "riscv#1", "metadata": {
-        "section_id": "broad", "subsection_id": "fpu", "table_ids": [],
-    }}]
+def test_signal_selection_orders_by_tag_confidence_and_keeps_one_row_per_name(monkeypatch):
+    monkeypatch.setattr(agent, "tag_signal_names",
+                        lambda texts: {"awvalid": 0.6, "wvalid": 0.9})
+    signals = [{"signal_id": "aw1", "name": "AWVALID"}, {"signal_id": "w", "name": "WVALID"},
+               {"signal_id": "aw2", "name": "AWVALID"}]
 
-    selected = agent.select_spec_signals(
-        "What is missing from the floating-point implementation?", evidence, signals)
+    selected = agent.select_spec_signals("q", [], signals)
 
-    assert selected == []
+    assert [item["signal_id"] for item in selected] == ["w", "aw1"]
+
+
+def test_tagging_keeps_identifier_shaped_signal_and_register_spans(monkeypatch):
+    class FakeModel:
+        def batch_extract_entities(self, texts, types, **kwargs):
+            return [{"entities": {
+                "signal": [{"text": "AWVALID", "confidence": 0.97},
+                           {"text": "Valid-Ready signals", "confidence": 0.81}],
+                "register": [{"text": "mstatus", "confidence": 0.7},
+                             {"text": "AWVALID", "confidence": 0.5}],
+            }} for _ in texts]
+
+    monkeypatch.undo()
+    monkeypatch.setattr(agent, "_signal_tagger", lambda: FakeModel())
+
+    assert agent.tag_signal_names(["one", "two"]) == {"awvalid": 0.97, "mstatus": 0.7}
 
 
 def test_empty_spec_selection_does_not_return_unrelated_bridge_rows():
@@ -291,7 +303,6 @@ def test_signals_and_section_alignments_match_evidence_by_hierarchy_id():
         {"spec_section_id": "axi::sec::0042", "spec_section_title": "Valid-Ready",
          "rtl_module_name": "cache", "confidence_level": "MEDIUM"}]}
 
-    assert agent.select_spec_signals("what?", evidence, [signal]) == [signal]
     assert agent.lookup_bridge([], evidence, bridge)[1] == bridge["module_alignments"]
 
 
