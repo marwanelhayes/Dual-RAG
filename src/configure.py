@@ -95,8 +95,8 @@ ROLE_AUTHORITY = {"normative": 1.0, "architecture": 0.6, "explanatory": 0.2}
 # Authority is centered per shortlist, so it breaks ties without outvoting relevance.
 RERANK_AUTHORITY_WEIGHT = 1.0
 
-# Rerank only the shortlist because cross-encoders score query-document pairs jointly.
-RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# Rerank only the shortlist; bge-reranker-v2-m3 reads whole chunks (8K window) where MiniLM cut at 512.
+RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 RERANK_DEVICE = "cuda"
 RERANK_BATCH = 32
 
