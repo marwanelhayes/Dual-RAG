@@ -687,3 +687,28 @@ def test_rejoining_a_false_sentence_end_never_passes_the_cap(monkeypatch):
     units = ingest.split_sentences(text)
 
     assert all(ingest.count_tokens(unit) <= 10 for unit in units)
+
+
+def test_common_hardware_caption_styles_are_captions():
+    for line, label, title in [
+            ("TABLE 3-1. Register Map", "3-1", "Register Map"),
+            ("Table 12 — Interrupt sources", "12", "Interrupt sources"),
+            ("Table 4.2 Register Summary", "4.2", "Register Summary"),
+            ("Table 7: Port list", "7", "Port list")]:
+        match = ingest._CAPTION.match(line)
+        assert match and (match.group(2), match.group(4)) == (label, title), line
+
+
+def test_any_continued_table_marker_is_a_banner_not_a_caption():
+    for line, label in [("Table A15.3 – Continued from previous page", "A15.3"),
+                        ("Table 7: Port list (continued)", "7"),
+                        ("Table 9 (cont.)", "9")]:
+        assert not ingest._CAPTION.match(line), line
+        assert ingest._CONTINUED.match(line).group(1) == label, line
+
+
+def test_continued_on_next_page_notes_are_recognised_in_any_wording():
+    for note in ["Continued on next page", "(continued on next page)",
+                 "Continued on the next page."]:
+        assert ingest._CONTINUES.match(note), note
+    assert not ingest._CONTINUES.match("Continued transfers on the next page")

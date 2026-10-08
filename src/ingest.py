@@ -588,17 +588,21 @@ def section_page_texts(doc, sec, furniture, bands=(None, None), regions=None):
     return spans
 
 
-# A caption needs whitespace after its separator, so "Table A2.2 shows" never splits.
-_CAPTION = re.compile(r"^(Table)\s+([A-Z]?\d+(?:[.-]\d+)*)\s*([.:])\s+(.+)$")
+# A separator needs trailing whitespace and a bare title must be capitalized, so prose never splits.
+_CAPTION = re.compile(
+    r"^((?i:table))\s+([A-Z]?\d+(?:[.-]\d+)*)\s*([.:\u2013\u2014-]\s+|\s+(?=[A-Z(]))"
+    r"(?!.*\b(?i:continued|cont\.))(.+)$")
 
 _TABLE_REF = re.compile(r"\bTable\s+([A-Z]?\d+(?:[.-]\d+)*)")
 # A table running past its page restates its label in a banner on each following page.
-_CONTINUED = re.compile(r"^Table\s+([A-Z]?\d+(?:[.-]\d+)*)\s*[\u2013-]\s*Continued from previous page")
-_CONTINUES = "Continued on next page"
+_CONTINUED = re.compile(r"^(?i:table)\s+([A-Z]?\d+(?:[.-]\d+)*)\b.*\b(?i:continued|cont\.)")
+_CONTINUES = re.compile(r"^\(?\s*continued\s+on\s+(?:the\s+)?next\s+page\.?\s*\)?$",
+                        re.IGNORECASE)
+# ponytail: only captioned tables are structured; uncaptioned signal tables stay prose, no signals.
 
 
 def continuation_banners(doc):
-    """Find every "Table X – Continued from previous page" banner.
+    """Find every continued-table banner, such as "Table X (continued)".
 
     Args:
         doc: an open fitz.Document.
@@ -889,7 +893,7 @@ def build_tables(doc, doc_id, doc_name, nodes):
         # Continuation pages restate the header row, which is dropped once rows exist.
         for number, banner in banners.get(label, []):
             carried, _, carried_region = extract_table(doc[number - 1], banner)
-            carried = [row for row in carried if " ".join(row).strip() != _CONTINUES]
+            carried = [row for row in carried if not _CONTINUES.match(" ".join(row).strip())]
             if not carried:
                 continue
             rows = rows + (carried[1:] if rows and carried[0] == rows[0] else carried)
