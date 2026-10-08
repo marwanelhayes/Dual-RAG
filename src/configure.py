@@ -116,7 +116,7 @@ RTL_TOP_MODULE = os.environ.get("RTL_TOP_MODULE") or None
 # Packages and the top's file are passed explicitly; -y resolves every other module.
 VERILATOR_ARGS = ["-Wno-fatal", "-y", str(RTL_DIR)]
 
-# Processor-design shorthand (field vocabulary, not this core's); swap it for other domains.
+# Processor-design shorthand with one hardware meaning; wb (writeback/Wishbone), rnd stay literal.
 RTL_ABBREVIATIONS = {
     "alu": ("arithmetic", "logic", "unit"),
     "csr": ("control", "status", "register"),
@@ -128,7 +128,6 @@ RTL_ABBREVIATIONS = {
     "mem": ("memory",),
     "pc": ("program", "counter"),
     "rm": ("rounding", "mode"),
-    "rnd": ("rounding",),
 }
 set_abbreviation_aliases(RTL_ABBREVIATIONS)
 
