@@ -10,8 +10,7 @@ from naming import identifier_tokens
 from langchain_core.documents import Document
 
 
-# Dots join hardware names (FADD.S, A2.2) but never end a token, so "signal." is "signal".
-TOKEN_RE = re.compile(r"[a-z0-9_]+(?:\.[a-z0-9_]+)*")
+TOKEN_RE = re.compile(r"[a-z0-9_.]+")
 _IDENTIFIER = re.compile(
     r"0[xX][0-9A-Fa-f]+|[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+)*"
 )
