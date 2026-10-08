@@ -1,5 +1,6 @@
 """Run exact-first hybrid retrieval over one domain-local vector index."""
 
+import functools
 import re
 from itertools import zip_longest
 
@@ -164,6 +165,16 @@ class Reranker:
         return sorted(zip(documents, adjusted), key=lambda pair: pair[1], reverse=True)
 
 
+@functools.cache
+def shared_reranker():
+    """Return the process-wide cross-encoder, loaded once for every retrieval lane.
+
+    Returns:
+        The single ``Reranker`` instance; both lanes and the bench share its GPU memory.
+    """
+    return Reranker()
+
+
 class Retriever:
     """Rerank the union of lexical and dense candidates with a cross-encoder."""
 
@@ -200,7 +211,7 @@ class Retriever:
         documents = {record["chunk_id"]: record_to_document(record) for record in records}
         embedder = embedder or Embedder()
         store = VectorStore.load(index_dir, records, embedder=embedder)
-        return cls(documents, BM25Index.build(documents), store, reranker or Reranker())
+        return cls(documents, BM25Index.build(documents), store, reranker or shared_reranker())
 
     def candidates(self, query, n=cfg.RETRIEVE_CANDIDATES):
         """Return the lexical then dense candidate union.

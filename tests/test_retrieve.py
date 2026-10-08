@@ -112,3 +112,18 @@ def test_reranker_decides_even_when_the_question_names_an_identifier():
     hits = retriever.search("What constrains AWVALID?", top_k=1)
 
     assert [doc.metadata["chunk_id"] for doc, _ in hits] == ["semantic"]
+
+
+def test_every_retriever_shares_one_loaded_reranker(monkeypatch):
+    loaded = []
+
+    class OneModel:
+        def __init__(self):
+            loaded.append(self)
+
+    monkeypatch.setattr(retrieve, "Reranker", OneModel)
+    retrieve.shared_reranker.cache_clear()
+
+    assert retrieve.shared_reranker() is retrieve.shared_reranker()
+    assert len(loaded) == 1
+    retrieve.shared_reranker.cache_clear()

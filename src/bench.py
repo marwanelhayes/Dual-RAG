@@ -679,11 +679,11 @@ def stage_retrieval_report(questions, k=5):
     """
     from embed import Embedder
     from ingest import load_chunks
-    from retrieve import Reranker, Retriever, RTLRetriever
+    from retrieve import Retriever, RTLRetriever, shared_reranker
 
     spec_records = load_chunks()
     rtl_records = load_chunks(cfg.RTL_CHUNKS_PATH)
-    embedder, reranker = Embedder(), Reranker()
+    embedder, reranker = Embedder(), shared_reranker()
     spec = Retriever.load(spec_records, embedder=embedder, reranker=reranker)
     rtl = RTLRetriever(rtl_records, hybrid=Retriever.load(
         rtl_records, cfg.RTL_INDEX_DIR, embedder=embedder, reranker=reranker))
