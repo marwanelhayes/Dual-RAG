@@ -13,7 +13,6 @@ from pathlib import Path
 import re
 
 import configure as cfg
-from ingest import content_hash
 from naming import identifier_tokens, normalize_identifier, normalize_module_name
 
 
@@ -320,50 +319,6 @@ def rtl_modules(rtl):
         })
     return sorted(modules, key=lambda module: module["module_id"])
 
-def port_nets(rtl):
-    """Group ports that the elaborated netlist shows are one signal threaded through modules.
-
-    A port bound to the same parent-scope net as another module's port is not a competing
-    alignment target: both name one wire. Bindings are transitive, so a net seen at two
-    hierarchy levels merges into one group.
-
-    Args:
-        rtl: Decoded RTL artifact.
-
-    Returns:
-        ``(module_name, port_name)`` to a stable net identifier, for threaded ports only.
-    """
-    owned = {module["original_name"]: {port["original_name"] for port in module.get("ports", [])}
-             for module in rtl["modules"].values()}
-    groups = []
-    for module in rtl["modules"].values():
-        scoped = {}
-        for instance in module.get("instances", []):
-            target = instance["target_module"]
-            for binding in instance["bindings"]:
-                formal = binding["formal_name"]
-                parent = binding["parent_module"]
-                for actual in binding["actual_signals"]:
-                    members = scoped.setdefault((parent, str(actual)), set())
-                    members.add((str(target), str(formal)))
-                    # A parent port used as the actual continues the same net one level up.
-                    if str(actual) in owned.get(parent, ()):
-                        members.add((parent, str(actual)))
-        groups.extend(scoped.values())
-    merged = {}
-    for group in groups:
-        found = [existing for existing in merged.values() if existing & group]
-        union = set(group).union(*found)
-        for member in union:
-            merged[member] = union
-    nets = {}
-    for member, union in merged.items():
-        if len(union) > 1:
-            nets[member] = "bridge::net::" + content_hash(
-                *sorted(f"{module}.{port}" for module, port in union))
-    return nets
-
-
 def rtl_signals(rtl):
     """Flatten module-local ports and signals into canonical scoped declarations.
 
@@ -373,13 +328,9 @@ def rtl_signals(rtl):
     Returns:
         Canonical RTL signals ordered by signal identifier.
     """
-    nets = port_nets(rtl)
-    rows = []
-    for module in rtl["modules"].values():
-        for raw in [*module.get("ports", []), *module.get("signals", [])]:
-            signal = _canonical_rtl_signal(raw, module)
-            signal["net_id"] = nets.get((signal["module_name"], signal["original_name"]))
-            rows.append(signal)
+    rows = [_canonical_rtl_signal(raw, module)
+            for module in rtl["modules"].values()
+            for raw in [*module.get("ports", []), *module.get("signals", [])]]
     return sorted(rows, key=lambda signal: signal["signal_id"])
 
 def _rtl_provenance(rtl):
@@ -492,7 +443,7 @@ def _link(spec, rtl, method, prefix):
     Args:
         spec: Canonical specification signal.
         rtl: Canonical RTL signal.
-        method: ``identity``, ``interface_prefix``, or ``same_net``.
+        method: ``identity`` or ``interface_prefix``.
         prefix: Learned prefix for ``interface_prefix``, else None.
 
     Returns:
@@ -608,26 +559,12 @@ def link_signals(specs, rtl_rows, members=()):
             if spec not in rows:
                 rows.append(spec)
     prefixes = interface_prefixes(set(by_flat), rtl_rows)
-    links, pairs = [], set()
+    links = []
     for rtl in rtl_rows:
         found = _match(rtl, by_flat, prefixes)
         if found:
             flat, method, prefix = found
-            for spec in by_flat[flat]:
-                links.append(_link(spec, rtl, method, prefix))
-                pairs.add((spec["signal_id"], rtl["signal_id"]))
-    # A port on the same elaborated net as a linked port is the same wire, renamed or not.
-    nets = {}
-    for rtl in rtl_rows:
-        if rtl["net_id"]:
-            nets.setdefault(rtl["net_id"], []).append(rtl)
-    specs_by_id = {spec["signal_id"]: spec for spec in specs}
-    rtl_by_id = {rtl["signal_id"]: rtl for rtl in rtl_rows}
-    for spec_id, rtl_id in sorted(pairs):
-        for member in nets.get(rtl_by_id[rtl_id]["net_id"], []):
-            if (spec_id, member["signal_id"]) not in pairs:
-                links.append(_link(specs_by_id[spec_id], member, "same_net", None))
-                pairs.add((spec_id, member["signal_id"]))
+            links.extend(_link(spec, rtl, method, prefix) for spec in by_flat[flat])
     # CSRs are declared as enumeration members (``csr_index_t.mstatus``), not as signals.
     for member in members:
         for expand in (False, True):

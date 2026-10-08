@@ -107,7 +107,7 @@ description/usage, and table context. Accepted confidence bands are `WEAK`, `MED
 Module matching uses normalized title/name evidence, context, and accepted child-signal
 support. Close or weak module choices are likewise unresolved.
 
-> **Superseded on branch `simplify`:** Weighted structural scoring, the `WEAK` band, semantic rerank, and the local-model resolver were removed. Links are `identity` (STRONG), `interface_prefix` or `same_net` (MEDIUM); widths are stated, never filters ([bridge spec](specs/bridge.md), DF-14 to DF-19).
+> **Superseded on branch `simplify`:** Weighted structural scoring, the `WEAK` band, semantic rerank, and the local-model resolver were removed. Links are `identity` (STRONG) or `interface_prefix` (MEDIUM; `same_net` was dropped, all 19 of its links were wrong); widths are stated, never filters ([bridge spec](specs/bridge.md), DF-14 to DF-19).
 
 ## AD-11: Unresolved is not missing
 

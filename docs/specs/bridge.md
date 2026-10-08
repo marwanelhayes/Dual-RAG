@@ -35,7 +35,6 @@ Non-goals: retrieval and query expansion (`agent.py`), identifier tokenisation r
    - `interface_prefix`: RTL flat = prefix + spec flat, where the prefix is learned per
      module (at least 2 of the module's ports are that prefix + a spec name); a port takes the
      longest spec name it matches (MEDIUM);
-   - `same_net`: a port on the same elaborated net as a linked port (MEDIUM).
 3. **Targets:** RTL ports and signals for every tier; enum members for `identity` (CSRs are
    declared as `csr_index_t` members).
 4. **Width is stated, never a filter:** `{spec, rtl, status}` with status `equal`,

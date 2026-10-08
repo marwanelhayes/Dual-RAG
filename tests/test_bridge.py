@@ -196,37 +196,8 @@ def test_nested_ingest_hierarchy_keeps_each_subsection_identity_and_own_title():
     ]
 
 
-def _threaded_rtl():
-    """Return an artifact where one port is threaded through two hierarchy levels."""
-    port = {"original_name": "MAWBurst", "direction": "output", "width": 2}
-    return {"modules": {
-        "riscv_processor": {
-            "original_name": "riscv_processor", "file": "rtl/riscv_processor.sv",
-            "ports": [], "instances": [{"target_module": "fetch_stage", "bindings": [
-                {"parent_module": "riscv_processor", "formal_name": "MAWBurst",
-                 "actual_signals": ["IMAWBurst"], "direction": "output"}]}]},
-        "fetch_stage": {
-            "original_name": "fetch_stage", "file": "rtl/fetch_stage.sv",
-            "ports": [dict(port)], "instances": [{"target_module": "cache", "bindings": [
-                {"parent_module": "fetch_stage", "formal_name": "MAWBurst",
-                 "actual_signals": ["MAWBurst"], "direction": "output"}]}]},
-        "cache": {"original_name": "cache", "file": "rtl/cache.sv",
-                  "ports": [dict(port)], "instances": []},
-    }}
-
-
-def test_a_port_threaded_through_the_hierarchy_is_one_net():
-    nets = bridge.port_nets(_threaded_rtl())
-
-    assert nets[("cache", "MAWBurst")] == nets[("fetch_stage", "MAWBurst")]
-
-
-def test_an_unbound_port_belongs_to_no_shared_net():
-    rtl = _threaded_rtl()
-    rtl["modules"]["cache"]["ports"].append(
-        {"original_name": "PrivateState", "direction": "output", "width": 1})
-
-    assert ("cache", "PrivateState") not in bridge.port_nets(rtl)
+def test_the_bridge_has_no_net_propagation():
+    assert not hasattr(bridge, "port_nets")
 
 
 def test_the_bridge_has_no_tiny_model_resolver_or_lookup_helpers():
@@ -301,7 +272,7 @@ def test_a_spec_signal_no_rtl_signal_states_is_unresolved():
     assert artifact["unresolved_signals"][0]["confidence_level"] == bridge.UNRESOLVED
 
 
-def test_a_renamed_wire_on_a_linked_net_is_linked_through_the_net():
+def test_a_renamed_wire_on_a_linked_net_is_not_linked():
     cache = _module("cache", "rtl::module::cache", [_port("MAWBurst", 2), _port("MAWValid")])
     stage = _module("fetch_stage", "rtl::module::fetch_stage", [
         _rtl_signal("burst_to_bus", "rtl::port::fetch_stage::burst_to_bus", 2, "output", "")])
@@ -312,7 +283,9 @@ def test_a_renamed_wire_on_a_linked_net_is_linked_through_the_net():
 
     links = _links(_specs("AWBURST", "AWVALID"), rtl)
 
-    assert ("AWBURST", "burst_to_bus", "fetch_stage", "same_net", None) in links
+    # Net propagation spread exact-name collisions (all 19 such links were wrong).
+    assert ("AWBURST", "MAWBurst", "cache", "interface_prefix", "m") in links
+    assert not any(link[1] == "burst_to_bus" for link in links)
 
 
 def test_an_unresolved_signal_keeps_suggested_candidates_that_are_not_links():

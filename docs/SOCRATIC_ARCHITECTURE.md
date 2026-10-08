@@ -95,9 +95,8 @@ Only this:
 It does not claim that the RTL satisfies, implements, or contradicts specification
 behavior. An alignment tells the reader where to look next.
 
-Each link states how it was found: `identity` (flat names equal, STRONG),
-`interface_prefix` (the RTL name is a prefix learned per module plus the spec name, MEDIUM),
-or `same_net` (a port on the same elaborated net as a linked port, MEDIUM). Widths are
+Each link states how it was found: `identity` (flat names equal, STRONG) or
+`interface_prefix` (the RTL name is a prefix learned per module plus the spec name, MEDIUM). Widths are
 reported as `equal`, `conflict`, `symbolic`, or `unstated`, never used to reject a link.
 Unresolved rows keep up to three `SUGGESTED` candidates that never count as links. A bridge
 build where every row stays unresolved is valid.

@@ -86,8 +86,7 @@ by the reranker; they are not embedded (dense vectors lowered RTL recall).
 ## 6. Bridge ([spec](specs/bridge.md))
 
 Identity only, never a behavioural verdict. Spec signal rows link to RTL ports, signals, and
-enum members by `identity` (STRONG), learned `interface_prefix` (MEDIUM), or `same_net`
-(MEDIUM). Widths are stated, never used as a filter. Unresolved rows keep up to three
+enum members by `identity` (STRONG) or learned `interface_prefix` (MEDIUM). Widths are stated, never used as a filter. Unresolved rows keep up to three
 `SUGGESTED` candidates that never count as links. Sections link to modules by title identity
 or by link support. Input fingerprints let the agent refuse a stale bridge.
 
