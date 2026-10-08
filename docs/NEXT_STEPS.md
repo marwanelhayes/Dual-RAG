@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `6a67d2c` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
+Branch `simplify`, head `5465ef9` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -187,6 +187,8 @@ Next:
 
 | `agent/gliner-signal-tagger` | `6a67d2c` | `5ed16289` | 0.698 / 0.575 | GLiNER2 tags signal names in question + passages for bridge lookup; gold-module bridge rows 5 → 6 of 20 comparison questions, 6 → 9 mentions; +0.23 s/q |
 
+| `bridge/drop-same-net` | `5465ef9` | `dfcae3b9` | 0.698 / 0.575 | all 19 `same_net` links were wrong; AXI precision 0.940 → 0.972, recall 1.000; module alignments 136 → 120 (`link_support` counted them) |
+
 GLiNER2 (`fastino/gliner2-base-v1`) as the spec-signal extractor instead of the table rules
 (scratch): AXI channel recall held at 1.0 but bridge AXI precision fell 0.94 → 0.37 (`Y`/`N`
 presence columns became names, the CSR address table was classed as properties); rejected.
@@ -235,9 +237,7 @@ ending "... going for retrieve.py".
 2. **Answer bench** (Ollama `qwen3:4b`, `AGENT_NUM_CTX` 8192): never run on this branch; the
    agent now always calls the model when required domains are citable.
 3. Walk `answer_contract.py`, `api.py`, `release_eval.py`, `bench.py` (not walked).
-4. Decide `same_net` (bridge b6): it adds 19 links in this RTL, all spreading two exact-name
-   collisions (`WDATA`→`WData` in the register files, `VALID`→`valid`). Options: keep, drop
-   (DF), or propagate only from `interface_prefix` links.
+4. ~~Decide `same_net`~~: dropped 2026-10-08 (`bridge/drop-same-net`).
 
 Done 2026-09-23: step 9b, `embed.py` walk + e0-e5 (Chroma), `rtl_ingest.py` walk + r0-r5.
 Done 2026-09-26: `retrieve.py` walk + q0-q8; `agent.py` walk + a0-a12.
