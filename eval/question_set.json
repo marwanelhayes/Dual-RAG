@@ -6,8 +6,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "axi_spec#0042#000",
-   "axi_spec#table#A2.2#0000",
-   "axi_spec#0042#001"
+   "axi_spec#table#A2.2#0000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -45,7 +44,7 @@
     "page": 30
    },
    {
-    "chunk_id": "axi_spec#0042#001",
+    "chunk_id": "axi_spec#0042#000",
     "section": "axi_spec::A2.3.1",
     "page": 30
    }
@@ -57,9 +56,7 @@
   "expected_query_type": "SPEC",
   "naming": "exact",
   "relevant_spec_ids": [
-   "axi_spec#0044#000",
-   "axi_spec#0044#001",
-   "axi_spec#0044#002"
+   "axi_spec#0044#000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -95,12 +92,12 @@
     "page": 31
    },
    {
-    "chunk_id": "axi_spec#0044#001",
+    "chunk_id": "axi_spec#0044#000",
     "section": "axi_spec::A2.3.2.1",
     "page": 31
    },
    {
-    "chunk_id": "axi_spec#0044#002",
+    "chunk_id": "axi_spec#0044#000",
     "section": "axi_spec::A2.3.2.1",
     "page": 31
    }
@@ -112,7 +109,6 @@
   "expected_query_type": "SPEC",
   "naming": "exact",
   "relevant_spec_ids": [
-   "axi_spec#0059#001",
    "axi_spec#0059#000",
    "axi_spec#table#A3.9"
   ],
@@ -121,7 +117,7 @@
   "citation": {
    "required": [
     [
-     "axi_spec#0059#001",
+     "axi_spec#0059#000",
      "A3.9",
      "p.46",
      "p. 46"
@@ -144,7 +140,7 @@
   "truth": "Table A3.9: 0b00 FIXED, 0b01 INCR, 0b10 WRAP, 0b11 reserved.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_spec#0059#001",
+    "chunk_id": "axi_spec#0059#000",
     "section": "axi_spec::A3.1.4",
     "page": 46
    },
@@ -167,8 +163,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "axi_spec#0070#000",
-   "axi_spec#table#A3.22",
-   "axi_spec#0070#001"
+   "axi_spec#table#A3.22"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -206,7 +201,7 @@
     "page": 54
    },
    {
-    "chunk_id": "axi_spec#0070#001",
+    "chunk_id": "axi_spec#0070#000",
     "section": "axi_spec::A3.2.1.1",
     "page": 54
    }
@@ -220,8 +215,6 @@
   "relevant_spec_ids": [
    "axi_spec#table#A3.31#0000",
    "axi_spec#table#A3.31#0003",
-   "axi_spec#table#A3.31#0006",
-   "axi_spec#0077#002",
    "axi_spec#0077#000"
   ],
   "relevant_rtl_ids": [],
@@ -265,12 +258,12 @@
     "page": 63
    },
    {
-    "chunk_id": "axi_spec#table#A3.31#0006",
+    "chunk_id": "axi_spec#table#A3.31#0000",
     "section": "axi_spec::table::A3.31",
     "page": 63
    },
    {
-    "chunk_id": "axi_spec#0077#002",
+    "chunk_id": "axi_spec#0077#000",
     "section": "axi_spec::A3.3.2",
     "page": 63
    },
@@ -289,7 +282,7 @@
   "relevant_spec_ids": [
    "axi_spec#0055#000",
    "axi_spec#0058#000",
-   "axi_spec#0057#002"
+   "axi_spec#0057#000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -327,7 +320,7 @@
     "page": 45
    },
    {
-    "chunk_id": "axi_spec#0057#002",
+    "chunk_id": "axi_spec#0057#000",
     "section": "axi_spec::A3.1.2",
     "page": 44
    }
@@ -340,16 +333,14 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "axi_spec#0069#000",
-   "axi_spec#0069#001",
-   "axi_spec#0044#001",
-   "axi_waveform#0019#001"
+   "axi_spec#0044#000",
+   "axi_waveform#0019#000"
   ],
   "relevant_spec_groups": [
    [
     "axi_spec#0069#000",
-    "axi_spec#0069#001",
-    "axi_spec#0044#001",
-    "axi_waveform#0019#001"
+    "axi_spec#0044#000",
+    "axi_waveform#0019#000"
    ]
   ],
   "relevant_rtl_ids": [],
@@ -379,17 +370,17 @@
     "page": 53
    },
    {
-    "chunk_id": "axi_spec#0069#001",
+    "chunk_id": "axi_spec#0069#000",
     "section": "axi_spec::A3.2.1",
     "page": 53
    },
    {
-    "chunk_id": "axi_spec#0044#001",
+    "chunk_id": "axi_spec#0044#000",
     "section": "axi_spec::A2.3.2.1",
     "page": 31
    },
    {
-    "chunk_id": "axi_waveform#0019#001",
+    "chunk_id": "axi_waveform#0019#000",
     "section": "axi_waveform::4.5",
     "page": 24
    }
@@ -402,7 +393,6 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "axi_spec#0167#000",
-   "axi_spec#0167#002",
    "axi_spec#0169#000"
   ],
   "relevant_rtl_ids": [],
@@ -435,7 +425,7 @@
     "page": 111
    },
    {
-    "chunk_id": "axi_spec#0167#002",
+    "chunk_id": "axi_spec#0167#000",
     "section": "axi_spec::A6.3.2",
     "page": 111
    },
@@ -452,8 +442,6 @@
   "expected_query_type": "SPEC",
   "naming": "plain",
   "relevant_spec_ids": [
-   "axi_waveform#0012#003",
-   "axi_waveform#0012#002",
    "axi_waveform#0012#000"
   ],
   "relevant_rtl_ids": [],
@@ -461,8 +449,7 @@
   "citation": {
    "required": [
     [
-     "axi_waveform#0012#003",
-     "axi_waveform#0012#002",
+     "axi_waveform#0012#000",
      "p.14",
      "p. 14"
     ]
@@ -487,12 +474,12 @@
   "truth": "AXI4 defines five channels: write address (AW), write data (W), write response (B), read address (AR), read data (R).",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_waveform#0012#003",
+    "chunk_id": "axi_waveform#0012#000",
     "section": "axi_waveform::3.2",
     "page": 14
    },
    {
-    "chunk_id": "axi_waveform#0012#002",
+    "chunk_id": "axi_waveform#0012#000",
     "section": "axi_waveform::3.2",
     "page": 14
    },
@@ -509,16 +496,14 @@
   "expected_query_type": "SPEC",
   "naming": "plain",
   "relevant_spec_ids": [
-   "axi_waveform#0015#001",
    "axi_waveform#0015#000",
-   "axi_waveform#0017#003"
+   "axi_waveform#0017#000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
   "citation": {
    "required": [
     [
-     "axi_waveform#0015#001",
      "axi_waveform#0015#000",
      "p.17",
      "p. 17"
@@ -543,7 +528,7 @@
   "truth": "VALID is a sticky signal: it must stay asserted until the destination accepts the transfer with READY on a rising clock edge.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_waveform#0015#001",
+    "chunk_id": "axi_waveform#0015#000",
     "section": "axi_waveform::4.1",
     "page": 17
    },
@@ -553,7 +538,7 @@
     "page": 17
    },
    {
-    "chunk_id": "axi_waveform#0017#003",
+    "chunk_id": "axi_waveform#0017#000",
     "section": "axi_waveform::4.3",
     "page": 21
    }
@@ -565,16 +550,14 @@
   "expected_query_type": "SPEC",
   "naming": "exact",
   "relevant_spec_ids": [
-   "axi_waveform#0044#001",
    "axi_waveform#0044#000",
-   "axi_waveform#0051#001"
+   "axi_waveform#0051#000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
   "citation": {
    "required": [
     [
-     "axi_waveform#0044#001",
      "axi_waveform#0044#000",
      "p.49",
      "p. 49"
@@ -597,7 +580,7 @@
   "truth": "Transfer IDs allow transactions to complete out of order; all transactions sharing an ID must stay ordered.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_waveform#0044#001",
+    "chunk_id": "axi_waveform#0044#000",
     "section": "axi_waveform::7.2",
     "page": 49
    },
@@ -607,7 +590,7 @@
     "page": 49
    },
    {
-    "chunk_id": "axi_waveform#0051#001",
+    "chunk_id": "axi_waveform#0051#000",
     "section": "axi_waveform::8",
     "page": 58
    }
@@ -674,17 +657,16 @@
   "expected_query_type": "SPEC",
   "naming": "exact",
   "relevant_spec_ids": [
-   "riscv_unprivileged#0017#004",
-   "riscv_unprivileged#0017#003",
-   "riscv_unprivileged#0017#005"
+   "riscv_unprivileged#0017#002",
+   "riscv_unprivileged#0017#001"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
   "citation": {
    "required": [
     [
-     "riscv_unprivileged#0017#004",
-     "riscv_unprivileged#0017#003",
+     "riscv_unprivileged#0017#002",
+     "riscv_unprivileged#0017#001",
      "p.49",
      "p. 49"
     ]
@@ -708,17 +690,17 @@
   "truth": "LUI places the 32-bit U-immediate in rd with the low 12 bits zeroed; AUIPC adds that offset to the pc of the instruction.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "riscv_unprivileged#0017#004",
+    "chunk_id": "riscv_unprivileged#0017#002",
     "section": "riscv_unprivileged::2.4.1",
     "page": 49
    },
    {
-    "chunk_id": "riscv_unprivileged#0017#003",
+    "chunk_id": "riscv_unprivileged#0017#001",
     "section": "riscv_unprivileged::2.4.1",
     "page": 48
    },
    {
-    "chunk_id": "riscv_unprivileged#0017#005",
+    "chunk_id": "riscv_unprivileged#0017#002",
     "section": "riscv_unprivileged::2.4.1",
     "page": 49
    }
@@ -731,8 +713,7 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "riscv_unprivileged#0039#004",
-   "riscv_unprivileged#0039#008",
-   "riscv_unprivileged#0039#007"
+   "riscv_unprivileged#0039#002"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -766,12 +747,12 @@
     "page": 69
    },
    {
-    "chunk_id": "riscv_unprivileged#0039#008",
+    "chunk_id": "riscv_unprivileged#0039#002",
     "section": "riscv_unprivileged::6.1",
     "page": 70
    },
    {
-    "chunk_id": "riscv_unprivileged#0039#007",
+    "chunk_id": "riscv_unprivileged#0039#002",
     "section": "riscv_unprivileged::6.1",
     "page": 70
    }
@@ -784,8 +765,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "riscv_unprivileged#0156#000",
-   "riscv_unprivileged#0156#001",
-   "riscv_unprivileged#table#25"
+   "riscv_unprivileged#table#25#0000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -826,12 +806,12 @@
     "page": 162
    },
    {
-    "chunk_id": "riscv_unprivileged#0156#001",
+    "chunk_id": "riscv_unprivileged#0156#000",
     "section": "riscv_unprivileged::24.3.2.5",
     "page": 162
    },
    {
-    "chunk_id": "riscv_unprivileged#table#25",
+    "chunk_id": "riscv_unprivileged#table#25#0000",
     "section": "riscv_unprivileged::table::25",
     "page": 141
    }
@@ -843,7 +823,6 @@
   "expected_query_type": "SPEC",
   "naming": "exact",
   "relevant_spec_ids": [
-   "riscv_privileged#0035#002",
    "riscv_privileged#0035#000",
    "riscv_privileged#0035#001"
   ],
@@ -852,7 +831,7 @@
   "citation": {
    "required": [
     [
-     "riscv_privileged#0035#002",
+     "riscv_privileged#0035#000",
      "Table 13",
      "p.46",
      "p. 46"
@@ -875,7 +854,7 @@
   "truth": "MODE=Direct sends every trap to BASE; MODE=Vectored sends asynchronous interrupts to BASE+4*cause and exceptions to BASE.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "riscv_privileged#0035#002",
+    "chunk_id": "riscv_privileged#0035#000",
     "section": "riscv_privileged::3.1.7",
     "page": 46
    },
@@ -898,8 +877,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "riscv_privileged#0043#000",
-   "riscv_privileged#0043#001",
-   "riscv_privileged#0043#005"
+   "riscv_privileged#0043#001"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -940,7 +918,7 @@
     "page": 54
    },
    {
-    "chunk_id": "riscv_privileged#0043#005",
+    "chunk_id": "riscv_privileged#0043#000",
     "section": "riscv_privileged::3.1.15",
     "page": 56
    }
@@ -954,7 +932,7 @@
   "relevant_spec_ids": [
    "riscv_privileged#0049#001",
    "riscv_privileged#0049#000",
-   "riscv_privileged#0037#007"
+   "riscv_privileged#0037#001"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -996,7 +974,7 @@
     "page": 63
    },
    {
-    "chunk_id": "riscv_privileged#0037#007",
+    "chunk_id": "riscv_privileged#0037#001",
     "section": "riscv_privileged::3.1.9",
     "page": 49
    }
@@ -1009,7 +987,6 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "riscv_privileged#0052#000",
-   "riscv_privileged#0052#002",
    "riscv_privileged#0219#000"
   ],
   "relevant_rtl_ids": [],
@@ -1038,7 +1015,7 @@
     "page": 65
    },
    {
-    "chunk_id": "riscv_privileged#0052#002",
+    "chunk_id": "riscv_privileged#0052#000",
     "section": "riscv_privileged::3.3.2",
     "page": 65
    },
@@ -1056,8 +1033,8 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "riscv_privileged#table#7#0000",
-   "riscv_privileged#0010#014",
-   "riscv_privileged#0023#007"
+   "riscv_privileged#0010#001",
+   "riscv_privileged#0023#000"
   ],
   "relevant_rtl_ids": [],
   "expected_alignments": {},
@@ -1065,7 +1042,7 @@
    "required": [
     [
      "riscv_privileged#table#7#0000",
-     "riscv_privileged#0010#014",
+     "riscv_privileged#0010#001",
      "0xF11",
      "p.25",
      "p. 25"
@@ -1096,12 +1073,12 @@
     "page": 25
    },
    {
-    "chunk_id": "riscv_privileged#0010#014",
+    "chunk_id": "riscv_privileged#0010#001",
     "section": "riscv_privileged::2.2",
     "page": 24
    },
    {
-    "chunk_id": "riscv_privileged#0023#007",
+    "chunk_id": "riscv_privileged#0023#000",
     "section": "riscv_privileged::3.1.3",
     "page": 35
    }
@@ -1801,8 +1778,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "axi_spec#0044#000",
-   "axi_spec#0042#000",
-   "axi_spec#0044#001"
+   "axi_spec#0042#000"
   ],
   "relevant_rtl_ids": [
    "rtl:cache",
@@ -1855,7 +1831,7 @@
     "page": 30
    },
    {
-    "chunk_id": "axi_spec#0044#001",
+    "chunk_id": "axi_spec#0044#000",
     "section": "axi_spec::A2.3.2.1",
     "page": 31
    }
@@ -1867,9 +1843,8 @@
   "expected_query_type": "COMPARISON",
   "naming": "plain",
   "relevant_spec_ids": [
-   "axi_waveform#0015#001",
    "axi_waveform#0015#000",
-   "axi_waveform#0017#003"
+   "axi_waveform#0017#000"
   ],
   "relevant_rtl_ids": [
    "rtl:cache",
@@ -1880,7 +1855,7 @@
   "citation": {
    "required": [
     [
-     "axi_waveform#0015#001",
+     "axi_waveform#0015#000",
      "axi_spec#0044#000"
     ],
     [
@@ -1904,7 +1879,7 @@
   "truth": "The cache FSM holds MAWValid/MARValid until the matching ready, which matches the sticky-VALID rule; timing correctness still needs simulation.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_waveform#0015#001",
+    "chunk_id": "axi_waveform#0015#000",
     "section": "axi_waveform::4.1",
     "page": 17
    },
@@ -1914,7 +1889,7 @@
     "page": 17
    },
    {
-    "chunk_id": "axi_waveform#0017#003",
+    "chunk_id": "axi_waveform#0017#000",
     "section": "axi_waveform::4.3",
     "page": 21
    }
@@ -1927,8 +1902,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "axi_spec#0070#000",
-   "axi_spec#table#A3.22",
-   "axi_spec#0070#001"
+   "axi_spec#table#A3.22"
   ],
   "relevant_rtl_ids": [
    "rtl:cache",
@@ -1972,7 +1946,7 @@
     "page": 54
    },
    {
-    "chunk_id": "axi_spec#0070#001",
+    "chunk_id": "axi_spec#0070#000",
     "section": "axi_spec::A3.2.1.1",
     "page": 54
    }
@@ -1985,8 +1959,7 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "axi_spec#0070#000",
-   "axi_spec#0072#000",
-   "axi_spec#0070#001"
+   "axi_spec#0072#000"
   ],
   "relevant_rtl_ids": [
    "rtl:cache",
@@ -2028,7 +2001,7 @@
     "page": 55
    },
    {
-    "chunk_id": "axi_spec#0070#001",
+    "chunk_id": "axi_spec#0070#000",
     "section": "axi_spec::A3.2.1.1",
     "page": 54
    }
@@ -2040,9 +2013,7 @@
   "expected_query_type": "COMPARISON",
   "naming": "exact",
   "relevant_spec_ids": [
-   "axi_waveform#0044#001",
-   "axi_waveform#0044#000",
-   "axi_waveform#0044#002"
+   "axi_waveform#0044#000"
   ],
   "relevant_rtl_ids": [
    "rtl:cache",
@@ -2053,7 +2024,7 @@
   "citation": {
    "required": [
     [
-     "axi_waveform#0044#001"
+     "axi_waveform#0044#000"
     ],
     [
      "cache.sv:",
@@ -2082,7 +2053,7 @@
   "truth": "No AWID/ARID/RID signal appears anywhere in rtl/*.sv, so the out-of-order capability the guide describes is not implemented.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_waveform#0044#001",
+    "chunk_id": "axi_waveform#0044#000",
     "section": "axi_waveform::7.2",
     "page": 49
    },
@@ -2092,7 +2063,7 @@
     "page": 49
    },
    {
-    "chunk_id": "axi_waveform#0044#002",
+    "chunk_id": "axi_waveform#0044#000",
     "section": "axi_waveform::7.2",
     "page": 49
    }
@@ -2105,8 +2076,8 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "axi_waveform#0044#000",
-   "axi_waveform#0013#003",
-   "axi_waveform#0045#001"
+   "axi_waveform#0013#000",
+   "axi_waveform#0045#000"
   ],
   "relevant_rtl_ids": [
    "rtl:cache",
@@ -2148,12 +2119,12 @@
     "page": 49
    },
    {
-    "chunk_id": "axi_waveform#0013#003",
+    "chunk_id": "axi_waveform#0013#000",
     "section": "axi_waveform::3.3",
     "page": 15
    },
    {
-    "chunk_id": "axi_waveform#0045#001",
+    "chunk_id": "axi_waveform#0045#000",
     "section": "axi_waveform::7.3",
     "page": 50
    }
@@ -2166,7 +2137,6 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "axi_spec#0167#000",
-   "axi_spec#0167#002",
    "axi_spec#0169#000"
   ],
   "relevant_rtl_ids": [
@@ -2209,7 +2179,7 @@
     "page": 111
    },
    {
-    "chunk_id": "axi_spec#0167#002",
+    "chunk_id": "axi_spec#0167#000",
     "section": "axi_spec::A6.3.2",
     "page": 111
    },
@@ -2228,7 +2198,7 @@
   "relevant_spec_ids": [
    "riscv_unprivileged#0064#000",
    "riscv_unprivileged#0062#000",
-   "riscv_unprivileged#0012#001"
+   "riscv_unprivileged#0012#000"
   ],
   "relevant_rtl_ids": [
    "rtl:opcode_decoder",
@@ -2239,7 +2209,7 @@
   "citation": {
    "required": [
     [
-     "riscv_unprivileged#0012#001"
+     "riscv_unprivileged#0012#000"
     ],
     [
      "opcode_decoder.sv:",
@@ -2276,7 +2246,7 @@
     "page": 92
    },
    {
-    "chunk_id": "riscv_unprivileged#0012#001",
+    "chunk_id": "riscv_unprivileged#0012#000",
     "section": "riscv_unprivileged::2",
     "page": 43
    }
@@ -2288,7 +2258,7 @@
   "expected_query_type": "COMPARISON",
   "naming": "exact",
   "relevant_spec_ids": [
-   "axi_spec#0059#001",
+   "axi_spec#0059#000",
    "axi_spec#0061#000",
    "axi_spec#0060#000"
   ],
@@ -2301,7 +2271,7 @@
   "citation": {
    "required": [
     [
-     "axi_spec#0059#001"
+     "axi_spec#0059#000"
     ],
     [
      "cache.sv:"
@@ -2332,7 +2302,7 @@
   "truth": "cache.sv uses FIXED for single-word accesses and INCR for line refills and write-backs; WRAP is declared in the axi_burst_t enum but never driven.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "axi_spec#0059#001",
+    "chunk_id": "axi_spec#0059#000",
     "section": "axi_spec::A3.1.4",
     "page": 46
    },
@@ -2355,7 +2325,7 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "axi_waveform#0026#001",
-   "axi_waveform#0026#002",
+   "axi_waveform#0026#000",
    "axi_spec#0060#000"
   ],
   "relevant_rtl_ids": [
@@ -2368,7 +2338,7 @@
    "required": [
     [
      "axi_waveform#0026#001",
-     "axi_spec#0059#001"
+     "axi_spec#0059#000"
     ],
     [
      "cache.sv:"
@@ -2393,7 +2363,7 @@
     "page": 32
    },
    {
-    "chunk_id": "axi_waveform#0026#002",
+    "chunk_id": "axi_waveform#0026#000",
     "section": "axi_waveform::5.3",
     "page": 32
    },
@@ -2411,8 +2381,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "riscv_unprivileged#0121#003",
-   "riscv_unprivileged#0121#004",
-   "riscv_unprivileged#0121#007"
+   "riscv_unprivileged#0121#001"
   ],
   "relevant_rtl_ids": [
    "rtl:fpu_decoder",
@@ -2456,12 +2425,12 @@
     "page": 144
    },
    {
-    "chunk_id": "riscv_unprivileged#0121#004",
+    "chunk_id": "riscv_unprivileged#0121#001",
     "section": "riscv_unprivileged::20.6",
     "page": 144
    },
    {
-    "chunk_id": "riscv_unprivileged#0121#007",
+    "chunk_id": "riscv_unprivileged#0121#001",
     "section": "riscv_unprivileged::20.6",
     "page": 144
    }
@@ -2474,8 +2443,7 @@
   "naming": "plain",
   "relevant_spec_ids": [
    "riscv_unprivileged#0121#003",
-   "riscv_unprivileged#0121#005",
-   "riscv_unprivileged#0121#007"
+   "riscv_unprivileged#0121#001"
   ],
   "relevant_rtl_ids": [
    "rtl:risc_fpu",
@@ -2515,12 +2483,12 @@
     "page": 144
    },
    {
-    "chunk_id": "riscv_unprivileged#0121#005",
+    "chunk_id": "riscv_unprivileged#0121#001",
     "section": "riscv_unprivileged::20.6",
     "page": 144
    },
    {
-    "chunk_id": "riscv_unprivileged#0121#007",
+    "chunk_id": "riscv_unprivileged#0121#001",
     "section": "riscv_unprivileged::20.6",
     "page": 144
    }
@@ -2533,8 +2501,7 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "riscv_unprivileged#0156#000",
-   "riscv_unprivileged#0156#001",
-   "riscv_unprivileged#table#25"
+   "riscv_unprivileged#table#25#0000"
   ],
   "relevant_rtl_ids": [
    "rtl:csr_file",
@@ -2579,12 +2546,12 @@
     "page": 162
    },
    {
-    "chunk_id": "riscv_unprivileged#0156#001",
+    "chunk_id": "riscv_unprivileged#0156#000",
     "section": "riscv_unprivileged::24.3.2.5",
     "page": 162
    },
    {
-    "chunk_id": "riscv_unprivileged#table#25",
+    "chunk_id": "riscv_unprivileged#table#25#0000",
     "section": "riscv_unprivileged::table::25",
     "page": 141
    }
@@ -2596,9 +2563,8 @@
   "expected_query_type": "COMPARISON",
   "naming": "plain",
   "relevant_spec_ids": [
-   "riscv_unprivileged#0117#004",
-   "riscv_unprivileged#0117#005",
-   "riscv_unprivileged#table#25"
+   "riscv_unprivileged#0117#001",
+   "riscv_unprivileged#table#25#0008"
   ],
   "relevant_rtl_ids": [
    "rtl:construct:execute_stage:always:336-341",
@@ -2609,7 +2575,7 @@
   "citation": {
    "required": [
     [
-     "riscv_unprivileged#0117#004"
+     "riscv_unprivileged#0117#001"
     ],
     [
      "csr_file.sv:",
@@ -2635,17 +2601,17 @@
   "truth": "csr_file.sv:297 exports RoundingMode from frm and execute_stage.sv:336-341 substitutes it when RoundModeE is DYN.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "riscv_unprivileged#0117#004",
+    "chunk_id": "riscv_unprivileged#0117#001",
     "section": "riscv_unprivileged::20.2",
     "page": 141
    },
    {
-    "chunk_id": "riscv_unprivileged#0117#005",
+    "chunk_id": "riscv_unprivileged#0117#001",
     "section": "riscv_unprivileged::20.2",
     "page": 141
    },
    {
-    "chunk_id": "riscv_unprivileged#table#25",
+    "chunk_id": "riscv_unprivileged#table#25#0008",
     "section": "riscv_unprivileged::table::25",
     "page": 141
    }
@@ -2657,9 +2623,7 @@
   "expected_query_type": "COMPARISON",
   "naming": "exact",
   "relevant_spec_ids": [
-   "riscv_unprivileged#0017#004",
-   "riscv_unprivileged#0017#003",
-   "riscv_unprivileged#0017#005"
+   "riscv_unprivileged#0017#001"
   ],
   "relevant_rtl_ids": [
    "rtl:opcode_decoder",
@@ -2670,7 +2634,7 @@
   "citation": {
    "required": [
     [
-     "riscv_unprivileged#0017#004"
+     "riscv_unprivileged#0017#001"
     ],
     [
      "opcode_decoder.sv:"
@@ -2697,17 +2661,17 @@
   "truth": "Neither opcode 0110111 (LUI) nor 0010111 (AUIPC) appears in the opcode enum or the opcode_decoder case, so both are unimplemented.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "riscv_unprivileged#0017#004",
+    "chunk_id": "riscv_unprivileged#0017#001",
     "section": "riscv_unprivileged::2.4.1",
     "page": 49
    },
    {
-    "chunk_id": "riscv_unprivileged#0017#003",
+    "chunk_id": "riscv_unprivileged#0017#001",
     "section": "riscv_unprivileged::2.4.1",
     "page": 48
    },
    {
-    "chunk_id": "riscv_unprivileged#0017#005",
+    "chunk_id": "riscv_unprivileged#0017#001",
     "section": "riscv_unprivileged::2.4.1",
     "page": 49
    }
@@ -2719,9 +2683,8 @@
   "expected_query_type": "COMPARISON",
   "naming": "plain",
   "relevant_spec_ids": [
-   "riscv_unprivileged#0017#003",
-   "riscv_unprivileged#0017#004",
-   "riscv_unprivileged#0014#004"
+   "riscv_unprivileged#0017#001",
+   "riscv_unprivileged#0014#002"
   ],
   "relevant_rtl_ids": [
    "rtl:opcode_decoder",
@@ -2732,7 +2695,7 @@
   "citation": {
    "required": [
     [
-     "riscv_unprivileged#0017#003"
+     "riscv_unprivileged#0017#001"
     ],
     [
      "opcode_decoder.sv:",
@@ -2758,17 +2721,17 @@
   "truth": "Building 32-bit constants needs LUI/AUIPC, which the decoder never matches; only the I/S/B/J immediates are formed in decode_stage.sv:314-324.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "riscv_unprivileged#0017#003",
+    "chunk_id": "riscv_unprivileged#0017#001",
     "section": "riscv_unprivileged::2.4.1",
     "page": 48
    },
    {
-    "chunk_id": "riscv_unprivileged#0017#004",
+    "chunk_id": "riscv_unprivileged#0017#001",
     "section": "riscv_unprivileged::2.4.1",
     "page": 49
    },
    {
-    "chunk_id": "riscv_unprivileged#0014#004",
+    "chunk_id": "riscv_unprivileged#0014#002",
     "section": "riscv_unprivileged::2.2",
     "page": 46
    }
@@ -2781,8 +2744,8 @@
   "naming": "exact",
   "relevant_spec_ids": [
    "riscv_privileged#table#7#0000",
-   "riscv_privileged#0010#014",
-   "riscv_privileged#0023#007"
+   "riscv_privileged#0010#001",
+   "riscv_privileged#0023#000"
   ],
   "relevant_rtl_ids": [
    "rtl:csr_file",
@@ -2825,12 +2788,12 @@
     "page": 25
    },
    {
-    "chunk_id": "riscv_privileged#0010#014",
+    "chunk_id": "riscv_privileged#0010#001",
     "section": "riscv_privileged::2.2",
     "page": 24
    },
    {
-    "chunk_id": "riscv_privileged#0023#007",
+    "chunk_id": "riscv_privileged#0023#000",
     "section": "riscv_privileged::3.1.3",
     "page": 35
    }
@@ -2844,7 +2807,7 @@
   "relevant_spec_ids": [
    "riscv_privileged#0068#000",
    "riscv_privileged#0067#000",
-   "riscv_privileged#0010#016"
+   "riscv_privileged#0010#001"
   ],
   "relevant_rtl_ids": [
    "rtl:csr_file",
@@ -2892,7 +2855,7 @@
     "page": 73
    },
    {
-    "chunk_id": "riscv_privileged#0010#016",
+    "chunk_id": "riscv_privileged#0010#001",
     "section": "riscv_privileged::2.2",
     "page": 25
    }
@@ -2904,7 +2867,6 @@
   "expected_query_type": "COMPARISON",
   "naming": "exact",
   "relevant_spec_ids": [
-   "riscv_privileged#0035#002",
    "riscv_privileged#0035#000",
    "riscv_privileged#0035#001"
   ],
@@ -2917,7 +2879,7 @@
   "citation": {
    "required": [
     [
-     "riscv_privileged#0035#002"
+     "riscv_privileged#0035#000"
     ],
     [
      "csr_file.sv:"
@@ -2942,7 +2904,7 @@
   "truth": "csr_file.sv:124-127 (TrapVector) adds cause<<2 to BASE when mtvec[1:0] equals MTVEC_VECTORED, so both Direct and Vectored modes exist.",
   "relevant_spec_sections": [
    {
-    "chunk_id": "riscv_privileged#0035#002",
+    "chunk_id": "riscv_privileged#0035#000",
     "section": "riscv_privileged::3.1.7",
     "page": 46
    },
@@ -2966,7 +2928,7 @@
   "relevant_spec_ids": [
    "riscv_privileged#0049#001",
    "riscv_privileged#0049#000",
-   "riscv_privileged#0037#007"
+   "riscv_privileged#0037#001"
   ],
   "relevant_rtl_ids": [
    "rtl:csr_file",
@@ -3015,7 +2977,7 @@
     "page": 63
    },
    {
-    "chunk_id": "riscv_privileged#0037#007",
+    "chunk_id": "riscv_privileged#0037#001",
     "section": "riscv_privileged::3.1.9",
     "page": 49
    }
