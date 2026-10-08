@@ -87,7 +87,7 @@ ROLE_DOCUMENT_VOCABULARY = {
 ROLE_DOCUMENT_WEIGHTS = {"normative": 1.0, "architecture": 1.0, "explanatory": 1.0}
 
 # Fuse broad lexical and dense candidate sets before the expensive precision pass.
-RETRIEVE_CANDIDATES = 30
+RETRIEVE_CANDIDATES = 60
 RETRIEVE_TOP_K = 5
 
 # A document that defines behavior outranks one that only explains it.
