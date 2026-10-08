@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `1dd9f92` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
+Branch `simplify`, head `c51a4d2` + docs (2026-10-08 section below). Tests: 274 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -190,6 +190,8 @@ Next:
 | `bridge/drop-same-net` | `5465ef9` | `dfcae3b9` | 0.698 / 0.575 | all 19 `same_net` links were wrong; AXI precision 0.940 → 0.972, recall 1.000; module alignments 136 → 120 (`link_support` counted them) |
 
 | `eval/bridge-gold-csr` | `1dd9f92` | `cc3e2aa8` | 0.698 / 0.575 | +37 gold rows; baseline csr_recall 1.0, renamed_linked 0.0, renamed_suggested 0.0, collision_links 16, unlinkable_unresolved 1.0 |
+
+| `bridge/address-map` | `c51a4d2` | `ce2ca476` | 0.698 / 0.575 | enum confirmed as a table's address map (2 name+number agreements) links renamed registers by value: mtval→mbadaddr, cycle→mcycle; renamed_linked 0 → 1.0, no other link changed |
 
 GLiNER2 (`fastino/gliner2-base-v1`) as the spec-signal extractor instead of the table rules
 (scratch): AXI channel recall held at 1.0 but bridge AXI precision fell 0.94 → 0.37 (`Y`/`N`
