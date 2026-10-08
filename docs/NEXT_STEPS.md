@@ -185,6 +185,10 @@ the untracked `video/`, now in `.git/info/exclude`.
 
 Next:
 
+Authority weight on raw logits (scratch): 0 → section 0.690 / MRR 0.601; 0.5 → 0.698 /
+0.593; 1 (kept) → 0.698 / 0.605; 2 → 0.710 / 0.580. Weight 2 gains one gold section and loses
+MRR; tuning it on the test set would overfit, so 1.0 stays.
+
 1. Close the remaining rank gap (gold in pool, out of top 5) without per-corpus training; a
    reranker fine-tuned on synthetic questions from these PDFs needs a second spec/RTL pair to
    be judged without leakage.
