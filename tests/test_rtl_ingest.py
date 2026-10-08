@@ -407,3 +407,25 @@ def test_design_sources_honours_a_configured_top(tmp_path):
     })
 
     assert ri.design_sources(tmp_path, top="b") == ([tmp_path / "b.sv"], "b")
+
+
+def test_design_sources_reads_plain_verilog_files(tmp_path):
+    _write_design(tmp_path, {
+        "alu.v": "module alu(input a);\nendmodule\n",
+        "core.v": "module core(input a);\n  alu u_alu(.a(a));\nendmodule\n",
+    })
+
+    assert ri.design_sources(tmp_path) == ([tmp_path / "core.v"], "core")
+
+
+def test_file_table_maps_verilog_and_header_sources(tmp_path):
+    for name in ("core.v", "top.sv", "defs.svh", "regs.vh"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    root = ET.fromstring(
+        '<verilator_xml><files>'
+        '<file id="a" filename="core.v"/><file id="b" filename="top.sv"/>'
+        '<file id="c" filename="defs.svh"/><file id="d" filename="regs.vh"/>'
+        '<file id="e" filename="&lt;built-in&gt;"/></files></verilator_xml>')
+
+    assert {key: path.name for key, path in ri.file_table(root, tmp_path).items()} == {
+        "a": "core.v", "b": "top.sv", "c": "defs.svh", "d": "regs.vh"}

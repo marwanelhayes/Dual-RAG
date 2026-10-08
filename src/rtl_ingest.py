@@ -49,20 +49,24 @@ def cited_path(path):
     return (path.relative_to(cfg.RTL_DIR) if path.is_absolute() else path).as_posix()
 
 
+# Verilog and SystemVerilog sources and their include headers.
+HDL_SUFFIXES = (".sv", ".v", ".svh", ".vh")
+
+
 def file_table(root, rtl_dir):
-    """Map Verilator file ids to project SystemVerilog paths.
+    """Map Verilator file ids to project Verilog and SystemVerilog paths.
 
     Args:
         root: Parsed Verilator XML root element.
-        rtl_dir: Directory holding the project's SystemVerilog sources.
+        rtl_dir: Directory holding the project's HDL sources.
 
     Returns:
-        Verilator file id to the matching existing ``.sv`` path.
+        Verilator file id to the matching existing ``HDL_SUFFIXES`` path.
     """
     table = {}
     for element in root.iter("file"):
         name = element.get("filename", "")
-        if not name.endswith(".sv"):
+        if not name.endswith(HDL_SUFFIXES):
             continue
         path = Path(rtl_dir) / Path(name).name
         if path.exists():
@@ -1060,7 +1064,7 @@ def design_sources(rtl_dir, top=None):
     """Find a design's package files and its top module from the sources alone.
 
     Args:
-        rtl_dir: Directory holding the design's ``.sv`` files.
+        rtl_dir: Directory holding the design's ``.sv`` and ``.v`` files.
         top: Optional configured top module; skips detection.
 
     Returns:
@@ -1071,7 +1075,7 @@ def design_sources(rtl_dir, top=None):
         SystemExit: When zero or several modules are never instantiated and no top is set.
     """
     code = {path: _SV_COMMENT.sub("", path.read_text(encoding="utf-8", errors="replace"))
-            for path in sorted(Path(rtl_dir).glob("*.sv"))}
+            for path in sorted(Path(rtl_dir).iterdir()) if path.suffix in (".sv", ".v")}
     # ponytail: name order, a package importing another sorts after it only by luck.
     packages = [path for path, text in code.items() if _PACKAGE_DECLARATION.search(text)]
     declared = {name: path for path, text in code.items()
