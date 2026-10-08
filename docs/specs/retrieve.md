@@ -10,8 +10,9 @@ Decided 2026-09-26 in the simplification pass. Deferred options live in
 - **Spec**: `Retriever` — BM25 ∪ dense (Chroma) candidates, cross-encoder rerank shifted by
   document authority.
 - **RTL**: `RTLRetriever` — exact lookup on compiler-stated names (module / function / task /
-  signal), constructs that read or write a matched signal, then `Retriever` fill over the RTL
-  index, `:wN` windows folded into their record.
+  signal), constructs that read or write a matched signal, then `Retriever` fill from BM25
+  candidates only (no RTL vectors, `retrieve/rtl-lexical-only`), `:wN` windows folded into
+  their record.
 
 Non-goals: query rewriting, recovery, lane floors, bridge expansion (agent); building
 records or indexes (ingest, embed, rtl_embed).

@@ -10,7 +10,7 @@ Deferred options: [`docs/DEFERRED.md`](DEFERRED.md) (DF-01 to DF-32).
 
 ## Where we are
 
-Branch `simplify`, head `ac9d39e` + docs. Tests: 252 passed. Decision metrics:
+Branch `simplify`, head `116ac78` + docs (2026-10-08 section below). Tests: 272 passed. Decision metrics:
 `retrieval.spec.section_recall_at_k` (spec) and `retrieval.rtl.exact_id_recall_at_k` (RTL, since
 the `rtl_embed` walk).
 
@@ -150,6 +150,47 @@ outermost band block), so `repeated_lines` stays.
 Dirty duplicate runs left in MLflow (same tags, superseded by clean ones): `9479932a`
 (s1), `0643db4a` (0b). Delete on request.
 
+## 2026-10-08: field-generic code, gold relabel, reranker
+
+Goal 1 removed corpus-specific code (user rule: code may know hardware/Verilog/SystemVerilog,
+never these PDFs, this core, or the eval questions). Goal 2 measured accuracy changes; a drop
+on either decision metric reverted the change.
+
+| Step | Commit | MLflow run | spec section / RTL exact | Notes |
+|---|---|---|---|---|
+| `rtl_ingest/detect-top` | `3779979` | `34292cfc` | 0.683 / 0.508 | top + packages from sources; `rtl.json` byte-identical |
+| `agent/design-names-route` | `02c9657` | `15a1ba5c` | 0.683 / 0.508 | identifiers from `rtl.json`; no axi/risc-v/timer keywords |
+| `ingest/caption-styles` | `cbfe802` | `5de3fe4d` | 0.683 / 0.508 | caption/continuation styles; chunks byte-identical |
+| `rtl_embed/encoder-guard` | `619ff14` | `929b9f38` | 0.683 / 0.508 | superseded by `no-rtl-index` |
+| `rtl_ingest/verilog-sources` | `d8a4d69` | `c1fdd0eb` | 0.683 / 0.508 | `.v`/`.svh`/`.vh` read |
+| `naming/drop-ambiguous-wb` | `d2abfc6` | `ac143586` | 0.683 / 0.508 | RTL context 0.600 → 0.592 |
+| `naming/drop-ambiguous-rnd` | `19e0d88` | `e7c021e5` | 0.683 / 0.508 | unused here |
+| `eval/relabel-gold` | `374b44d` | `d1f783b4` | 0.683 / 0.508 | 42 stale spec ids remapped; spec exact 0.290 → 0.583 |
+| `retrieve/bm25-trailing-dot` | `89ea6cf` | `28430af7` | 0.675 / 0.500 | reverted `80ae0ba` (`98e3ee74`) |
+| `retrieve/candidates-60` | `957ea2d` | `67dc26f1` | 0.667 / 0.500 | reverted `4f18a86` (`95dd9a43`) |
+| `retrieve/bge-reranker-v2-m3` | `6cc622c`, `b04dc40`, `cfa7f45` | `2d31c3c1` | 0.683 / **0.558** | shared + fp16 to fit 4 GB; spec MRR 0.590 → 0.542; 0.9 → 3.2 s/q |
+| `retrieve/rtl-lexical-only` | `733c3fb` | `c3ad224d` | 0.683 / **0.575** | RTL MRR 0.720; 2.8 s/q |
+| `rtl_embed/no-rtl-index` | `116ac78` | `68c40dd5` | 0.683 / 0.575 | RTL index, manifest, guard removed |
+
+Scratch-only (not committed): RTL module description in the header (RTL MRR 0.761, RTL exact
+0.558) and table rows as sentences (spec section 0.667) both failed the decision rule.
+Diagnostic: the candidate union holds 87% of spec and 90% of RTL gold, top 5 holds 65% / 47%
+with MiniLM; ranking, not recall, is the bottleneck. EmbeddingGemma 2 sweep (512-8192
+windows): worse than BGE at every window; dense-only RTL recall 0.208 vs BGE 0.275.
+
+Dirty duplicate runs (superseded by clean ones with the same tag): `5380d353`
+(detect-top), `7125ee52` (relabel-gold); the four `sweep/gemma2 w*` runs are dirty only by
+the untracked `video/`, now in `.git/info/exclude`.
+
+Next:
+
+1. Close the remaining rank gap (gold in pool, out of top 5) without per-corpus training; a
+   reranker fine-tuned on synthetic questions from these PDFs needs a second spec/RTL pair to
+   be judged without leakage.
+2. Spec MRR dropped with `bge-reranker-v2-m3` (0.590 → 0.542) while section recall held;
+   look at the per-question diff before trusting spec rank order.
+3. Gold ids are tied to chunking: re-chunking re-strands exact ids (section recall survives).
+
 ## Rhythm for every step
 
 ```bash
@@ -216,8 +257,6 @@ ingest's `section_id`, `section_title`, `subsection_id`, `subsection_title`). Th
 - `rtl_ingest._module_extents` ends a module at the next module's start, so the second
   module in a file (`booth_multiplier_seq`, `lzc`, `non_restoring_divider_seq`) has an empty
   `preamble` and its header comment is embedded in the previous module's comments.
-- `rtl.construct.chunk_tokens_max` is 474 of 512 with `RTL_CHUNK_CHARS = 1200`; windows cut
-  by characters, so a denser block could pass 512 (`rtl.chunks_over_limit` watches it).
 
 
 - `bench._chunk_family` treats an unwindowed table's label as a window suffix, so

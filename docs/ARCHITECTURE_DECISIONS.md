@@ -36,6 +36,8 @@ and content hash. Table chunks additionally retain raw columns and rows before M
 This makes retrieval results citable and permits bounded hierarchy expansion without
 re-parsing a PDF.
 
+> **Superseded on branch `simplify`:** Hierarchy expansion was removed (DF-27, [agent spec](specs/agent.md)); hierarchy links remain for citations and section-to-module alignment. Long tables are split into row windows that repeat the header row ([ingest spec](specs/ingest.md)).
+
 ## AD-04: Specification signals come only from structured tables
 
 Signal extraction recognizes explicit signal/port columns and conservatively qualified
@@ -62,6 +64,8 @@ Exact declaration lookup returns the owning module and matched signal evidence. 
 retrieval fills the remaining slots with modules/blocks. This preserves navigability without
 flooding the index with tiny rows.
 
+> **Superseded on branch `simplify`:** RTL records are no longer vectorized: dense vectors lowered RTL recall, so the RTL lane ranks records by exact lookup, BM25, and the reranker (`retrieve/rtl-lexical-only`, [rtl_embed spec](specs/rtl_embed.md)).
+
 ## AD-07: Original identifiers are immutable evidence
 
 Normalization adds retrieval forms; it never replaces source spelling. The shared naming
@@ -78,6 +82,8 @@ stay ahead of semantic candidates.
 
 After ranking, the agent may follow inline hierarchy links to add a bounded parent, sibling,
 or child chunk. Expansion provides context; it does not alter the primary retrieval score.
+
+> **Superseded on branch `simplify`:** The spec exact lane and reciprocal-rank fusion were removed; spec retrieval is BM25 ∪ dense Chroma candidates reranked by one shared cross-encoder (`bge-reranker-v2-m3`) with an authority tie-break ([retrieve spec](specs/retrieve.md)). Hierarchy expansion was removed (DF-27).
 
 ## AD-09: The bridge aligns identities only
 
@@ -100,6 +106,8 @@ description/usage, and table context. Accepted confidence bands are `WEAK`, `MED
 
 Module matching uses normalized title/name evidence, context, and accepted child-signal
 support. Close or weak module choices are likewise unresolved.
+
+> **Superseded on branch `simplify`:** Weighted structural scoring, the `WEAK` band, semantic rerank, and the local-model resolver were removed. Links are `identity` (STRONG), `interface_prefix` or `same_net` (MEDIUM); widths are stated, never filters ([bridge spec](specs/bridge.md), DF-14 to DF-19).
 
 ## AD-11: Unresolved is not missing
 
@@ -124,6 +132,8 @@ The deterministic router emits `SPEC`, `RTL`, or `COMPARISON`.
 
 LangGraph edges enforce these sequences. Model tool choice cannot bypass a required lane.
 
+> **Superseded on branch `simplify`:** Every question now runs one linear graph through both lanes (`classify → retrieve_spec → retrieve_rtl → lookup_bridge → merge → answer`); the route decides which domains the answer must cite ([agent spec](specs/agent.md)).
+
 ## AD-13: Comparison requires evidence from both domains
 
 The comparison answer node checks that specification and RTL evidence exist. When either is
@@ -146,6 +156,8 @@ the model call.
 The optional bridge resolver has its own smaller cap: three candidates, 2,600 input
 characters, and 96 output tokens by default.
 
+> **Superseded on branch `simplify`:** Character budgets and truncation were removed: the model receives whole passages within `AGENT_NUM_CTX` (8,192 tokens); the bridge resolver no longer exists ([agent spec](specs/agent.md)).
+
 ## AD-15: Generated state is reproducible and inspectable
 
 All derived artifacts live under `output/`. Source-derived stable IDs and content hashes
@@ -162,6 +174,8 @@ python src/build.py --clean
 
 The build validates the cleanup target before deletion and executes each stage as an
 isolated process in dependency order.
+
+> **Superseded on branch `simplify`:** Only the specification index is embedded and manifested; RTL records are not embedded (see AD-06).
 
 ## AD-16: Debug state is a public contract
 

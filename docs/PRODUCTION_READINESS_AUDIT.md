@@ -14,6 +14,20 @@ today. The deterministic parsing, provenance, artifact freshness checks, and fai
 answer schema are good foundations. Release evidence, retrieval quality, route quality,
 service operations, artifact publication, and security controls still have blocking gaps.
 
+## Status update (2026-10-08, branch `simplify`)
+
+The findings below are left as audited. These have since changed:
+
+- **Resolved #8**: the vector store is Chroma; no pickle is loaded (`embed/chroma`).
+- **Resolved #20, #28**: lane calibration, floors, and credibility gates were removed (DF-31).
+- **Resolved #24**: one cross-encoder per process serves both lanes and the bench
+  (`retrieve/shared-reranker`); the RTL lane loads no embedder (`retrieve/rtl-lexical-only`).
+- **Partial #38**: `.v`, `.sv`, `.svh`, and `.vh` sources are read
+  (`rtl_ingest/verilog-sources`); paths are still resolved by basename in one directory.
+- **Partial #39**: the top module and package files are found from the sources, with
+  `RTL_TOP_MODULE` as an override (`rtl_ingest/detect-top`); include paths, defines, and
+  parameters still have no project manifest.
+
 ## What passed in this audit?
 
 - All 192 tests passed in 6.35 seconds.

@@ -10,8 +10,8 @@ small model to infer structure that parsers already know.
 ChipVer therefore keeps two retrieval systems and one narrow identity bridge:
 
 ```text
-question -> route prior -> Spec RAG -> RTL RAG -> bridge expansion -> lane scoring
-credible evidence -> bounded context -> source-excerpt selection and validation
+question -> route prior -> Spec RAG -> RTL RAG -> bridge lookup -> whole-passage context
+         -> source-excerpt selection and validation
 ```
 
 The design rule is:
@@ -19,25 +19,25 @@ The design rule is:
 > Parsing discovers structure. Retrieval finds evidence. The bridge aligns domains. The
 > LLM reasons.
 
-## Why are specification and RTL indexed separately?
+## Why are specification and RTL retrieved separately?
 
 They have different authoritative structure and different useful retrieval units.
 
 The PDF outline supplies document, section, and subsection boundaries. Tables supply
-structured rows. Specification retrieval therefore operates on section-bounded prose and
-whole tables, then follows deterministic parent/sibling/child links for nearby context.
+structured rows. Specification retrieval therefore operates on section-bounded prose windows
+and table row windows, each carrying its section breadcrumb.
 
 Verilator supplies module boundaries, declarations, elaborated instances, and executable
-block locations. RTL retrieval therefore starts with modules, adds only useful structural
-blocks, and keeps declarations as exact module-owned metadata.
+block locations. RTL retrieval therefore starts with exact names, adds the structural blocks
+that read or write a named signal, and ranks module and block records lexically.
 
-Separate indexes keep ranking observable even though the current graph searches both for
-every question. The route prior records what the user asked for; observed query type records
-which lanes cleared their own relevance floors.
+Separate lanes keep ranking observable even though the graph searches both for every
+question. The route prior records what the user asked for and decides which domains the
+answer must cite.
 
 ## What structure is retained from a PDF?
 
-Only its hierarchy:
+Its hierarchy:
 
 ```text
 Document
@@ -46,124 +46,112 @@ Document
       Subsection
 ```
 
-Every hierarchy record embeds its own parent, children, previous sibling, and next sibling
-IDs. No model is involved. Retrieval can expand a hit by following those links without
-maintaining another service.
+Every hierarchy record stores its parent, children, and siblings. No model is involved.
+The bridge uses section records to link sections to modules; chunks cite their section.
 
 Tables remain first-class evidence but are not hierarchy records. Each table chunk stores
-its caption, raw columns and rows, page, owning section/subsection, and Markdown retrieval
-surface. Structured cells are persisted before rendering.
+its caption, raw columns and rows, page, owning section, and Markdown retrieval surface.
+Structured cells are persisted before rendering.
 
 ## How are specification signals discovered?
 
-Ports and register fields come from structured table columns. Explicit `Signal` and
-`Port` headers qualify directly. A generic `Name` header needs width, direction,
-address, instruction, or signal-caption evidence. Dotted uppercase instruction mnemonics
-may also come from prose because some PDF tables flatten into running text. Conservative
-identifier rules prevent arbitrary headings and prose mentions from becoming entities.
-
-Each signal retains its original spelling, normalized spelling/tokens, optional width,
-direction and description, and complete source provenance. Re-running extraction produces
-the same stable IDs and ordered JSON.
+Only from table chunks; prose is never read. A table qualifies by its headers: an explicit
+`Signal` or `Port` column, or a `Name` column plus a width, source, or address column. The
+name cell must be a plain identifier. One record is one table row, with its original
+spelling, normalized tokens, width cell, description, and full provenance.
 
 ## What does Verilator contribute?
 
-It is the authority for RTL syntax and structure. The compiler-derived representation
-stores, per module:
+It is the authority for RTL syntax and structure, and the only parser. The design's
+package files and top module are found from the sources (the top is the module no other
+source instantiates). The compiler-derived representation stores, per module:
 
 - original and normalized module name;
-- source file, start/end line, source code, and hash;
+- source file, start/end line, and source;
 - ports, signals, parameters, types, widths, and ranges;
 - reader and writer sites;
 - elaborated instances and formal/actual bindings;
-- always blocks, functions/tasks, assignment groups, and useful remaining blocks.
+- always blocks, functions/tasks, and assignment groups.
 
-This data exists for retrieval and navigation. Module and block records are vectorized;
-signal lookup stays exact and returns the owning module plus declaration and usage evidence.
+Module and block records are ranked by exact lookup, BM25, and the reranker; they are not
+embedded. Signal lookup stays exact and returns the owning module and the blocks that use it.
 
 ## Why preserve both original and normalized names?
 
 Identifiers are evidence and must never be rewritten. Normalization exists only to improve
 retrieval and alignment. It splits punctuation and case boundaries, lowercases retrieval
-tokens, and expands configured whole-token abbreviations. Thus `fpu_top_wrapper` can carry
-the retrieval tokens `floating point unit top wrapper` while its original identifier
-remains unchanged in every citation.
+tokens, and expands configured whole-token abbreviations with a single hardware meaning
+(`fpu`, `alu`, `csr`, `pc`, `rm`). Thus `fpu_top_wrapper` can carry the retrieval tokens
+`floating point unit top wrapper` while its original identifier stays unchanged in every
+citation. Ambiguous prefixes (`wb`: writeback or Wishbone, `rnd`: rounding or random) stay
+literal.
 
 ## What exactly does the bridge claim?
 
 Only this:
 
-> These specification and RTL records probably refer to the same hardware concept.
+> These specification and RTL records name the same hardware identity.
 
 It does not claim that the RTL satisfies, implements, or contradicts specification
-behavior. An alignment tells the comparison route where to look next.
+behavior. An alignment tells the reader where to look next.
 
-For each specification signal, the bridge keeps several cheap name candidates. It then
-scores available width, direction, section/module, description/usage, and table context.
-Full-build semantic reranking sees only structural survivors. Optional local-model
-resolution receives one bounded shortlist at a time, is capped across the build, and may
-abstain. Its confidence can only lower the deterministic score.
-
-Accepted links have numerical confidence and `WEAK`, `MEDIUM`, or `STRONG` labels.
-Low-scoring or ambiguous cases are stored as `UNRESOLVED` with their candidate evidence.
-False links are deliberately more expensive than missing links.
-
-It is valid for every row in a bridge build to remain unresolved. Comparison still searches
-both domains from the original question. A high-scoring candidate shortlist belonging to a
-selected unresolved row can narrow inspection without becoming an accepted alignment.
+Each link states how it was found: `identity` (flat names equal, STRONG),
+`interface_prefix` (the RTL name is a prefix learned per module plus the spec name, MEDIUM),
+or `same_net` (a port on the same elaborated net as a linked port, MEDIUM). Widths are
+reported as `equal`, `conflict`, `symbolic`, or `unstated`, never used to reject a link.
+Unresolved rows keep up to three `SUGGESTED` candidates that never count as links. A bridge
+build where every row stays unresolved is valid.
 
 ## How are sections aligned to modules?
 
-The bridge compares normalized section titles with module names, contextual tokens with
-module/signals, and the distribution of already accepted child-signal mappings. It retains
-several candidates and rejects close or sub-threshold choices. This provides a second way
-to target RTL retrieval without promoting a signal coincidence into behavioral proof.
+Only on stated evidence: `title_identity` (normalized section title tokens equal the module
+name's, STRONG) or `link_support` (the modules whose ports the section's own signal rows link
+to, with counts, MEDIUM). Sections with neither are not written.
 
 ## How does retrieval rank evidence?
 
-Specification retrieval uses four signals in order:
+Specification retrieval:
 
-1. token-bounded exact identifier hits;
-2. BM25 lexical candidates;
-3. dense candidates from the specification FAISS index;
-4. cross-encoder reranking of the fused bounded shortlist.
+1. BM25 candidates and dense candidates from the specification Chroma index;
+2. one cross-encoder reranks their union, shifted slightly toward defining (normative)
+   sources over explanatory ones.
 
-Exact hits remain ahead of semantic candidates. Hierarchy expansion happens after ranking
-and adds only bounded neighboring evidence.
+RTL retrieval:
 
-RTL retrieval first checks module/function names and module-owned declaration metadata.
-Writer/reader blocks for an exact signal follow. BM25 and dense module/block retrieval plus
-cross-encoder reranking fill remaining slots. Bridge targets can independently select a
-bounded set of surrounding compiler blocks.
+1. exact hits on compiler-stated module, function, task, and signal names;
+2. the blocks that read or write a matched signal, alternating with the exact hits;
+3. BM25 candidates reranked by the same cross-encoder fill the remaining slots.
+
+The cross-encoder is loaded once per process and shared by both lanes.
 
 ## How does a question move through the graph?
 
 A deterministic classifier records one of `SPEC`, `RTL`, or `COMPARISON` as requested
-intent. LangGraph then runs this fixed path for every question:
+intent, using wording and identifiers that only the design declares (read from `rtl.json`,
+minus the specification's own signal names). LangGraph then runs this fixed path for every
+question:
 
 ```text
-classify -> retrieve spec -> retrieve RTL -> bridge lookup -> evidence expansion
-         -> lane allocation -> optional bounded recovery -> merge -> answer
+classify -> retrieve_spec -> retrieve_rtl -> lookup_bridge -> merge -> answer
 ```
 
 Searching both lanes prevents a route mistake from making evidence unreachable. The route
-prior still controls which domain citations the answer requires. A comparison needs both
-lanes to clear their floors; a single-domain request needs its requested lane. Otherwise the
-model is skipped and the result is insufficient evidence.
+prior controls which domain citations the answer requires: both for a comparison, else the
+requested one. Without citable evidence in a required domain the model is skipped and the
+result is insufficient evidence.
 
 ## What does the local model receive?
 
 One final evidence package containing:
 
 - the question and route;
-- cited specification chunks and relevant structured signals;
-- signal and section/module alignment rows selected during bridge lookup;
-- cited RTL module/block evidence and read/write context.
+- whole specification passages;
+- signal and section/module alignment rows from the bridge;
+- whole RTL module and block passages.
 
-The default cap is 12,500 characters inside a 4,096-token model window, with separate
-domain caps and explicit truncation. The model is instructed to return JSON containing only
-known citation labels and verbatim source excerpts. Comparisons require citations from both
-domains and are labeled unverified.
+Passages are never truncated; the package fits the model's `AGENT_NUM_CTX` window. The model
+is instructed to return JSON containing only known citation labels and verbatim source
+excerpts. Comparisons require citations from both domains and are labeled unverified.
 
 It does not search, parse, traverse, align, simulate, prove conformance, or issue behavioral
 verdicts.
@@ -176,24 +164,19 @@ verdicts.
 QUERY TYPE: COMPARISON
 SPEC RETRIEVAL: chunk IDs, count, selected signal names
 BRIDGE LOOKUP: mapping counts, signal targets, confidence
-RTL RETRIEVAL: modules, record IDs, exact block line ranges
+RTL RETRIEVAL: modules, record IDs, block line ranges
 EVIDENCE MERGE: final character count
 ANSWER: whether the model was called
 ```
 
-The trace records evidence flow, not hidden model reasoning or the evidence body. It answers
-the useful debugging questions: Which route ran? Which stable records were retrieved? Which
-signal alignment narrowed the search? Which source blocks reached the model? How large was
-the merged context? Did an empty evidence lane prevent the model call?
+The trace records evidence flow, not hidden model reasoning or the evidence body.
 
 ## How does rebuilding avoid drift and duplication?
 
 Stable source-derived IDs make each record replaceable. Content hashes make changes
-visible. Specification and RTL embedding manifests map each indexed ID to the exact text
-fingerprint; unchanged indexes skip encoder work, and query-time adapters reject stale
-indexes. Bridge inputs are byte-fingerprinted, output is sorted, and publication is atomic.
-
-A full rebuild is intentionally simple:
+visible. The specification embedding manifest maps each indexed ID to its text fingerprint,
+and the agent rejects a stale index. Bridge inputs are byte-fingerprinted, output is sorted,
+and publication is atomic.
 
 ```bash
 python src/build.py --clean
@@ -204,133 +187,74 @@ without touching source PDFs or RTL.
 
 ## How is the architecture tested?
 
-Hermetic tests pin parsing schemas, required provenance, stable IDs, exact-first retrieval,
-manifest construction/status, bridge thresholds and ambiguity, all three routes, mandatory
-both-domain comparison retrieval, evidence budgets, traces, and rebuild ordering:
+Hermetic tests pin parsing schemas, provenance, stable IDs, top-module detection, routing,
+retrieval contracts, bridge link tiers, mandatory both-lane retrieval, traces, and rebuild
+ordering:
 
 ```bash
-python -m pytest -q -p no:cacheprovider tests
+python -m pytest -q
 ```
 
-The current-schema end-to-end benchmark exercises built artifacts and reports
-specification/RTL Recall@K and MRR, bridge
-Recall@K/MRR/Top-1, routing accuracy, comparison both-domain rate, citation completeness,
-answer outcomes, and latency:
-
-```bash
-python src/bench.py
-```
-
-An architecture regression is visible as a contract failure or a retrieval, routing, or
-alignment metric change instead of only as a subjective answer difference.
+Retrieval is scored on 60 questions with `python src/bench.py --retrieval`; decision metrics
+are spec section recall and RTL exact recall. `python src/track.py --tag <step>` logs each
+run to MLflow, one clean commit per run.
 
 ## Which functions own each step?
 
-This inventory maps every production module to its internal methods. Leading underscores
-mean a helper is private to its module, not that its decision is unimportant.
+Public functions per module (helpers with a leading underscore are private to their module).
 
-### Configuration, names, roles, and build
-
-- configure.py groups every path, model, parser rule, retrieval budget, bridge threshold,
-  evaluation path, and context limit. Importing it installs the project's abbreviation map.
-- naming.py: _raw_tokens splits names; set_abbreviation_aliases installs vocabulary;
-  normalize_identifier makes identity text; identifier_tokens makes search words;
-  normalize_module_name makes expanded module text.
-- roles.py: _compile builds patterns; _normalize makes score shares; leading_role applies
-  the ambiguity margin; chunk_role_scores and document_role_scores score source wording.
-- build.py: _validated_output_dir protects deletion; remove_obsolete_artifacts removes
-  retired output; clean_generated_data recreates output; stage_scripts and stage_command
-  define execution; run_pipeline runs it; main parses options.
-
-### Specification side
-
-- ingest.py: slugify, find_revision, parse_section_number, and _subtree_end_page establish
-  identity and bounds. build_sections creates inline hierarchy. repeated_lines,
-  _clean_pdf_text, and section_page_texts recover prose. is_caption, build_caption_index,
-  table_region, rows_by_alignment, unstack_row, extract_table, rows_to_markdown,
-  build_tables, and find_table_refs recover tables. enrich_spec_record adds the common
-  contract. split_sentences, SentenceWindowSplitter.split_units,
-  SentenceWindowSplitter.split_text, and sliding_window_chunks create passages.
-  ingest_pdf, hierarchy_document, and main assemble and publish artifacts.
-- spec_signals.py: _header_key, _column_index, _cell, parse_width, parse_direction,
-  parse_source_role, prose_widths, _parsed_cell, and _signal_name interpret source cells.
-  _signal_record, signals_from_table, instructions_from_prose, and build_spec_signals create
-  entities. save_spec_signals and main publish them.
-- embed.py: available_device, content_hash, chunk_fingerprint, record_fingerprint,
-  load_chunks, build_manifest, and record_to_document prepare records.
-  Embedder.embed_documents and Embedder.embed_query encode them. VectorStore.build, save,
-  load, and search own FAISS. read_manifest, write_manifest, and main own freshness.
-- retrieve.py: tokenize, identifier_terms, and exact_document_ids provide literal search.
-  BM25Index provides lexical search. reciprocal_rank_fusion merges ranks.
-  document_authority and apply_authority add the source-role tie-break. Reranker scores
-  pairs. Retriever.load, candidates, and search assemble the hybrid.
-
-### RTL side
-
-- rtl_ingest.py: parse_loc, file_table, source_name, read_lines, and block_extent recover
-  source. _parent_map, _owned_by, _scope_names, _generate_node, and _generate_id recover
-  ownership. _symbol_kind, _symbol_base_id, _integer, _range_descriptor, and
-  type_descriptors interpret declarations. _enum_item, enum_types, and enum_usage handle
-  enums. _declaration_record, _assign_symbol_ids, symbol_records, and _symbol_lookup build
-  symbols. ref_names, _assignment_signal_roles, _construct_signal_roles, _sensitivity,
-  statement_site, collapse_sites, and driver_reader_sites derive use. _cell_paths,
-  _instance_record, _module_extents, _block_type, _block_record, _assignment_groups,
-  modules, and tree build structure. parse_warnings, run_verilator, build, and main publish
-  the compiler view.
-- rtl_embed.py: _source_id, _record, comments, children, _signal_metadata, _terms, and
-  port_connections create retrieval context. chunks, _structural_records, and
-  retrieval_records create surfaces. load_records and index_manifest_status handle
-  artifacts. _query_terms, _term_strength, _phrase_strength, and exact_lookup handle names.
-  RTLRetriever._hybrid and RTLRetriever.search add semantic fill; search and main expose the
-  query and build entrypoints.
-
-### Bridge, agent, and answer
-
-- bridge.py canonicalizes schemas with _as_list, _first, _unique, spec/RTL canonicalizers,
-  and enum/module flatteners. Name helpers and generate_signal_candidates create
-  candidates. infer_module_roles, expected_direction, _component, _weighted_components,
-  and structural_signal_score add deterministic evidence. Pair-text helpers,
-  _score_adapter, _semantic_unit, and rerank_signal_candidates add optional semantic
-  scores. ambiguity_evidence, _resolver_result, _collapse_threaded_ports,
-  confidence_level, and align_signal enforce safe selection. align_enum,
-  _module_candidate, and derive_module_alignments cover other identities. Fingerprint,
-  build, lookup, load, atomic-write, resolver, argument, and main functions complete the
-  bridge lifecycle.
-- agent.py uses classify_query, lane scoring/calibration, and observed_route for intent and
-  evidence quality. Hit, deduplication, hierarchy, entity, bridge, staging, and block
-  helpers assemble evidence. Context renderers, merge_evidence, and citable_evidence make
-  safe model input. Recovery helpers bound re-querying. Runtime lazily owns artifacts and
-  models. build_graph defines nine state-transition nodes; run, ask, trace_report, and main
-  expose execution.
-- answer_contract.py: validate_answer enforces exact schema, known citations, verbatim
-  excerpts, and required domains; render_answer emits validated evidence or fixed
-  abstention text.
-
-### Evaluation
-
-- bench.py owns keyword diagnostics, Recall@K, MRR, routing, alignment, citation, latency,
-  state capture, per-lane retrieval rows, miss reports, recovery comparison, and JSON
-  report entrypoints.
-- release_eval.py: digest binds data; validate_dataset rejects leakage and vacuous cases;
-  run_cases records real output; release_gate combines human review and hard thresholds;
-  main generates or rescores the report.
+- `naming.py`: `set_abbreviation_aliases`, `normalize_identifier`, `identifier_tokens`,
+  `normalize_module_name`.
+- `roles.py`: `document_role_scores`.
+- `build.py`: `remove_obsolete_artifacts`, `clean_generated_data`, `stage_scripts`,
+  `stage_command`, `run_pipeline`, `main`.
+- `ingest.py`: revision and hierarchy (`find_revision`, `parse_section_number`,
+  `detect_headings`, `fallback_heading_scores`, `build_sections`); page furniture
+  (`repeated_lines`, `furniture_bands`, `furniture_counts`, `page_text`, `is_heading_block`,
+  `section_page_texts`); tables (`continuation_banners`, `build_caption_index`,
+  `table_region`, `rows_by_alignment`, `unstack_row`, `nearest_ruled_table`, `extract_table`,
+  `rows_to_markdown`, `table_row_windows`, `build_tables`, `find_table_refs`); chunks
+  (`count_tokens`, `split_sentences`, `sliding_window_chunks`, `enrich_spec_record`,
+  `content_hash`, `load_chunks`); publishing (`ingest_pdf`, `hierarchy_document`, `main`).
+- `spec_signals.py`: `signals_from_table`, `build_spec_signals`, `save_spec_signals`, `main`.
+- `embed.py`: `available_device`, `record_to_document`, `Embedder`, `VectorStore`,
+  `build_manifest`, `read_manifest`, `write_manifest`, `index_manifest_status`, `main`.
+- `rtl_ingest.py`: sources (`design_sources`, `run_verilator`, `file_table`, `cited_path`,
+  `read_lines`, `parse_loc`, `source_name`); declarations and use (`type_descriptors`,
+  `enum_types`, `symbol_records`, `ref_names`, `statement_site`, `collapse_sites`,
+  `driver_reader_sites`); structure (`block_extent`, `module_preamble`, `modules`, `tree`);
+  publishing (`parse_warnings`, `build`, `main`).
+- `rtl_embed.py`: `comments`, `port_connections`, `chunks`, `retrieval_records`, `main`.
+- `retrieve.py`: `tokenize`, `BM25Index`, `document_authority`, `apply_authority`,
+  `Reranker`, `shared_reranker`, `Retriever`, `exact_lookup`, `RTLRetriever`.
+- `bridge.py`: `spec_signals`, `rtl_modules`, `rtl_signals`, `port_nets`,
+  `interface_prefixes`, `enum_members`, `link_signals`, `derive_module_alignments`,
+  `build_bridge`, `load_bridge`, `source_fingerprints`, `main`.
+- `agent.py`: `classify_query`, `select_spec_signals`, `lookup_bridge`, `merge_evidence`,
+  `citable_evidence`, `local_answer`, `Runtime`, `build_graph`, `run`, `trace_report`,
+  `main`.
+- `answer_contract.py`: `validate_answer`, `render_answer`.
+- `bench.py`: answer scoring (`load_gold`, `score`, `tally`, `run`, `aggregate_metrics`) and
+  retrieval scoring (`run_retrieval`, `stage_retrieval`, `retrieval_metrics`,
+  `section_recall`, `lane_result`, `retrieval_main`, `main`).
+- `track.py`: `pipeline_metrics` and its stage metrics, `main`.
+- `release_eval.py`: `digest`, `validate_dataset`, `run_cases`, `release_gate`, `main`.
 
 ## How should a surprising answer be traced?
 
-1. Check route_prior for requested intent.
+1. Check `route_prior` for requested intent.
 2. Inspect spec and RTL retrieval IDs.
-3. Check selected entities and bridge candidates.
-4. Inspect targeted RTL file and line ranges.
-5. Compare lane scores with floors and credibility.
-6. Read final_context, the exact model input.
-7. Compare citable_evidence with returned citations and quotes.
-8. Read answer_validation errors when output was rejected.
+3. Check selected spec signals and bridge alignments.
+4. Inspect the RTL file and line ranges that were retrieved.
+5. Read `final_context`, the exact model input.
+6. Compare `citable_evidence` with returned citations and quotes.
+7. Read `answer_validation` errors when output was rejected.
 
-That order separates parsing failure, stale data, retrieval miss, alignment error, context
-truncation, weak evidence, model selection error, and citation rejection.
+That order separates parsing failure, stale data, retrieval miss, alignment error, model
+selection error, and citation rejection.
 
 ## What can the final answer establish?
 
-answer_contract.py establishes exact quote provenance: a known label and a verbatim passage.
-It does not establish relevance, complete coverage, semantic entailment, simulation results,
-formal proof, equivalence, or corpus-wide absence.
+`answer_contract.py` establishes exact quote provenance: a known label and a verbatim
+passage. It does not establish relevance, complete coverage, semantic entailment, simulation
+results, formal proof, equivalence, or corpus-wide absence.
