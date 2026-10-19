@@ -20,8 +20,8 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _identifier_signal_tagger(monkeypatch, request):
-    """Stand in for the GLiNER2 signal tagger: every identifier word in a text is a tag."""
+def _offline_tokenizers(monkeypatch, request):
+    """Keep unit token budgets deterministic; live checks use the actual tokenizers."""
     if request.node.get_closest_marker("live_model"):
         return
     import agent
@@ -31,12 +31,6 @@ def _identifier_signal_tagger(monkeypatch, request):
 
     monkeypatch.setattr(ingest, "_tokenizer", lambda: lambda text, **kwargs: {
         "input_ids": re.findall(r"\w+|[^\w\s]", text)})
-
-    def tag(texts):
-        return {word.casefold(): 0.9 for text in texts
-                for word in re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", str(text))}
-
-    monkeypatch.setattr(agent, "tag_signal_names", tag)
 
 
 @pytest.fixture

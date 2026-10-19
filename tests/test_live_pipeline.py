@@ -1,4 +1,4 @@
-"""Optional integration checks never substitute the real tagger or answer model."""
+"""Optional integration checks use the real retrieval models, tokenizers and answer model."""
 
 import os
 import json
@@ -21,7 +21,8 @@ def test_real_runtime_returns_only_validated_excerpts():
     app = agent.build_graph(runtime=runtime)
     outcomes = []
     for question in ("What does the RISC-V specification permit for WFI?",
-                     "Where is risc_mux2 implemented in the RTL?"):
+                     "Where is risc_mux2 implemented in the RTL?",
+                     "Does the RTL implement the specification's AWVALID handshake rule?"):
         started = time.perf_counter()
         state = agent.run(app, question)
         outcomes.append({"question": question, "status": state["answer_status"],

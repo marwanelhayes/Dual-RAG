@@ -1,18 +1,29 @@
 """Fail-closed source-excerpt answers; retrieval is never behavioral verification.
 
-Flow: Parse response JSON -> validate schema and source quotes -> check domains -> render fixed policy text.
+Flow: Constrain selection -> parse response JSON -> validate source quotes and domains -> render fixed policy text.
 """
 
 import json
 import re
 
 
-MODEL_RESPONSE_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "properties": {
-        "status": {"type": "string", "enum": ["evidence_found", "insufficient_evidence"]},
-        "citations": {"type": "array", "maxItems": 3, "items": {"type": "string"}}},
-    "required": ["status", "citations"]}
+def model_response_schema(evidence, required_domains):
+    """Constrain source selection to the required domains or an empty abstention."""
+    label = {"type": "string", "enum": list(evidence)}
+    required = [{"type": "string", "enum": [key for key, item in evidence.items()
+                                              if item["domain"] == domain]}
+                for domain in ("spec", "rtl") if domain in required_domains]
+    # The provider ignores prefixItems when items is present; enumerate bounded tuples.
+    found = {"oneOf": [
+        {"type": "array", "prefixItems": required + [label] * (count - len(required)),
+         "minItems": count, "maxItems": count}
+        for count in range(len(required), 4)]}
+    return {"oneOf": [
+        {"type": "object", "additionalProperties": False,
+         "properties": {"status": {"const": status}, "citations": citations},
+         "required": ["status", "citations"]}
+        for status, citations in (("evidence_found", found),
+                                  ("insufficient_evidence", {"type": "array", "maxItems": 0}))]}
 
 
 def validate_answer(raw, evidence, required_domains):

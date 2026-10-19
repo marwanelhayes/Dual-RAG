@@ -343,7 +343,8 @@ def _chunk_family(chunk_id, lane):
     """Return the section or module family encoded in a stable chunk ID."""
     chunk_id = str(chunk_id)
     if lane == "spec":
-        # ponytail: table IDs stay exact; use stored hierarchy metadata if that ceiling matters.
+        if "#table#" in chunk_id and chunk_id.count("#") == 2:
+            return chunk_id
         parent, separator, suffix = chunk_id.rpartition("#")
         return parent if separator and suffix.isdigit() else chunk_id
     if lane == "rtl" and chunk_id.startswith("rtl:construct:"):

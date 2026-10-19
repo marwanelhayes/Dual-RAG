@@ -19,6 +19,11 @@ never be inferred from passing software tests.
 | E08 | RTL source resolution drops directories and source discovery assumes a flat directory. | Preserve compiler source paths and accept an explicit project source manifest. | Fixed; nested-source and manifest regressions passed |
 | E09 | Architecture and operational documentation describe removed implementations. | One current architecture, accurate entrypoint documentation, tested commands, and clearly archived historical records. | Fixed; current/archived documentation links checked |
 | E10 | The real model can emit invalid/truncated JSON or alter quotes while retyping source text. | Constrain generation to visible source labels, copy original passages in the adapter, and reject provider truncation. | Fixed; real-model two-question rerun passed |
+| E11 | Repeated links for one signal exhaust the bridge budget and hide another asked identity. | Preserve selected-name priority and allocate a slot per name before additional sites. | Fixed; budget regression passed |
+| E12 | Signal navigation loads a GPU entity model without measured benefit over source matching. | Compare on the same development corpus and retain the simpler selector if coverage holds. | Replaced after a paired 60-question comparison; see [measurements](SIGNAL_SELECTION_EXPERIMENT.md) |
+| E13 | Family recall collapses different bare numeric table labels into one family. | Preserve table identity and group only windows belonging to the same table. | Fixed; numeric-label regression passed |
+| E14 | Native generation accepts a schema-valid selection that omits a required source domain. | Constrain selection to the required domains or an empty abstention, retaining independent source validation. | Fixed; regression, real-provider replay and ten-question validation passed; see [schema experiment](ANSWER_SCHEMA_EXPERIMENT.md) |
+| E15 | A known local entity's presence question is treated as standards conformance, forcing an irrelevant SPEC quote. | Route narrowly worded known-entity presence to RTL, preserving comparison for behavior/correctness and explicit standards requests. | Fixed; generic-name/conformance regressions and native RTL-only presence check passed; development intent label corrected |
 
 ## Evidence captured before changes
 
@@ -59,7 +64,9 @@ comparisons. Neither requirement can be replaced by agent-authored approvals.
 
 ## Remediation verification
 
-- The current full software suite passes 304 tests; the real-model suite is opt-in.
+- The hardening milestone passed 304 tests. Subsequent selector and benchmark
+  regressions are recorded with their final validation in the [experiment log](SIGNAL_SELECTION_EXPERIMENT.md).
+  The real-model suite is opt-in.
 - A staged checkout without private PDFs, model weights or generated corpus files
   passes its offline tests; corpus-presence/live checks are explicitly skipped.
 - A complete four-book rebuild publishes a verified generation. PDF chunk bytes

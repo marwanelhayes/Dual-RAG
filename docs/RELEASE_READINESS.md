@@ -80,5 +80,5 @@ Keep the dataset hash, answer hashes and generation manifest together during rev
 Restart the service deliberately after promoting a new generation.
 
 `CHIPVER_LIVE_TESTS=1 pytest -q tests/test_live_pipeline.py` runs real cached models
-and local Ollama without the unit tagger/tokenizer substitutes. It checks startup
+and local Ollama without the unit tokenizer substitutes. It checks startup
 and source validation; it does not approve answer relevance or held-out labels.

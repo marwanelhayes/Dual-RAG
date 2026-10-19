@@ -137,7 +137,7 @@ def test_run_captures_fresh_state_for_each_question(monkeypatch):
     assert all(row["outcome"] == bench.CORRECT for row in results)
 
 
-def test_repository_gold_uses_current_non_vacuous_three_route_schema():
+def test_repository_gold_uses_current_non_vacuous_three_route_schema(routing_vocabulary):
     records = bench.load_gold()
     required = {
         "expected_query_type", "relevant_spec_ids", "relevant_rtl_ids",
@@ -202,6 +202,14 @@ def test_retrieved_ids_keep_lane_order_without_duplicates():
              "rtl_evidence": [{"id": "r1"}, {"id": "r2"}, {"id": "r1"}]}
 
     assert bench.retrieved_ids(state) == (["s1"], ["r1", "r2"])
+
+
+def test_spec_table_families_keep_numeric_labels_and_join_only_row_windows():
+    assert bench._chunk_family("doc#table#25", "spec") == "doc#table#25"
+    assert bench._chunk_family("doc#table#25#0000", "spec") == "doc#table#25"
+    assert bench._chunk_family("doc#table#A2.2#0004", "spec") == "doc#table#A2.2"
+    result = bench.lane_result(["doc#table#25"], ["doc#table#26"], k=1, lane="spec")
+    assert result["family_recall_at_k"] == 0
 
 
 def test_retrieval_scoring_reads_lanes_only_and_discards_the_answer(tmp_path, monkeypatch):

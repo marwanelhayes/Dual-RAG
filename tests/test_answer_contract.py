@@ -102,6 +102,7 @@ def test_strong_other_lane_cannot_promote_a_spec_request_into_comparison():
 
 def test_local_model_uses_a_bounded_schema_and_rejects_truncated_completion(monkeypatch):
     import httpx
+    from jsonschema import Draft202012Validator
 
     captured = {}
 
@@ -113,22 +114,68 @@ def test_local_model_uses_a_bounded_schema_and_rejects_truncated_completion(monk
 
     monkeypatch.setattr(httpx, "post", post)
     with pytest.raises(ValueError, match="truncated"):
-        agent.local_answer("source evidence", CATALOG)
-    assert captured["format"]["properties"]["citations"]["maxItems"] == 3
+        agent.local_answer("source evidence", CATALOG, {"spec", "rtl"})
+    assert not Draft202012Validator(captured["format"]).is_valid({
+        "status": "evidence_found", "citations": list(CATALOG) * 2})
 
 
 def test_native_model_selects_sources_without_retyping_original_text(monkeypatch):
     import httpx
+    from jsonschema import Draft202012Validator
 
     key = "[rtl:cache.sv:10]"
 
     def post(url, **kwargs):
-        assert key in kwargs["json"]["format"]["properties"]["citations"]["items"]["enum"]
+        Draft202012Validator(kwargs["json"]["format"]).validate({
+            "status": "evidence_found", "citations": [key]})
         return httpx.Response(200, json={"message": {"content": json.dumps({
             "status": "evidence_found", "citations": [key]})}, "done_reason": "stop"},
             request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx, "post", post)
-    canonical = agent.local_answer("source evidence", CATALOG)
+    canonical = agent.local_answer("source evidence", CATALOG, {"rtl"})
     assert canonical["claims"] == [{"citation": key, "quote": CATALOG[key]["text"]}]
     assert validate_answer(canonical, CATALOG, {"rtl"})[1] == []
+
+
+def test_native_comparison_schema_requires_both_domains_and_allows_abstention(monkeypatch):
+    import httpx
+    from jsonschema import Draft202012Validator
+
+    captured = {}
+
+    def post(url, **kwargs):
+        captured.update(kwargs["json"])
+        return httpx.Response(200, json={"message": {"content": json.dumps({
+            "status": "evidence_found", "citations": list(CATALOG)})}, "done_reason": "stop"},
+            request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    spec = Document(page_content=CATALOG["[spec:s1 p.12]"]["text"],
+                    metadata={"chunk_id": "s1", "start_page": 12})
+    rtl = Document(page_content=CATALOG["[rtl:cache.sv:10]"]["text"],
+                   metadata={"chunk_id": "r1", "file": "cache.sv", "line": 10})
+    app = agent.build_graph(lambda q, k: [spec], lambda q, k: [rtl],
+                            spec_records=[], spec_signals=[], bridge={})
+    state = agent.run(app, "Does the RTL implement the specification's AWVALID rule?")
+    assert state["answer_validation"]["valid"]
+    validator = Draft202012Validator(captured["format"])
+    assert validator.is_valid({"status": "evidence_found", "citations": list(CATALOG)})
+    assert validator.is_valid({"status": "evidence_found", "citations": [*CATALOG, next(iter(CATALOG))]})
+    assert validator.is_valid({"status": "insufficient_evidence", "citations": []})
+    for key in CATALOG:
+        assert not validator.is_valid({"status": "evidence_found", "citations": [key]})
+    assert not validator.is_valid({"status": "evidence_found", "citations": []})
+    assert not validator.is_valid({"status": "insufficient_evidence", "citations": list(CATALOG)})
+
+
+def test_native_comparison_without_selectable_domain_abstains_before_generation(monkeypatch):
+    import httpx
+
+    def unexpected_call(*args, **kwargs):
+        pytest.fail("a domain without selectable quotes must skip generation")
+
+    monkeypatch.setattr(httpx, "post", unexpected_call)
+    catalog = {**CATALOG, "[spec:s1 p.12]": {"domain": "spec", "text": "x" * 2001}}
+    assert agent.local_answer("source evidence", catalog, {"spec", "rtl"}) == {
+        "status": "insufficient_evidence", "claims": []}

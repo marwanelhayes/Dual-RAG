@@ -38,8 +38,15 @@ merge evidence, then answer. Intent determines required citable domains. A bridg
 link never establishes behavioral conformance. Prompt measurement uses the actual
 answer tokenizer and reserves output tokens. Only whole passages survive budgeting.
 
+Bridge navigation matches identifier spellings in the question and retrieved source.
+Asked identities take priority; ordinary field names require their source scope,
+unless they have a register address. Link budgeting gives each selected name a slot
+before including additional RTL sites for the same name.
+
 The native answer model selects up to three visible source labels through a bounded
 JSON schema; the application copies their original passages into canonical claims.
+The schema requires each requested domain or an empty abstention, and generation
+is skipped when a required domain has no selectable complete passage.
 Validation checks exact visible-source containment with whitespace normalization,
 known locations and required-domain coverage. Rendered answers contain only validated
 quotes and fixed policy text. These checks do not establish relevance or completeness.
@@ -48,7 +55,7 @@ quotes and fixed policy text. These checks do not establish relevance or complet
 
 One runtime owns lazy adapters. A reentrant lock prevents duplicate cold initialization.
 The default API preflight verifies the sealed corpus, real index, local model digest,
-retrievers, tagger and answer tokenizer. Readiness follows successful preflight.
+retrievers and answer tokenizer. Readiness follows successful preflight.
 A single inference slot bounds GPU use; use one service worker per GPU. The default
 operating scope is trusted localhost, without authentication or multi-tenant isolation.
 

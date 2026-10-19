@@ -22,10 +22,8 @@ uvicorn>=0.30
 # the cross-encoder needs no new package: sentence-transformers above already ships it
 rank-bm25>=0.2           # the lexical half of the hybrid; pure Python, no index on disk
 
-# Stage 6 (agent) - deterministic evidence routing and bounded tool loop
+# Stage 6 (agent) - evidence routing and deterministic source-identifier selection
 langgraph>=1.0
-gliner2>=2.0             # local signal tagger that picks the spec signals evidence names
-peft>=0.21               # gliner2 imports it at load time without declaring it
 
 # Experiment tracking: one run per pipeline step, local SQLite store
 mlflow>=3.0

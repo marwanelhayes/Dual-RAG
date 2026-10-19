@@ -103,6 +103,18 @@ def test_classifier_exposes_exactly_three_routes():
         agent.COMPARISON
 
 
+def test_known_design_presence_is_rtl_but_behavior_and_conformance_remain_comparisons(monkeypatch):
+    monkeypatch.setattr(agent, "_design_names", lambda: frozenset({"packet_filter", "hazard_unit"}))
+    for question in ("Is the packet filter implemented or not?", "Does packet_filter exist?",
+                     "Is the hazard unit present?"):
+        assert agent.classify_query(question) == agent.RTL
+    for question in ("Is packet_filter implemented correctly?",
+                     "Is packet_filter implemented according to the specification?",
+                     "Does packet_filter implement all packet rules?",
+                     "Is the unknown module implemented?"):
+        assert agent.classify_query(question) == agent.COMPARISON
+
+
 def test_both_lanes_retrieve_for_every_question_whatever_the_wording():
     calls = []
     records, signals, bridge = _runtime_data()
@@ -174,8 +186,7 @@ def test_model_is_refused_only_when_no_lane_cleared_the_floor():
     assert state["trace"][-1] == {"event": "answer", "model_called": False}
 
 
-def test_signal_selection_follows_names_the_tagger_finds(monkeypatch):
-    monkeypatch.setattr(agent, "tag_signal_names", lambda texts: {"rounding_mode": 0.8})
+def test_signal_selection_follows_source_identifiers_in_retrieved_evidence():
     signals = [
         {"signal_id": "a", "name": "rounding_mode", "chunk_id": "spec#1"},
         {"signal_id": "b", "name": "unrelated", "chunk_id": "spec#1"},
@@ -187,31 +198,47 @@ def test_signal_selection_follows_names_the_tagger_finds(monkeypatch):
     assert [item["signal_id"] for item in selected] == ["a"]
 
 
-def test_signal_selection_orders_by_tag_confidence_and_keeps_one_row_per_name(monkeypatch):
-    monkeypatch.setattr(agent, "tag_signal_names",
-                        lambda texts: {"awvalid": 0.6, "wvalid": 0.9})
+def test_signal_selection_prioritizes_the_asked_identity_and_its_retrieved_table():
+    signals = [{"signal_id": "context", "name": "WVALID", "chunk_id": "other"},
+               {"signal_id": "wrong-source", "name": "AWVALID", "chunk_id": "other"},
+               {"signal_id": "source", "name": "AWVALID", "chunk_id": "retrieved"}]
+    evidence = [{"id": "retrieved", "text": "WVALID depends on AWVALID.",
+                 "metadata": {"hierarchy_id": "section"}}]
+
+    selected = agent.select_spec_signals("What does AWVALID mean?", evidence, signals, limit=1)
+
+    assert [row["signal_id"] for row in selected] == ["source"]
+
+
+def test_signal_selection_uses_question_order_and_keeps_one_row_per_name():
     signals = [{"signal_id": "aw1", "name": "AWVALID"}, {"signal_id": "w", "name": "WVALID"},
                {"signal_id": "aw2", "name": "AWVALID"}]
 
-    selected = agent.select_spec_signals("q", [], signals)
+    selected = agent.select_spec_signals("WVALID and AWVALID", [], signals)
 
     assert [item["signal_id"] for item in selected] == ["w", "aw1"]
 
 
-def test_tagging_keeps_identifier_shaped_signal_and_register_spans(monkeypatch):
-    class FakeModel:
-        def batch_extract_entities(self, texts, types, **kwargs):
-            return [{"entities": {
-                "signal": [{"text": "AWVALID", "confidence": 0.97},
-                           {"text": "Valid-Ready signals", "confidence": 0.81}],
-                "register": [{"text": "mstatus", "confidence": 0.7},
-                             {"text": "AWVALID", "confidence": 0.5}],
-            }} for _ in texts]
+def test_signal_selection_does_not_turn_prose_or_substrings_into_identifiers():
+    signals = [{"signal_id": "is", "name": "IS"}, {"signal_id": "when", "name": "When"},
+               {"signal_id": "aw", "name": "AWVALID"}]
 
-    monkeypatch.undo()
-    monkeypatch.setattr(agent, "_signal_tagger", lambda: FakeModel())
+    assert agent.select_spec_signals("When is MAWVALID asserted?", [], signals) == []
 
-    assert agent.tag_signal_names(["one", "two"]) == {"awvalid": 0.97, "mstatus": 0.7}
+
+def test_plain_field_names_need_source_scope_but_registers_keep_their_addresses():
+    signals = [{"signal_id": "field", "name": "Range", "hierarchy_id": "own"},
+               {"signal_id": "register", "name": "mstatus", "address": "0x300"}]
+    evidence = [{"id": "source", "text": "Range and mstatus", "metadata": {"hierarchy_id": "other"}}]
+    assert [row["signal_id"] for row in agent.select_spec_signals("q", evidence, signals)] == ["register"]
+    evidence[0]["metadata"]["hierarchy_id"] = "own"
+    assert [row["signal_id"] for row in agent.select_spec_signals("q", evidence, signals)] == ["field", "register"]
+
+
+def test_lowercase_question_prioritizes_a_source_spelling_present_in_evidence():
+    signals = [{"signal_id": "w", "name": "WVALID"}, {"signal_id": "a", "name": "AWVALID"}]
+    evidence = [{"id": "table", "text": "WVALID and AWVALID", "metadata": {}}]
+    assert agent.select_spec_signals("what does awvalid do?", evidence, signals, limit=1)[0]["signal_id"] == "a"
 
 
 def test_empty_spec_selection_does_not_return_unrelated_bridge_rows():
@@ -227,6 +254,21 @@ def test_empty_spec_selection_does_not_return_unrelated_bridge_rows():
     matches, modules = agent.lookup_bridge([], [], artifact)
 
     assert matches == [] and modules == []
+
+
+def test_bridge_budget_covers_selected_names_before_repeating_one_name():
+    signals = [{"signal_id": "wanted", "name": "WSTRB"},
+               {"signal_id": "other", "name": "AWVALID"}]
+    links = [{"spec_signal_id": "other", "spec_original_name": "AWVALID",
+              "rtl_original_name": f"AWValid{index}", "confidence_level": "STRONG"}
+             for index in range(15)]
+    links.append({"spec_signal_id": "wanted", "spec_original_name": "WSTRB",
+                  "rtl_original_name": "MWStrb", "confidence_level": "MEDIUM"})
+    artifact = {"signal_alignments": links, "unresolved_signals": [], "module_alignments": []}
+
+    matches, _ = agent.lookup_bridge(signals, [], artifact, limit=2)
+
+    assert [row["spec_original_name"] for row in matches] == ["WSTRB", "AWVALID"]
 
 
 def test_merged_context_keeps_every_passage_whole_and_separates_domains():

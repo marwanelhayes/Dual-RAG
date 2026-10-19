@@ -107,7 +107,7 @@
  {
   "id": "RTL_HAZARD_EXISTS",
   "question": "is the hazard unit implemented or not",
-  "expected_query_type": "COMPARISON",
+  "expected_query_type": "RTL",
   "relevant_spec_ids": [],
   "relevant_rtl_ids": ["rtl:hazard_unit", "rtl:riscv_processor"],
   "expected_alignments": {},

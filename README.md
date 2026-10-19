@@ -59,7 +59,7 @@ CHIPVER_LIVE_TESTS=1 .venv/bin/pytest -q tests/test_live_pipeline.py
 ```
 
 The regular suite uses deterministic test adapters and needs no downloaded models.
-Live checks use the real tagger, retrievers and local answer model. They are smoke
+Live checks use the real retrievers, tokenizers and local answer model. They are smoke
 checks, not an independent answer-quality certification. Follow
 [the release workflow](docs/RELEASE_READINESS.md) for reviewed labels and answers.
 

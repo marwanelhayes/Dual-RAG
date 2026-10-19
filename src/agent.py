@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import threading
+from itertools import zip_longest
 from pathlib import Path
 from typing import TypedDict
 
@@ -135,6 +136,9 @@ _CONFORMANCE = re.compile(
     r"\b(?:describ|specif|defin|requir|mandat)\w*", re.IGNORECASE)
 _CAPABILITY_QUESTION = re.compile(r"^\s*(?:does|do|can|is|are|could)\b", re.IGNORECASE)
 _CATEGORY_CHOICE = re.compile(r"^\s*what\s+(?:kind|type)\s+of\b", re.IGNORECASE)
+_RTL_PRESENCE = re.compile(
+    r"\s*(?:is|does)\s+(?:the\s+)?(.+?)\s+"
+    r"(?:implemented(?:\s+or\s+not)?|present|exists?)\s*\??\s*", re.IGNORECASE)
 _RTL_INSPECTION = re.compile(
     r"^\s*(?:where\b|which\s+(?:module|block|part|task|"
     r"(?:sequential|combinational)\s+process)\b|trace\b|show\b|point\b|inspect\b|"
@@ -189,6 +193,11 @@ def classify_query(question):
         return COMPARISON
     if has_local_source and has_spec_source:
         return COMPARISON
+    presence = _RTL_PRESENCE.fullmatch(text)
+    if presence and not has_spec_source:
+        target = " ".join(presence[1].casefold().replace("_", " ").split())
+        if target in {" ".join(name.replace("_", " ").split()) for name in names}:
+            return RTL
     if has_comparison_relation and (has_local_source or has_implementation_subject):
         return COMPARISON
     if _CAPABILITY_QUESTION.search(text) and has_local_source:
@@ -259,52 +268,11 @@ def _dedupe_evidence(records):
     return result
 
 
-# Spans a tagger returns must be one identifier; phrases such as "VALID signals" are prose.
-_SIGNAL_SPAN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
-SIGNAL_TYPES = {"signal": "a hardware interface signal or port name",
-                "register": "a control or status register name"}
-
-
-@functools.cache
-def _signal_tagger():
-    """Load the local GLiNER2 signal tagger once, in half precision on CUDA.
-
-    Returns:
-        The GLiNER2 model in eval mode.
-    """
-    from gliner2 import GLiNER2
-
-    from embed import available_device
-
-    device = available_device(cfg.SIGNAL_TAGGER_DEVICE)
-    model = GLiNER2.from_pretrained(cfg.SIGNAL_TAGGER_MODEL,
-                                  revision=cfg.SIGNAL_TAGGER_REVISION).to(device)
-    return (model.half() if str(device).startswith("cuda") else model).eval()
-
-
-def tag_signal_names(texts):
-    """Tag the signal and register names a set of texts mentions.
-
-    Args:
-        texts: Question and evidence passages.
-
-    Returns:
-        Casefolded name to its best tag confidence, identifier-shaped spans only.
-    """
-    tagged = {}
-    for output in _signal_tagger().batch_extract_entities(
-            list(texts), SIGNAL_TYPES, batch_size=cfg.SIGNAL_TAGGER_BATCH,
-            threshold=cfg.SIGNAL_TAGGER_THRESHOLD, include_confidence=True):
-        for entities in output["entities"].values():
-            for entity in entities:
-                if _SIGNAL_SPAN.fullmatch(entity["text"]):
-                    name = entity["text"].casefold()
-                    tagged[name] = max(tagged.get(name, 0.0), entity["confidence"])
-    return tagged
+_SIGNAL_SPAN = re.compile(r"(?<![A-Za-z0-9_$])[A-Za-z_$][A-Za-z0-9_$]*")
 
 
 def select_spec_signals(question, evidence, signals, limit=8):
-    """Select spec signals whose names the question or retrieved passages mention.
+    """Select source-spelled identities, prioritizing asked names and retrieved table rows.
 
     Args:
         question: User question.
@@ -313,13 +281,28 @@ def select_spec_signals(question, evidence, signals, limit=8):
         limit: Maximum signals retained for bridge lookup.
 
     Returns:
-        One signal record per tagged name, highest tag confidence first.
+        One record per name, with ambiguous prose names confined to their source scope.
     """
-    tagged = tag_signal_names([question, *(item.get("text", "") for item in evidence)])
+    asked = {}
+    for match in _SIGNAL_SPAN.finditer(question):
+        asked.setdefault(match.group().casefold(), match.start())
+    mentions = {}
+    for position, text in enumerate([question, *(item.get("text", "") for item in evidence)]):
+        for match in _SIGNAL_SPAN.finditer(text):
+            mentions.setdefault(match.group(), (position, match.start()))
+    chunks = {item["id"] for item in evidence}
+    hierarchy = {item["metadata"].get("hierarchy_id") for item in evidence} - {None}
+    eligible = []
+    for signal in signals:
+        name = signal["name"]
+        owned = signal.get("chunk_id") in chunks or signal.get("hierarchy_id") in hierarchy
+        if (name in mentions and (owned or _IDENTIFIER_WORD.fullmatch(name)
+                                 or signal.get("address"))):
+            eligible.append(signal)
+    eligible.sort(key=lambda signal: (asked.get(signal["name"].casefold(), float("inf")),
+                                      mentions[signal["name"]], signal.get("chunk_id") not in chunks))
     selected, seen = [], set()
-    for signal in sorted((signal for signal in signals
-                          if str(signal.get("name", "")).casefold() in tagged),
-                         key=lambda signal: -tagged[signal["name"].casefold()]):
+    for signal in eligible:
         if signal["name"].casefold() not in seen:
             seen.add(signal["name"].casefold())
             selected.append(signal)
@@ -339,12 +322,17 @@ def lookup_bridge(signals, spec_evidence, artifact, limit=12):
         ``(signal_matches, module_matches)``.
     """
     signal_ids = {item["signal_id"] for item in signals}
-    names = {item["name"].casefold() for item in signals}
+    names = dict.fromkeys(item["name"].casefold() for item in signals)
     hierarchy_ids = {item["metadata"].get("hierarchy_id") for item in spec_evidence} - {None}
-    matches = [mapping for mapping in [*artifact.get("signal_alignments", []),
-                                       *artifact.get("unresolved_signals", [])]
-               if mapping["spec_signal_id"] in signal_ids
-               or mapping["spec_original_name"].casefold() in names]
+    groups = {name: [] for name in names}
+    for mapping in [*artifact.get("signal_alignments", []), *artifact.get("unresolved_signals", [])]:
+        name = mapping["spec_original_name"].casefold()
+        if name in groups:
+            groups[name].append(mapping)
+    for group in groups.values():
+        group.sort(key=lambda mapping: mapping["spec_signal_id"] not in signal_ids)
+    # Cover each selected identity before spending the budget on additional RTL sites.
+    matches = [mapping for tier in zip_longest(*groups.values()) for mapping in tier if mapping]
     modules = [mapping for mapping in artifact.get("module_alignments", [])
                if mapping["spec_section_id"] in hierarchy_ids]
     return matches[:limit], modules[:limit]
@@ -514,28 +502,26 @@ def answer_tokens(prompt):
         answer_messages(prompt), tokenize=True, add_generation_prompt=True, enable_thinking=False))
 
 
-def local_answer(prompt, evidence):
+def local_answer(prompt, evidence, required_domains):
     """Ask local Ollama to select labels and copy their exact original passages.
 
     Args:
         prompt: Complete evidence prompt.
         evidence: Visible source catalog constraining selectable labels and quotes.
+        required_domains: Source domains that an evidence response must cover.
 
     Returns:
         Canonical status/claims mapping for deterministic answer validation.
     """
     import httpx
-    from answer_contract import MODEL_RESPONSE_SCHEMA
+    from answer_contract import model_response_schema
 
     host = str(cfg.LOCAL_LLM_HOST).rstrip("/")
     model = cfg.LOCAL_LLM_MODEL
     allowed = {key: value for key, value in evidence.items() if len(value["text"]) <= 2000}
-    if not allowed:
+    if not required_domains <= {item["domain"] for item in allowed.values()}:
         return {"status": "insufficient_evidence", "claims": []}
-    schema = {**MODEL_RESPONSE_SCHEMA, "properties": {
-        **MODEL_RESPONSE_SCHEMA["properties"], "citations": {
-            "type": "array", "maxItems": 3,
-            "items": {"type": "string", "enum": list(allowed)}}}}
+    schema = model_response_schema(allowed, required_domains)
     if answer_tokens(prompt) + cfg.ANSWER_MAX_NEW_TOKENS > cfg.AGENT_NUM_CTX:
         raise ValueError("answer prompt exceeds the reserved context window")
     response = httpx.post(
@@ -706,7 +692,6 @@ class Runtime:
         self.get_bridge()
         self.spec_search("startup evidence check", 1)
         self.rtl_search("startup evidence check", 1)
-        _signal_tagger()
         answer_tokenizer()
 
 
@@ -860,7 +845,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
             answer = "INSUFFICIENT EVIDENCE: complete citable passages are missing from the prompt."
         else:
             try:
-                raw = (local_answer(state["final_context"], visible)
+                raw = (local_answer(state["final_context"], visible, required)
                        if runtime.answer_model is local_answer
                        else runtime.answer_model(state["final_context"]))
                 data, errors = validate_answer(raw, visible, required)

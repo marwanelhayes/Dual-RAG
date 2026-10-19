@@ -55,7 +55,7 @@ unset CHIPVER_OUTPUT_DIR
 
 For the weights downloaded during this experiment, set
 `HF_HOME="$PWD/output/ocr_model_cache"` only on the OCR command. The other stages
-use the existing embedding/reranker/tagger model cache.
+use the existing embedding/reranker model cache.
 
 Compare the complete books and both benchmark reports. The repository's ingestion
 decision metric is specification **section recall@5**, which survives re-chunking;
