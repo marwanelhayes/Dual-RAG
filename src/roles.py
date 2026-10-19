@@ -1,4 +1,7 @@
-"""Score the normative role of whole documents by wording alone."""
+"""Score the normative role of whole documents by wording alone.
+
+Flow: Count document-level role vocabulary -> apply configured weights -> normalize authority scores.
+"""
 
 import re
 

@@ -1,4 +1,7 @@
-"""Run exact-first hybrid retrieval over one domain-local vector index."""
+"""Run exact-first hybrid retrieval over one domain-local vector index.
+
+Flow: Generate domain candidates -> preserve RTL exact hits -> shared cross-encoder reranking -> return bounded hits.
+"""
 
 import functools
 import re
@@ -131,7 +134,7 @@ class Reranker:
 
         self.batch = batch
         self.device = available_device(device)
-        self.model = CrossEncoder(model, device=self.device)
+        self.model = CrossEncoder(model, device=self.device, revision=cfg.RERANK_REVISION)
         # Half precision halves weights and activations so a large reranker fits a small GPU.
         if str(self.device).startswith("cuda"):
             self.model = self.model.half()

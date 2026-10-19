@@ -1,4 +1,7 @@
-"""Deterministically normalize hardware identifiers without losing source spelling."""
+"""Deterministically normalize hardware identifiers without losing source spelling.
+
+Flow: Split original identifiers -> normalize retrieval tokens -> expand configured whole-token aliases.
+"""
 
 import re
 

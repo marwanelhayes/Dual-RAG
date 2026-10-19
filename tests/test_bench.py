@@ -204,7 +204,10 @@ def test_retrieved_ids_keep_lane_order_without_duplicates():
     assert bench.retrieved_ids(state) == (["s1"], ["r1", "r2"])
 
 
-def test_retrieval_scoring_reads_lanes_only_and_discards_the_answer():
+def test_retrieval_scoring_reads_lanes_only_and_discards_the_answer(tmp_path, monkeypatch):
+    path = tmp_path / "chunks.jsonl"
+    path.write_text("")
+    monkeypatch.setattr(bench.cfg, "CHUNKS_PATH", path)
     answer_calls = []
     questions = [{"id": "RTL_ONE", "question": "Where is StallD driven in the RTL?",
                   "naming": "exact", "expected_query_type": "RTL",
@@ -219,10 +222,13 @@ def test_retrieval_scoring_reads_lanes_only_and_discards_the_answer():
     assert rows[0]["rtl"]["misses"] == ["rtl:missing"]
 
 
-def test_default_retrieval_graph_never_generates_an_answer(monkeypatch):
+def test_default_retrieval_graph_never_generates_an_answer(monkeypatch, tmp_path):
     import agent
 
     captured = {}
+    path = tmp_path / "chunks.jsonl"
+    path.write_text("")
+    monkeypatch.setattr(bench.cfg, "CHUNKS_PATH", path)
     stub = _retrieval_graph([])
 
     def build_graph(**kwargs):

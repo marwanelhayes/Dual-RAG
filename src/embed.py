@@ -2,9 +2,12 @@
 
 Run ``python src/embed.py`` to transform ``output/chunks.jsonl`` into the Chroma index
 and freshness manifest configured in ``configure.py``.
+
+Flow: Read chunks -> encode normalized passages -> persist Chroma -> write the encoder compatibility manifest.
 """
 
 import json
+from importlib.metadata import version
 from pathlib import Path
 
 import configure as cfg
@@ -93,7 +96,8 @@ class Embedder:
         self.device = available_device(device)
         text_only = ({"config_kwargs": {"vision_config": None, "audio_config": None}}
                      if cfg.EMBED_TEXT_ONLY else {})
-        self.model = SentenceTransformer(model, device=self.device, **text_only)
+        self.model = SentenceTransformer(model, device=self.device,
+                                         revision=cfg.EMBED_REVISION or None, **text_only)
 
     def embed_documents(self, texts):
         """Encode a list of passages into vectors.
@@ -167,6 +171,7 @@ class VectorStore:
         self.embedder = embedder
         self._collection = collection
         self._vectors = vectors
+        self.dimensions = len(vectors[0]) if vectors else None
 
     @classmethod
     def build(cls, records, embedder=None):
@@ -257,7 +262,16 @@ def read_manifest(path=cfg.MANIFEST_PATH):
         return json.load(f)
 
 
-def write_manifest(manifest, path=cfg.MANIFEST_PATH):
+def embedding_identity():
+    """Bind vector compatibility to exact weights, prompts and encoder libraries."""
+    return {"model": cfg.EMBED_MODEL, "revision": cfg.EMBED_REVISION,
+            "query_prefix": cfg.EMBED_QUERY_PREFIX, "document_prefix": cfg.EMBED_DOCUMENT_PREFIX,
+            "text_only": cfg.EMBED_TEXT_ONLY, "normalize": True,
+            "sentence_transformers": version("sentence-transformers"),
+            "transformers": version("transformers")}
+
+
+def write_manifest(manifest, path=cfg.MANIFEST_PATH, dimensions=None):
     """Persist the chunk_id -> hash map beside the index.
 
     Args:
@@ -267,8 +281,12 @@ def write_manifest(manifest, path=cfg.MANIFEST_PATH):
     Returns:
         None.
     """
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=1)
+    destination = Path(path)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(json.dumps({"schema_version": 2, "embedding": embedding_identity(),
+                                    "dimensions": dimensions, "chunks": manifest}, indent=1),
+                         encoding="utf-8")
+    temporary.replace(destination)
 
 
 def index_manifest_status(records, index_dir, manifest_path):
@@ -317,9 +335,15 @@ def index_manifest_status(records, index_dir, manifest_path):
     except (OSError, ValueError, TypeError) as exc:
         status.update(reason="manifest unreadable", error=f"{type(exc).__name__}: {exc}")
         return status
-    if (not isinstance(saved, dict)
-            or any(not isinstance(key, str) or not isinstance(value, str)
-                   for key, value in saved.items())):
+    if not isinstance(saved, dict) or saved.get("schema_version") != 2:
+        status["reason"] = "manifest invalid"
+        return status
+    if saved.get("embedding") != embedding_identity():
+        status["reason"] = "embedding configuration changed"
+        return status
+    dimensions = saved.get("dimensions")
+    saved = saved.get("chunks")
+    if not isinstance(saved, dict) or not all(isinstance(value, str) for value in saved.values()):
         status["reason"] = "manifest invalid"
         return status
     current_ids, saved_ids = set(current), set(saved)
@@ -330,8 +354,23 @@ def index_manifest_status(records, index_dir, manifest_path):
         changed_ids=sorted(chunk_id for chunk_id in current_ids & saved_ids
                            if current[chunk_id] != saved[chunk_id]),
     )
-    status["fresh"] = current == saved
-    status["reason"] = "fresh" if status["fresh"] else "manifest mismatch"
+    if current != saved:
+        status["reason"] = "manifest mismatch"
+        return status
+    try:
+        collection = _client(index_dir).get_collection(COLLECTION)
+        stored = collection.get(include=["documents", "embeddings"])
+        expected = {record["chunk_id"]: record_to_document(record).page_content for record in records}
+        texts = dict(zip(stored["ids"], stored["documents"]))
+        vectors = stored["embeddings"]
+        valid = (texts == expected and isinstance(dimensions, int) and dimensions > 0
+                 and vectors is not None and len(vectors) == len(expected)
+                 and all(len(vector) == dimensions for vector in vectors))
+    except Exception as exc:
+        status.update(reason="index unreadable", error=type(exc).__name__)
+        return status
+    status["fresh"] = valid
+    status["reason"] = "fresh" if valid else "index inventory or dimensions mismatch"
     return status
 
 
@@ -341,6 +380,7 @@ def main():
     Returns:
         None.
     """
+    cfg.require_writable_output()
     records = load_chunks()
     if not records:
         raise SystemExit(f"no chunks in {cfg.CHUNKS_PATH}; run src/ingest.py first")
@@ -351,7 +391,7 @@ def main():
     store = VectorStore.build(records)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     store.save(cfg.INDEX_DIR)
-    write_manifest(build_manifest(records), cfg.MANIFEST_PATH)
+    write_manifest(build_manifest(records), cfg.MANIFEST_PATH, dimensions=store.dimensions)
 
     rel = cfg.INDEX_DIR.relative_to(cfg.ROOT)
     print(f"====  wrote Chroma index ({len(records)} vectors) to {rel}")

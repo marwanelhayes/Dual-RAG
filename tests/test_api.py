@@ -49,3 +49,25 @@ def test_stale_artifacts_return_service_unavailable(monkeypatch):
 
     assert response.status_code == 503
     assert response.json() == {"detail": "stale index"}
+
+
+def test_default_startup_runs_preflight_before_declaring_ready(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api.agent.Runtime, "preflight", lambda self: calls.append("preflight"))
+    monkeypatch.setattr(api.agent, "build_graph", lambda **kwargs: calls.append("graph") or object())
+    with TestClient(api.create_app()) as client:
+        assert client.get("/readyz").status_code == 200
+    assert calls == ["preflight", "graph"]
+
+
+def test_busy_inference_is_rejected_and_failure_releases_capacity(monkeypatch):
+    application = api.create_app(lambda: object())
+    with TestClient(application) as client:
+        application.state.inference.acquire()
+        assert client.post("/v1/ask", json={"question": "test"}).status_code == 503
+        application.state.inference.release()
+        monkeypatch.setattr(api.agent, "run", lambda *args: (_ for _ in ()).throw(
+            api.agent.ArtifactFreshnessError("stale")))
+        assert client.post("/v1/ask", json={"question": "test"}).status_code == 503
+        assert application.state.inference.acquire(blocking=False)
+        application.state.inference.release()

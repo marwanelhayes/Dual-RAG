@@ -1,4 +1,7 @@
-"""Evaluate Dual-RAG retrieval, alignment, routing, and comparison evidence use."""
+"""Evaluate Dual-RAG retrieval, alignment, routing, and comparison evidence use.
+
+Flow: Load versioned labels -> run retrieval or answers -> score diagnostic metrics -> write a provenance-bound report.
+"""
 
 import json
 import sys
@@ -693,6 +696,16 @@ def stage_retrieval_report(questions, k=5):
             "results": rows}
 
 
+def report_provenance(dataset):
+    """Bind a benchmark to its exact labels, selected generation and model configuration."""
+    from artifacts import file_hash
+
+    return {"dataset_sha256": file_hash(dataset), "dataset": str(dataset),
+            "generation": str(cfg.OUTPUT_DIR), "embedding_model": cfg.EMBED_MODEL,
+            "embedding_revision": cfg.EMBED_REVISION, "reranker": cfg.RERANK_MODEL,
+            "reranker_revision": cfg.RERANK_REVISION, "answer_model_digest": cfg.LOCAL_LLM_DIGEST}
+
+
 def retrieval_main(path=None, k=5):
     """Score retrieval alone and write the per-question report.
 
@@ -707,7 +720,8 @@ def retrieval_main(path=None, k=5):
 
     questions = load_gold(path or getattr(cfg, "QUESTION_SET_PATH", cfg.GOLD_PATH))
     rows = run_retrieval(questions, build_graph(answer_model=_skip_answer), k)
-    report = {"k": k, "metrics": retrieval_metrics(rows),
+    report = {"k": k, "provenance": report_provenance(path or cfg.QUESTION_SET_PATH),
+              "metrics": retrieval_metrics(rows),
               "misses": retrieval_misses(rows), "results": rows}
     report["retrieve"] = stage_retrieval_report(questions, k)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -730,7 +744,8 @@ def main():
 
     questions = load_gold()
     results = run(build_graph(), questions)
-    report = {"summary": tally(row["outcome"] for row in results),
+    report = {"provenance": report_provenance(cfg.GOLD_PATH),
+              "summary": tally(row["outcome"] for row in results),
               "metrics": aggregate_metrics(results, questions), "results": results}
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg.BENCH_PATH, "w", encoding="utf-8") as handle:

@@ -1,8 +1,11 @@
 # Answer safety and release evaluation
 
 The runtime returns validated source excerpts, not free-form behavioral verdicts.
-The answer model emits JSON with `status` (`evidence_found` or `insufficient_evidence`)
-and `claims` containing only `citation` and `quote`. Every citation must identify a
+The native answer model selects up to three visible source labels through a bounded
+JSON schema. The application copies their exact original text into canonical JSON
+with `status` (`evidence_found` or `insufficient_evidence`) and `claims` containing
+only `citation` and `quote`. Injected test/alternate adapters emit that canonical
+form directly. Every citation must identify a
 complete passage actually present in the prompt with a known page or source line.
 Quotes must match that passage verbatim, allowing only whitespace normalization.
 Unknown locations, truncated passages, altered operators/numbers, unsupported verdicts,
@@ -10,8 +13,8 @@ and malformed responses fail closed. The public answer contains only validated q
 and fixed policy language. Source quote validation establishes provenance, not relevance,
 complete coverage, or semantic entailment; these still require evaluation and review.
 
-Request intent is retained in `query_type` even if a lane is weak or another is strong; the evidence-based
-route is recorded separately as `observed_query_type`. Both credible lanes and citations
+Request intent is retained in `query_type` regardless of what the other lane retrieves.
+Both citable domains and citations
 from both domains are required to return comparison excerpts. Such answers are labeled
 `UNVERIFIED COMPARISON`. A name match or retrieval miss never proves implementation,
 correctness, or absence. The old retrieval-text absence inference has been removed.
@@ -66,3 +69,16 @@ intent, rejected responses, or failed quality thresholds block release. An all-a
 system cannot pass required-fact coverage. Empty scored categories never receive a
 perfect score. The existing keyword benchmark is diagnostic only; its `correct` label
 is not a production signoff.
+
+## Exact generation and live checks
+
+Build with `python src/build.py` before evaluation. New processes resolve
+`output/current` to one immutable generation. Reports live inside that resolved
+directory: use its actual `release_bench.json` path when rescoring. The legacy
+`output/release_bench.json` command above applies only to legacy or scratch output.
+Keep the dataset hash, answer hashes and generation manifest together during review.
+Restart the service deliberately after promoting a new generation.
+
+`CHIPVER_LIVE_TESTS=1 pytest -q tests/test_live_pipeline.py` runs real cached models
+and local Ollama without the unit tagger/tokenizer substitutes. It checks startup
+and source validation; it does not approve answer relevance or held-out labels.

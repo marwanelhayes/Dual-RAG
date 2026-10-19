@@ -1,4 +1,7 @@
-"""Central configuration for every ChipVer pipeline stage."""
+"""Central configuration for every ChipVer pipeline stage.
+
+Flow: Read environment overrides -> resolve one corpus generation -> define pinned models and pipeline limits.
+"""
 
 import os
 from pathlib import Path
@@ -8,17 +11,22 @@ from naming import set_abbreviation_aliases
 # Anchor paths to the project root so launch location cannot change behavior.
 ROOT = Path(__file__).resolve().parent.parent
 INGEST_DIR = ROOT / "Ingest"  # Read-only source documents.
-OUTPUT_DIR = ROOT / "output"  # Generated pipeline artifacts.
+# Isolate complete benchmark rebuilds without replacing the active corpus or index.
+OUTPUT_ROOT = (ROOT / os.environ.get("CHIPVER_OUTPUT_DIR", "output")).resolve()
+OUTPUT_DIR = ((OUTPUT_ROOT / "current").resolve() if (OUTPUT_ROOT / "current").is_symlink()
+              else OUTPUT_ROOT)
 CHUNKS_PATH = OUTPUT_DIR / "chunks.jsonl"
 SPEC_HIERARCHY_PATH = OUTPUT_DIR / "spec_hierarchy.json"
 SPEC_SIGNALS_PATH = OUTPUT_DIR / "spec_signals.json"
 
-# Keep index data and its content-hash manifest separate for resumable embedding.
+# Bind the persistent index to its corpus and encoder compatibility manifest.
 INDEX_DIR = OUTPUT_DIR / "spec_index"
 MANIFEST_PATH = OUTPUT_DIR / "embed_manifest.json"
 
 # Embedding settings fit the BGE encoder within the 4 GB GPU budget; sweeps override them.
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+EMBED_REVISION = os.environ.get("EMBED_REVISION", "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+                                if EMBED_MODEL == "BAAI/bge-small-en-v1.5" else "")
 EMBED_DEVICE = "cuda"
 EMBED_BATCH = int(os.environ.get("EMBED_BATCH", 64))
 # A multimodal encoder (EmbeddingGemma 2) loads only its text tower to fit the GPU.
@@ -97,6 +105,7 @@ RERANK_AUTHORITY_WEIGHT = 1.0
 
 # Rerank only the shortlist; bge-reranker-v2-m3 reads whole chunks (8K window) where MiniLM cut at 512.
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+RERANK_REVISION = "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
 RERANK_DEVICE = "cuda"
 RERANK_BATCH = 32
 
@@ -110,6 +119,7 @@ RTL_CHUNKS_PATH = OUTPUT_DIR / "rtl_chunks.jsonl"
 RTL_CHUNK_CHARS = int(os.environ.get("RTL_CHUNK_CHARS", 1200))
 # The top module is the one no other source instantiates; set this only when several are.
 RTL_TOP_MODULE = os.environ.get("RTL_TOP_MODULE") or None
+RTL_PROJECT_PATH = ROOT / os.environ["RTL_PROJECT"] if os.environ.get("RTL_PROJECT") else None
 # Packages and the top's file are passed explicitly; -y resolves every other module.
 VERILATOR_ARGS = ["-Wno-fatal", "-y", str(RTL_DIR)]
 
@@ -150,12 +160,17 @@ RETRIEVAL_PATH = OUTPUT_DIR / "retrieval_bench.json"
 
 # A local GLiNER2 tagger decides which spec signals the question and evidence name.
 SIGNAL_TAGGER_MODEL = "fastino/gliner2-base-v1"
+SIGNAL_TAGGER_REVISION = "f9634218e53580c56edf0de97ca1a7d3f1c2354e"
 SIGNAL_TAGGER_DEVICE = "cuda"
 SIGNAL_TAGGER_BATCH = 4
 SIGNAL_TAGGER_THRESHOLD = 0.5
 
 # A single small local model reasons only over the final bounded evidence package.
 LOCAL_LLM_MODEL = "qwen3:4b"
+LOCAL_LLM_DIGEST = "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+ANSWER_TOKENIZER = "Qwen/Qwen3-4B"
+ANSWER_TOKENIZER_REVISION = "1cfa9a7208912126459214e8b04321603b3df60c"
+ANSWER_MAX_NEW_TOKENS = 1024
 LOCAL_LLM_HOST = "http://localhost:11434"
 
 # Whole passages from both lanes fit one 8,192-token window.
@@ -167,3 +182,9 @@ AGENT_SPEC_SEARCH_K = 8
 
 # A fixed sentinel lets the graph route insufficient evidence deterministically.
 AGENT_INSUFFICIENT = "INSUFFICIENT"
+
+
+def require_writable_output():
+    """Keep published corpus generations immutable outside the staging build process."""
+    if (OUTPUT_DIR / "generation.json").exists() and not os.environ.get("CHIPVER_BUILDING_GENERATION"):
+        raise RuntimeError("published generation is read-only; rebuild or select a scratch CHIPVER_OUTPUT_DIR")

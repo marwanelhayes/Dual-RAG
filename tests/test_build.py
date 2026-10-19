@@ -59,7 +59,7 @@ def test_pipeline_invokes_isolated_stages_in_order(monkeypatch):
     monkeypatch.setattr(build, "remove_obsolete_artifacts", lambda: [])
     monkeypatch.setattr(
         build.subprocess, "run",
-        lambda command, cwd, check: calls.append((command[2], cwd, check)))
+        lambda command, cwd, check, env=None: calls.append((command[2], cwd, check)))
 
     build.run_pipeline(include_embeddings=False)
 

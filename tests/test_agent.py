@@ -9,6 +9,54 @@ import agent
 import configure as cfg
 
 
+def test_repeated_stale_bridge_loads_always_fail(monkeypatch):
+    import bridge
+    import pytest
+
+    monkeypatch.setattr(bridge, "load_bridge", lambda path: {"source_fingerprints": {"id": "old"}})
+    monkeypatch.setattr(bridge, "source_fingerprints", lambda: {"id": "new"})
+    runtime = agent.Runtime()
+    for _ in range(2):
+        with pytest.raises(agent.ArtifactFreshnessError, match="stale"):
+            runtime.get_bridge()
+
+
+def test_simultaneous_cold_searches_initialize_one_retriever(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    import retrieve
+    import embed
+
+    loads = []
+
+    def load(**kwargs):
+        loads.append(1)
+        time.sleep(0.02)
+        return lambda question, k: []
+
+    monkeypatch.setattr(embed, "index_manifest_status", lambda *args: {"fresh": True})
+    monkeypatch.setattr(retrieve.Retriever, "load", load)
+    runtime = agent.Runtime(spec_records=[])
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda question: runtime.spec_search(question, 1), ["one", "two"]))
+    assert len(loads) == 1
+
+
+def test_context_budget_removes_whole_passages_and_their_citation_permission(monkeypatch):
+    monkeypatch.setattr(agent, "answer_tokens", lambda text: len(text))
+    monkeypatch.setattr(cfg, "AGENT_NUM_CTX", 1500)
+    monkeypatch.setattr(cfg, "ANSWER_MAX_NEW_TOKENS", 100)
+    documents = [_doc(f"s{index}", "body " * 100, start_page=index + 1) for index in range(4)]
+    app = agent.build_graph(lambda q, k: documents, lambda q, k: [],
+                            lambda prompt: {"status": "insufficient_evidence", "claims": []},
+                            [], [], {})
+    state = agent.run(app, "What does the specification state?")
+    assert len(state["final_context"]) <= 1400
+    assert 0 < len(state["spec_evidence"]) < 4
+    assert all(item["text"] == "body " * 100 for item in state["spec_evidence"])
+    assert len(state["citable_evidence"]) == len(state["spec_evidence"])
+
+
 def _doc(chunk_id, text, **metadata):
     return Document(page_content=text, metadata={"chunk_id": chunk_id, **metadata})
 

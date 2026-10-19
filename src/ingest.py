@@ -2,6 +2,8 @@
 
 Run ``python src/ingest.py`` to read ``Ingest/*.pdf`` and write
 ``output/spec_hierarchy.json`` plus ``output/chunks.jsonl``.
+
+Flow: Read PDFs -> recover sections and tables -> chunk within boundaries -> validate token limits -> write records.
 """
 
 import collections
@@ -339,14 +341,19 @@ def build_sections(doc, doc_id, doc_name):
     points = ([(level, title, page, _outline_y(doc, page, dest))
                for level, title, page, dest in doc.get_toc(simple=False)]
               or [(level, title, page, 0.0) for level, title, page in detect_headings(doc)])
+    return section_nodes(points, doc_id, doc_name, doc.page_count)
+
+
+def section_nodes(points, doc_id, doc_name, page_count):
+    """Link ordered heading positions into the shared specification hierarchy."""
     toc = [(level, title, page) for level, title, page, _ in points]
     nodes = []
     for i, (level, title, page, y) in enumerate(points):
         number, name = parse_section_number(title)
         # Own prose ends at the next heading's point; the subtree ends at a peer or ancestor.
         own_end, own_end_y = (points[i + 1][2], points[i + 1][3]) if i + 1 < len(points) \
-            else (doc.page_count, None)
-        end_page = _subtree_end_page(toc, i, level, doc.page_count)
+            else (page_count, None)
+        end_page = _subtree_end_page(toc, i, level, page_count)
         nodes.append({
             "node_id": f"{doc_id}::sec::{i:04d}",
             "document_id": doc_id,
@@ -989,7 +996,7 @@ def _tokenizer():
     """
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.EMBED_MODEL)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.EMBED_MODEL, revision=cfg.EMBED_REVISION or None)
     tokenizer.model_max_length = 10 ** 6  # measure past 512 instead of warning
     return tokenizer
 
@@ -1117,11 +1124,23 @@ def ingest_pdf(path):
         for page, bbox in table["regions"]:
             regions[page].append(bbox)
 
+    texts = {sec["node_id"]: section_page_texts(doc, sec, furniture, bands, regions)
+             for sec in nodes if sec["section_name"].strip().lower() not in cfg.SKIP_TITLES}
+    records = section_records(path, revision, nodes, tables, texts)
+    doc.close()
+    return nodes, tables, records
+
+
+def section_records(path, revision, nodes, tables, texts):
+    """Chunk parsed sections and tables using the common provenance and token limits."""
+    doc_name = path.name
+    doc_id = slugify(doc_name)
+
     records = []
     for sec in nodes:
         if sec["section_name"].strip().lower() in cfg.SKIP_TITLES:
             continue
-        page_texts = section_page_texts(doc, sec, furniture, bands, regions)
+        page_texts = texts.get(sec["node_id"], [])
         if not page_texts:
             continue
         # Breadcrumbs disambiguate otherwise context-free paragraphs for embedding.
@@ -1202,8 +1221,7 @@ def ingest_pdf(path):
     for record in records:
         record["document_role_scores"] = document_scores
 
-    doc.close()
-    return nodes, tables, records
+    return records
 
 
 def hierarchy_document(path, revision, page_count, sections, furniture=None):
@@ -1245,9 +1263,13 @@ def main():
     Returns:
         None.
     """
+    cfg.require_writable_output()
     paths = sorted(cfg.INGEST_DIR.glob("*.pdf"))
     if not paths:
         raise SystemExit(f"no PDFs found in {cfg.INGEST_DIR}")
+    names = [slugify(path.name) for path in paths]
+    if len(names) != len(set(names)):
+        raise ValueError("PDF filenames collide after normalization; rename the conflicting sources")
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     all_records = []

@@ -1,0 +1,146 @@
+[
+ {
+  "id": "SPEC_AWVALID",
+  "question": "What does AWVALID indicate on the AXI write address channel?",
+  "expected_query_type": "SPEC",
+  "relevant_spec_ids": ["axi_spec#0042#000"],
+  "relevant_rtl_ids": [],
+  "expected_alignments": {},
+  "citation": {"required": [["axi_spec#0042#000", "axi_spec#table#A2.2#0000", "p.30"]]},
+  "requires": [["AWVALID"], ["valid"]],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "AWVALID is asserted high when the write-address-channel signals are valid."
+ },
+ {
+  "id": "RTL_SIGNAL_WRITE",
+  "question": "Where is FPUValidD written in the RTL?",
+  "expected_query_type": "RTL",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": ["rtl:fpu_decoder"],
+  "expected_alignments": {},
+  "citation": {"required": [["fpu_decoder.sv:"]]},
+  "requires": [["FPUValidD"], ["fpu_decoder"]],
+  "forbids": [],
+  "abstention_is_correct": false,
+  "truth": "The compiler metadata resolves FPUValidD to its owning fpu_decoder module and writer sites."
+ },
+ {
+  "id": "RTL_HAZARD_UNIT",
+  "question": "In the RTL, which module instantiates hazard_unit and what pipeline signals does it use?",
+  "expected_query_type": "RTL",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": ["rtl:hazard_unit", "rtl:riscv_processor"],
+  "expected_alignments": {},
+  "citation": {"required": [["hazard_unit.sv:"], ["riscv_processor.sv:"]]},
+  "requires": [["hazard_unit"], ["riscv_processor", "pipeline"]],
+  "forbids": ["vector extension"],
+  "abstention_is_correct": false,
+  "truth": "hazard_unit is instantiated by riscv_processor and carries pipeline stall and forwarding signals."
+ },
+ {
+  "id": "COMPARE_AWVALID",
+  "question": "Does the RTL implement the specification's AWVALID handshake rule?",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": ["axi_spec#0042#000"],
+  "relevant_rtl_ids": ["rtl:fetch_stage"],
+  "expected_alignments": {
+   "spec::signal::axi_spec::A2.2::awvalid": ["rtl::port::fetch_stage::MAWValid"]
+  },
+  "citation": {
+   "required": [
+    ["axi_spec#0042#000", "axi_spec#table#A2.2#0000", "p.30"],
+    ["fetch_stage.sv:", "memory_stage.sv:", "riscv_processor.sv:"]
+   ]
+  },
+  "requires": [["AWVALID", "MAWValid"], ["implemented", "partial", "missing", "contradict", "insufficient"]],
+  "forbids": ["the alignment proves correctness"],
+  "abstention_is_correct": true,
+  "truth": "The bridge provides several namespace-prefixed RTL candidates; only surrounding AST blocks can support a behavioral conclusion."
+ },
+ {
+  "id": "COMPARE_FMA_GAP",
+  "question": "What is missing from the floating-point RTL implementation compared with the RISC-V specification?",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": ["riscv_unprivileged#0121#003"],
+  "relevant_rtl_ids": ["rtl:fpu_decoder"],
+  "expected_alignments": {},
+  "citation": {
+   "required": [
+    ["riscv_unprivileged#0121#003", "riscv_unprivileged#0121#002"],
+    ["fpu_decoder.sv:"]
+   ]
+  },
+  "requires": [["FMADD"], ["FMSUB"], ["FNMADD"], ["FNMSUB"]],
+  "forbids": ["fully implements every floating-point operation"],
+  "abstention_is_correct": false,
+  "truth": "The specification defines four fused multiply-add variants that are not spelled in the decoder RTL."
+ },
+ {
+  "id": "COMPARE_CSR_GAP",
+  "question": "Where does the CSR RTL module differ from the privileged specification?",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": ["riscv_privileged#table#7#0000"],
+  "relevant_rtl_ids": ["rtl:csr_file"],
+  "expected_alignments": {},
+  "citation": {
+   "required": [["riscv_privileged#table#7#0000"], ["csr_file.sv:"]]
+  },
+  "requires": [["mimpid"], ["csr_file"]],
+  "forbids": [],
+  "abstention_is_correct": true,
+  "truth": "The privileged CSR table lists mimpid, while the RTL artifact does not contain that identifier."
+ },
+ {
+  "id": "COMPARE_TIMING_LIMIT",
+  "question": "Is the AXI interface implemented correctly in terms of timing compared with the specification?",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": ["axi_spec#0042#000"],
+  "relevant_rtl_ids": ["rtl:riscv_top", "rtl:cache"],
+  "expected_alignments": {},
+  "citation": {"required": []},
+  "requires": [],
+  "forbids": ["timing is correct", "no timing violations", "there is no AXI interface"],
+  "abstention_is_correct": true,
+  "truth": "Static specification and RTL evidence cannot establish timing behavior; simulation or formal analysis is required."
+ },
+ {
+  "id": "RTL_HAZARD_EXISTS",
+  "question": "is the hazard unit implemented or not",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": [],
+  "relevant_rtl_ids": ["rtl:hazard_unit", "rtl:riscv_processor"],
+  "expected_alignments": {},
+  "citation": {"required": [["hazard_unit.sv:"], ["riscv_processor.sv:"]]},
+  "requires": [["hazard_unit", "hazard unit"], ["implemented", "instantiat", "present"]],
+  "forbids": ["not implemented", "no hazard unit", "does not exist"],
+  "abstention_is_correct": false,
+  "truth": "hazard_unit.sv exists and riscv_processor.sv:475 instantiates it, so plain-English phrasing without the underscore must still reach the module."
+ },
+ {
+  "id": "RTL_FPU_GAP_PLAIN",
+  "question": "what is missing in the floating point unit",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": ["riscv_unprivileged#0121#003"],
+  "relevant_rtl_ids": ["rtl:risc_fpu", "rtl:fpu_decoder"],
+  "expected_alignments": {},
+  "citation": {"required": [["risc_fpu.sv:", "fpu_decoder.sv:", "flp_"]]},
+  "requires": [["FMADD", "FMSUB", "FNMADD", "FNMSUB", "fused multiply-add", "FMA"]],
+  "forbids": ["there is no floating point unit", "no floating-point support"],
+  "abstention_is_correct": false,
+  "truth": "No fused multiply-add appears anywhere in rtl/*.sv; risc_fpu is instantiated at execute_stage.sv:142 with PRECISION(SINGLE) although the datapath is parameterized for DOUBLE."
+ },
+ {
+  "id": "RTL_AXI_GENERATION",
+  "question": "what type of axi is implemented",
+  "expected_query_type": "COMPARISON",
+  "relevant_spec_ids": ["axi_waveform#0010#000"],
+  "relevant_rtl_ids": ["rtl:riscv_top", "rtl:fetch_stage", "rtl:cache"],
+  "expected_alignments": {},
+  "citation": {"required": [["riscv_top.sv:", "fetch_stage.sv:", "cache.sv:", "riscv_processor.sv:"]]},
+  "requires": [["AXI4"]],
+  "forbids": ["AXI4-Lite", "AXI5"],
+  "abstention_is_correct": false,
+  "truth": "RTL comments and ports show a reduced AXI4 subset: burst signals MAWLen, MAWSize and MAWBurst are present, but no ID, QOS, REGION, CACHE, PROT or LOCK signals exist."
+ }
+]

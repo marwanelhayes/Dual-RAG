@@ -28,7 +28,7 @@ def test_routing_challenge_is_balanced_unique_and_new():
     assert all(case["question"].strip().casefold() not in normalized for case in challenge)
 
 
-def test_routing_challenge_matches_declared_intent():
+def test_routing_challenge_matches_declared_intent(routing_vocabulary):
     """Require every adversarial paraphrase to follow its declared evidence route."""
     mismatches = {}
     for case in _questions(CHALLENGE_PATH):

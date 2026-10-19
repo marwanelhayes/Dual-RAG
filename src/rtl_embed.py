@@ -3,6 +3,8 @@
 Only modules and useful compiler-bounded structural blocks become records.  Signal
 declarations remain exact-addressable metadata on their owning module instead of becoming
 thousands of tiny semantic documents.
+
+Flow: Read compiler records -> build lexical search windows -> attach original-source passages -> write RTL records.
 """
 
 import json
@@ -62,6 +64,7 @@ def _record(chunk_id, record_id, context_header, text, source_type, module, entr
         "file": entry["file"],
         "line": metadata.pop("line"),
         "lookup_terms": lookup_terms,
+        "_source_code": entry.get("source_code", ""),
     }
     record.update(metadata)
     return record
@@ -262,12 +265,30 @@ def _windowed(record, lines):
         The record followed by its continuation windows.
     """
     texts = _windows(lines, cfg.RTL_CHUNK_CHARS)
+    excerpts = source_windows(record.pop("_source_code", ""), record["start_line"])
     record["text"] = texts[0]
     provenance = ("record_id", "source_type", "context_header", "module", "file", "line",
                   "start_line", "end_line")
-    return [record, *({"chunk_id": f"{record['chunk_id']}:w{index}", "text": text,
+    windows = [record, *({"chunk_id": f"{record['chunk_id']}:w{index}", "text": text,
                        "lookup_terms": [], **{key: record[key] for key in provenance}}
                       for index, text in enumerate(texts[1:], start=1))]
+    for index, window in enumerate(windows):
+        window["source_excerpt"] = excerpts[min(index, len(excerpts) - 1)] if excerpts else None
+    return windows
+
+
+def source_windows(source, first_line):
+    """Return bounded original-source passages without cutting physical source lines."""
+    windows, lines, start = [], [], first_line
+    for number, line in enumerate(source.splitlines(keepends=True), first_line):
+        if lines and sum(map(len, lines)) + len(line) > cfg.RTL_CHUNK_CHARS:
+            windows.append({"text": "".join(lines), "start_line": start, "end_line": number - 1})
+            lines, start = [], number
+        lines.append(line)
+    if lines:
+        windows.append({"text": "".join(lines), "start_line": start,
+                        "end_line": start + len(lines) - 1})
+    return windows
 
 
 def _structural_records(rtl):
@@ -339,6 +360,7 @@ def main():
     Returns:
         None.
     """
+    cfg.require_writable_output()
     if not cfg.RTL_PATH.exists():
         raise SystemExit(f"no {cfg.RTL_PATH.name}; run src/rtl_ingest.py first")
     with open(cfg.RTL_PATH, encoding="utf-8") as source:

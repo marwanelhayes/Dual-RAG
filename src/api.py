@@ -1,9 +1,12 @@
 """Expose ChipVer's existing graph through a minimal validated HTTP boundary.
 
 Run with ``uvicorn api:app --app-dir src --host 0.0.0.0 --port 8000``.
+
+Flow: Preflight one runtime -> validate input -> admit one inference -> return validated excerpts and citations.
 """
 
 from contextlib import asynccontextmanager
+import threading
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -38,14 +41,22 @@ class AskResponse(BaseModel):
     citations: list[str]
 
 
-def create_app(graph_factory=agent.build_graph):
+def create_app(graph_factory=None):
     """Create an application whose graph is built once for all requests."""
 
     @asynccontextmanager
     async def lifespan(application):
         """Initialize the compiled graph before accepting traffic."""
-        application.state.graph = graph_factory()
+        if graph_factory is None:
+            runtime = agent.Runtime()
+            runtime.preflight()
+            application.state.graph = agent.build_graph(runtime=runtime)
+        else:
+            application.state.graph = graph_factory()
+        application.state.inference = threading.BoundedSemaphore(1)
+        application.state.ready = True
         yield
+        application.state.ready = False
 
     application = FastAPI(title="ChipVer", version="1.0", lifespan=lifespan)
 
@@ -57,17 +68,22 @@ def create_app(graph_factory=agent.build_graph):
     @application.get("/readyz")
     def readyz(request: Request):
         """Report whether application startup created the shared graph."""
-        if not hasattr(request.app.state, "graph"):
+        if not getattr(request.app.state, "ready", False):
             raise HTTPException(status_code=503, detail="graph is not ready")
         return {"status": "ready"}
 
     @application.post("/v1/ask", response_model=AskResponse)
     def ask_question(payload: AskRequest, request: Request):
         """Run one validated question through the existing ChipVer graph."""
+        gate = request.app.state.inference
+        if not gate.acquire(blocking=False):
+            raise HTTPException(status_code=503, detail="inference is busy; retry later")
         try:
             state = agent.run(request.app.state.graph, payload.question)
         except agent.ArtifactFreshnessError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        finally:
+            gate.release()
         claims = state.get("answer_validation", {}).get("claims", [])
         citations = list(dict.fromkeys(
             claim.get("citation") for claim in claims if claim.get("citation")))

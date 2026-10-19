@@ -3,6 +3,8 @@
 Run after ``python src/build.py`` and ``python src/bench.py --retrieval``:
 ``python src/track.py --tag v0-baseline``. View with
 ``mlflow ui --backend-store-uri sqlite:///mlflow.db``.
+
+Flow: Read current artifacts -> compute stage metrics -> attach configuration and Git identity -> log an MLflow run.
 """
 
 import argparse
@@ -327,7 +329,7 @@ def _token_counter():
     """
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.EMBED_MODEL)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.EMBED_MODEL, revision=cfg.EMBED_REVISION or None)
     tokenizer.model_max_length = 10 ** 6  # measure past 512 instead of warning
     return lambda text: len(tokenizer(text)["input_ids"])
 

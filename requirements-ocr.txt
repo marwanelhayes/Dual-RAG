@@ -1,0 +1,6 @@
+# Optional local OCR experiment; the production pipeline uses requirements.txt.
+-r requirements.txt
+transformers>=5.19      # verified native QianfanOCRForConditionalGeneration support
+accelerate>=1.0         # local model device placement
+markdown-it-py>=3.0     # Markdown headings, tables, fences and inline images
+bitsandbytes>=0.49      # optional --four-bit loading on CUDA

@@ -41,7 +41,7 @@ def test_rtl_and_comparison_mix_exact_and_plain_signal_naming(questions):
         assert naming.count("plain") == 10
 
 
-def test_declared_routes_match_the_deterministic_classifier(questions):
+def test_declared_routes_match_the_deterministic_classifier(questions, routing_vocabulary):
     mismatches = {
         case["id"]: agent.classify_query(case["question"])
         for case in questions

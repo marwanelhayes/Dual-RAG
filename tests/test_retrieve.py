@@ -133,7 +133,7 @@ def test_the_reranker_runs_in_half_precision_on_the_gpu(monkeypatch):
     import sentence_transformers
 
     class FakeCrossEncoder:
-        def __init__(self, model, device):
+        def __init__(self, model, device, **kwargs):
             self.halved = False
 
         def half(self):

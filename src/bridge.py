@@ -3,6 +3,8 @@
 The bridge links identities; it never decides whether RTL implements a requirement.  A link
 exists only when the RTL states the spec name: the same flat name, or the name behind an
 interface prefix the module's own ports share.
+
+Flow: Read signals and hierarchy -> match identities and confirmed addresses -> retain unresolved rows -> write links.
 """
 
 from difflib import SequenceMatcher
@@ -843,6 +845,7 @@ def main():
     Returns:
         None.
     """
+    cfg.require_writable_output()
     spec_data = _load_json(cfg.SPEC_SIGNALS_PATH)
     rtl_data = _load_json(cfg.RTL_PATH)
     hierarchy_data = _load_json(cfg.SPEC_HIERARCHY_PATH)

@@ -1,4 +1,7 @@
-"""Held-out answer evaluation with non-vacuous gates and hash-bound human reviews."""
+"""Held-out answer evaluation with non-vacuous gates and hash-bound human reviews.
+
+Flow: Validate held-out separation -> run real answers -> bind human reviews to hashes -> enforce release gates.
+"""
 
 import argparse
 import hashlib

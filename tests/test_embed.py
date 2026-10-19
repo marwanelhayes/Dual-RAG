@@ -45,6 +45,7 @@ def test_main_embeds_on_every_run_and_writes_only_configured_paths(monkeypatch, 
     builds, saved = [], []
 
     class FakeStore:
+        dimensions = 2
         def save(self, index_dir):
             saved.append(index_dir)
             index_dir.mkdir(exist_ok=True)
@@ -65,7 +66,7 @@ def test_main_embeds_on_every_run_and_writes_only_configured_paths(monkeypatch, 
 
     assert len(builds) == 2
     assert saved == [tmp_path / "index"] * 2
-    assert embed.read_manifest(tmp_path / "manifest.json") == embed.build_manifest(builds[0])
+    assert embed.read_manifest(tmp_path / "manifest.json")["chunks"] == embed.build_manifest(builds[0])
 
 
 def test_embedder_always_normalizes_passages_and_queries(monkeypatch):
@@ -78,7 +79,7 @@ def test_embedder_always_normalizes_passages_and_queries(monkeypatch):
     calls = []
 
     class FakeModel:
-        def __init__(self, name, device):
+        def __init__(self, name, device, **kwargs):
             pass
 
         def encode(self, texts, **kwargs):
@@ -105,7 +106,7 @@ def test_embedder_prefixes_passages_and_queries_with_their_configured_prompts(mo
     seen = []
 
     class FakeModel:
-        def __init__(self, name, device):
+        def __init__(self, name, device, **kwargs):
             pass
 
         def encode(self, texts, **kwargs):
@@ -142,7 +143,9 @@ def test_text_only_embedder_drops_vision_and_audio_encoders(monkeypatch):
     monkeypatch.setattr(embed.cfg, "EMBED_TEXT_ONLY", True)
     embed.Embedder(device="cpu")
 
-    assert loaded == [{}, {"config_kwargs": {"vision_config": None, "audio_config": None}}]
+    assert loaded == [{"revision": embed.cfg.EMBED_REVISION},
+                      {"revision": embed.cfg.EMBED_REVISION,
+                       "config_kwargs": {"vision_config": None, "audio_config": None}}]
 
 
 class TopicEmbedder:
@@ -183,12 +186,26 @@ def test_manifest_detects_missing_fresh_and_changed_surfaces(tmp_path):
 
     assert embed.index_manifest_status(
         records, index_dir, manifest_path)["reason"] == "manifest missing"
-    embed.write_manifest(embed.build_manifest(records), manifest_path)
+    embed.VectorStore.build(records, embedder=CountingEmbedder()).save(index_dir)
+    embed.write_manifest(embed.build_manifest(records), manifest_path, dimensions=2)
     assert embed.index_manifest_status(records, index_dir, manifest_path)["fresh"] is True
     changed = [{**records[0], "text": records[0]["text"] + " changed"}, *records[1:]]
     status = embed.index_manifest_status(changed, index_dir, manifest_path)
     assert status["fresh"] is False
     assert status["changed_ids"] == ["a"]
+
+
+def test_empty_or_incompatible_index_never_reports_fresh(tmp_path, monkeypatch):
+    records = [_record("a")]
+    index = tmp_path / "index"
+    index.mkdir()
+    manifest = tmp_path / "manifest.json"
+    embed.write_manifest(embed.build_manifest(records), manifest, dimensions=2)
+    assert not embed.index_manifest_status(records, index, manifest)["fresh"]
+    embed.VectorStore.build(records, embedder=CountingEmbedder()).save(index)
+    assert embed.index_manifest_status(records, index, manifest)["fresh"]
+    monkeypatch.setattr(embed.cfg, "EMBED_QUERY_PREFIX", "changed: ")
+    assert not embed.index_manifest_status(records, index, manifest)["fresh"]
 
 
 def test_model_device_preserves_cpu_and_falls_back_without_cuda():

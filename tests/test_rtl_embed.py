@@ -276,7 +276,7 @@ def test_records_carry_only_fields_a_reader_uses(tmp_path):
     source.write_text("module fpu_decoder; endmodule\n")
     records = re_.retrieval_records(_rtl(source))
     shared = {"chunk_id", "record_id", "source_type", "context_header", "text", "module",
-              "file", "line", "start_line", "end_line", "lookup_terms"}
+              "file", "line", "start_line", "end_line", "lookup_terms", "source_excerpt"}
 
     module = next(record for record in records if record["source_type"] == "module")
     block = next(record for record in records if record["source_type"] == "construct")

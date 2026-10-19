@@ -1,4 +1,7 @@
-"""Extract deterministic specification signals from structured table chunks."""
+"""Extract deterministic specification signals from structured table chunks.
+
+Flow: Read structured table chunks -> admit signal/register rows -> retain original cells and provenance -> write inventory.
+"""
 
 from collections import Counter
 import json
@@ -212,6 +215,7 @@ def main():
     Returns:
         None.
     """
+    cfg.require_writable_output()
     records = load_chunks()
     signals = build_spec_signals(records)
     save_spec_signals(signals)

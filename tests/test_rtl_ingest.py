@@ -429,3 +429,26 @@ def test_file_table_maps_verilog_and_header_sources(tmp_path):
 
     assert {key: path.name for key, path in ri.file_table(root, tmp_path).items()} == {
         "a": "core.v", "b": "top.sv", "c": "defs.svh", "d": "regs.vh"}
+
+
+def test_nested_duplicate_basenames_preserve_compiler_paths(tmp_path):
+    for directory in ("a", "b"):
+        (tmp_path / directory).mkdir()
+        (tmp_path / directory / "common.sv").write_text("module demo; endmodule")
+    root = ET.fromstring(f'<root><file id="a" filename="{tmp_path}/a/common.sv"/>'
+                         '<file id="b" filename="b/common.sv"/></root>')
+    table = ri.file_table(root, tmp_path)
+    assert table == {"a": tmp_path / "a/common.sv", "b": tmp_path / "b/common.sv"}
+
+
+def test_project_manifest_supplies_ordered_sources_and_compiler_options(tmp_path):
+    (tmp_path / "include").mkdir()
+    (tmp_path / "chip.sv").write_text("module chip; endmodule")
+    path = tmp_path / "project.json"
+    path.write_text(json.dumps({"top": "chip", "sources": ["chip.sv"],
+                                "include_dirs": ["include"], "defines": {"FEATURE": 1},
+                                "parameters": {"WIDTH": 32}}))
+    project = ri.load_project(path, tmp_path)
+    assert project["sources"] == [tmp_path / "chip.sv"]
+    assert project["top"] == "chip"
+    assert "-DFEATURE=1" in project["args"] and "-GWIDTH=32" in project["args"]

@@ -2,6 +2,8 @@
 
 SystemVerilog is not parsed a second time.  Declarations, source extents, hierarchy,
 bindings, sensitivity, and reader/writer sites all come from Verilator XML.
+
+Flow: Resolve HDL project -> run Verilator -> project compiler structure and source spans -> write diagnostics and RTL.
 """
 
 import re
@@ -68,8 +70,12 @@ def file_table(root, rtl_dir):
         name = element.get("filename", "")
         if not name.endswith(HDL_SUFFIXES):
             continue
-        path = Path(rtl_dir) / Path(name).name
-        if path.exists():
+        root_dir = Path(rtl_dir).resolve()
+        path = Path(name)
+        if not path.is_absolute():
+            path = root_dir / path
+        path = path.resolve()
+        if path.is_file() and path.is_relative_to(root_dir):
             table[element.get("id")] = path
     return table
 
@@ -1060,6 +1066,44 @@ _MODULE_DECLARATION = re.compile(
     r"^\s*module\s+(?:automatic\s+|static\s+)?([A-Za-z_]\w*)", re.M)
 
 
+def load_project(path, rtl_dir):
+    """Validate an ordered local HDL file list and explicit compiler configuration."""
+    import json
+
+    root = Path(rtl_dir).resolve()
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not re.fullmatch(r"[A-Za-z_$][\w$]*", data.get("top", "")):
+        raise ValueError("RTL project requires a valid top module")
+    sources, args = [], []
+    for field in ("sources", "include_dirs"):
+        values = data.get(field, [])
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+            raise ValueError(f"RTL project {field} must be a path list")
+        for value in values:
+            resolved = (root / value).resolve()
+            if not resolved.is_relative_to(root) or not resolved.exists():
+                raise ValueError(f"RTL project path is missing or outside RTL_DIR: {value}")
+            if field == "sources":
+                if not resolved.is_file() or resolved.suffix not in (".sv", ".v"):
+                    raise ValueError(f"invalid RTL source: {value}")
+                sources.append(resolved)
+            else:
+                if not resolved.is_dir():
+                    raise ValueError(f"invalid include directory: {value}")
+                args.append(f"-I{resolved}")
+    if not sources:
+        raise ValueError("RTL project requires source files")
+    for field, prefix in (("defines", "-D"), ("parameters", "-G")):
+        values = data.get(field, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"RTL project {field} must be a name/value mapping")
+        for name, value in values.items():
+            if not re.fullmatch(r"[A-Za-z_$][\w$]*", name) or not isinstance(value, (str, int)):
+                raise ValueError(f"invalid RTL project {field} entry: {name}")
+            args.append(f"{prefix}{name}={value}")
+    return {"top": data["top"], "sources": sources, "args": args}
+
+
 def design_sources(rtl_dir, top=None):
     """Find a design's package files and its top module from the sources alone.
 
@@ -1074,8 +1118,11 @@ def design_sources(rtl_dir, top=None):
     Raises:
         SystemExit: When zero or several modules are never instantiated and no top is set.
     """
+    if cfg.RTL_PROJECT_PATH:
+        project = load_project(cfg.RTL_PROJECT_PATH, rtl_dir)
+        return project["sources"], project["top"]
     code = {path: _SV_COMMENT.sub("", path.read_text(encoding="utf-8", errors="replace"))
-            for path in sorted(Path(rtl_dir).iterdir()) if path.suffix in (".sv", ".v")}
+            for path in sorted(Path(rtl_dir).rglob("*")) if path.suffix in (".sv", ".v")}
     # ponytail: name order, a package importing another sorts after it only by luck.
     packages = [path for path, text in code.items() if _PACKAGE_DECLARATION.search(text)]
     declared = {name: path for path, text in code.items()
@@ -1111,11 +1158,17 @@ def run_verilator(extra, sources, top, mdir=None):
 
     args = ["verilator", *extra, *cfg.VERILATOR_ARGS, "--top-module", top,
             *map(str, sources)]
+    if cfg.RTL_PROJECT_PATH:
+        args.extend(load_project(cfg.RTL_PROJECT_PATH, cfg.RTL_DIR)["args"])
+    else:
+        args.extend(arg for directory in sorted({path.parent for path in cfg.RTL_DIR.rglob("*")
+                                                if path.suffix in HDL_SUFFIXES})
+                    for arg in ("-y", str(directory), f"-I{directory}"))
     if mdir:
         args += ["--Mdir", str(mdir)]
     result = subprocess.run(args, capture_output=True, text=True)
     output = result.stdout + result.stderr
-    if "%Error" in output:
+    if result.returncode or "%Error" in output:
         raise SystemExit(f"verilator reported errors; rtl.json not written:\n{output}")
     return output
 
@@ -1157,6 +1210,7 @@ def main():
     import json
     import tempfile
 
+    cfg.require_writable_output()
     if not cfg.RTL_DIR.exists():
         raise SystemExit(f"no RTL at {cfg.RTL_DIR}")
     sources, top = design_sources(cfg.RTL_DIR, cfg.RTL_TOP_MODULE)

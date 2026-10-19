@@ -1,7 +1,18 @@
-"""Fail-closed source-excerpt answers; retrieval is never behavioral verification."""
+"""Fail-closed source-excerpt answers; retrieval is never behavioral verification.
+
+Flow: Parse response JSON -> validate schema and source quotes -> check domains -> render fixed policy text.
+"""
 
 import json
 import re
+
+
+MODEL_RESPONSE_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "properties": {
+        "status": {"type": "string", "enum": ["evidence_found", "insufficient_evidence"]},
+        "citations": {"type": "array", "maxItems": 3, "items": {"type": "string"}}},
+    "required": ["status", "citations"]}
 
 
 def validate_answer(raw, evidence, required_domains):

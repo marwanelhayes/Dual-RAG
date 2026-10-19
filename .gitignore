@@ -1,0 +1,28 @@
+# The Gemini key lives here. A checkout must never carry a credential
+.env
+
+# Python build noise
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated code graph; rebuild it from the current sources when needed
+graphify-out/
+
+# The virtualenv is rebuilt from requirements.txt, never shared
+.venv/
+
+# Pipeline outputs are generated locally and may contain large model artifacts
+output/
+
+# Source corpora stay local and are rebuilt into ignored pipeline artifacts
+Ingest/*.pdf
+.graphifyignore
+.agents
+.claude
+.codex
+.superpowers/*
+
+# MLflow tracking store and run artifacts stay local
+mlflow.db
+mlruns/
