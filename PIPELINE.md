@@ -67,10 +67,14 @@ certify that design as correct.
 
 ## Query execution
 
-Every question follows `classify -> retrieve_spec -> retrieve_rtl -> lookup_bridge
+In default `all` mode, every question follows `classify -> retrieve_spec -> retrieve_rtl -> lookup_bridge
 -> merge -> answer`. The requested intent controls required answer domains, not
 which retrieval lanes run. There is no query recovery, graph expansion, bridge LLM
 resolver, RTL vector index, or semantic bridge reranking.
+
+On the experimental branch, `CHIPVER_RETRIEVAL_MODE=kev` replaces the regex router
+with a local Kev decision and skips the unused retrieval lane. Comparisons and
+router fallbacks search both. See [setup and the paired benchmark](docs/KEV_RETRIEVAL_EXPERIMENT.md).
 
 Specification candidates are BM25 plus Chroma dense hits, reranked by one shared
 cross-encoder with a document-authority adjustment. RTL uses compiler-identifier

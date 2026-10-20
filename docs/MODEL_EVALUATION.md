@@ -5,6 +5,7 @@ not establish a winner on hardware specifications, RTL or this 4 GB GPU.
 
 | Role | Current implementation | Candidate or comparison | Decision evidence required |
 | --- | --- | --- | --- |
+| Retrieval routing | Regex intent with both lanes searched by default | Opt-in Kev-0.8B conditional graph | Paired routing accuracy, lane calls, evidence recall, latency and memory; see [Kev experiment](KEV_RETRIEVAL_EXPERIMENT.md) |
 | Source structure | PDF geometry/text plus Verilator | Qianfan-OCR only as an optional Markdown experiment | Original identifier fidelity, table/header recovery, runtime and memory on representative pages |
 | Identity links | Deterministic names, supported interface prefixes, confirmed enum addresses | Semantic suggestions kept unresolved | Reviewed identity precision/recall; never infer behavioral equivalence |
 | Question/evidence signal selection | Deterministic source-identifier matching | Replaced pinned GLiNER2-base-v1 | Paired 60-question development comparison preserved retrieval metrics and reduced warm latency; see results below |

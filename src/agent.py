@@ -1,6 +1,6 @@
 """Retrieve hardware specification and RTL source evidence with validated excerpt answers.
 
-Flow: Classify intent -> retrieve both lanes -> attach identity hints -> budget source excerpts -> validate quotes.
+Flow: Classify intent -> retrieve selected lanes (both in baseline mode) -> attach identity hints -> budget source excerpts -> validate quotes.
 """
 
 import functools
@@ -38,6 +38,7 @@ class State(TypedDict, total=False):
     citable_evidence: dict
     answer_status: str
     answer_validation: dict
+    routing: dict
 
 
 class ArtifactFreshnessError(RuntimeError):
@@ -582,7 +583,8 @@ class Runtime:
     """Hold lazy retrieval adapters and generated artifacts for one graph instance."""
 
     def __init__(self, spec_retriever=None, rtl_retriever=None, answer_model=None,
-                 spec_records=None, spec_signals=None, bridge=None):
+                 spec_records=None, spec_signals=None, bridge=None, *,
+                 retrieval_mode=None, router=None):
         """Create a runtime with optional hermetic test adapters.
 
         Args:
@@ -592,6 +594,8 @@ class Runtime:
             spec_records: Optional in-memory specification chunks.
             spec_signals: Optional in-memory structured spec signals.
             bridge: Optional in-memory bridge artifact.
+            retrieval_mode: "all" baseline or "kev" conditional retrieval.
+            router: Optional Kev decision callable for offline tests.
 
         Returns:
             None.
@@ -603,6 +607,14 @@ class Runtime:
         self.spec_signals = spec_signals
         self.bridge = bridge
         self._init_lock = threading.RLock()
+        self.retrieval_mode = cfg.RETRIEVAL_MODE if retrieval_mode is None else retrieval_mode
+        if self.retrieval_mode not in {"all", "kev"}:
+            raise ValueError("retrieval mode must be all or kev")
+        self.router = router
+        if self.retrieval_mode == "kev" and self.router is None:
+            from kev_router import KevRouter
+
+            self.router = KevRouter()
 
     @synchronized
     def get_spec_records(self):
@@ -706,6 +718,8 @@ class Runtime:
             artifacts.verify_generation(cfg.OUTPUT_DIR)
         except (ValueError, OSError) as exc:
             raise ArtifactFreshnessError(str(exc)) from exc
+        if self.retrieval_mode == "kev":
+            self.router.preflight()
         response = httpx.get(cfg.LOCAL_LLM_HOST.rstrip("/") + "/api/tags", timeout=5)
         response.raise_for_status()
         models = {item["name"]: item for item in response.json().get("models", [])}
@@ -743,7 +757,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
                                 spec_signals, bridge)
 
     def classify_node(state):
-        """Record the wording-based route as a prior; evidence decides the real route.
+        """Choose evidence domains with Kev, or retain the baseline wording prior.
 
         Args:
             state: Current graph state.
@@ -751,6 +765,12 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         Returns:
             State update carrying the route prior and its trace event.
         """
+        if runtime.retrieval_mode == "kev":
+            decision = runtime.router(state["question"])
+            if decision.get("query_type") not in QUERY_TYPES:
+                raise ValueError("router returned an unsupported route")
+            return {"query_type": decision["query_type"], "routing": decision,
+                    "trace": _append_trace(state, "route_decision", **decision)}
         prior = classify_query(state["question"])
         return {"query_type": prior,
                 "trace": _append_trace(state, "route_prior", query_type=prior)}
@@ -808,7 +828,7 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
         }
 
     def rtl_node(state):
-        """Retrieve RTL evidence for every question, before any route is decided.
+        """Retrieve RTL evidence when the graph selects this lane.
 
         Args:
             state: Current graph state.
@@ -894,10 +914,20 @@ def build_graph(spec_retriever=None, rtl_retriever=None, answer_model=None,
     graph.add_node("merge", merge_node)
     graph.add_node("answer", answer_node)
     graph.add_edge(START, "classify")
-    # Both lanes run always, so a routing mistake costs budget, never reachability.
-    graph.add_edge("classify", "retrieve_spec")
-    graph.add_edge("retrieve_spec", "retrieve_rtl")
-    graph.add_edge("retrieve_rtl", "lookup_bridge")
+    if runtime.retrieval_mode == "kev":
+        graph.add_conditional_edges("classify", lambda state: (
+            "retrieve_rtl" if state["query_type"] == RTL else "retrieve_spec"),
+            ["retrieve_spec", "retrieve_rtl"])
+        graph.add_conditional_edges("retrieve_spec", lambda state: (
+            "retrieve_rtl" if state["query_type"] == COMPARISON else "merge"),
+            ["retrieve_rtl", "merge"])
+        graph.add_conditional_edges("retrieve_rtl", lambda state: (
+            "lookup_bridge" if state["query_type"] == COMPARISON else "merge"),
+            ["lookup_bridge", "merge"])
+    else:
+        graph.add_edge("classify", "retrieve_spec")
+        graph.add_edge("retrieve_spec", "retrieve_rtl")
+        graph.add_edge("retrieve_rtl", "lookup_bridge")
     graph.add_edge("lookup_bridge", "merge")
     graph.add_edge("merge", "answer")
     graph.add_edge("answer", END)

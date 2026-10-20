@@ -68,3 +68,8 @@ the limits of latency comparisons under competing workloads.
 
 Qianfan-OCR is a paused, optional [experiment](docs/specs/ocr_ingest.md), with no
 production callers and no completed quality/throughput comparison.
+
+This branch adds an opt-in [Kev retrieval experiment](docs/KEV_RETRIEVAL_EXPERIMENT.md).
+`CHIPVER_RETRIEVAL_MODE=kev` lets a pinned local decision model select SPEC, RTL or
+both lanes. Run `src/kev_bench.py` to compare it with the original graph without
+Qwen answer generation. The default `all` mode retains the original baseline.

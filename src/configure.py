@@ -173,6 +173,14 @@ AGENT_TIMEOUT_S = 300
 AGENT_RTL_SEARCH_K = 8
 AGENT_SPEC_SEARCH_K = 8
 
+# The Kev experiment skips the unused domain; "all" retains the paired baseline.
+RETRIEVAL_MODE = os.environ.get("CHIPVER_RETRIEVAL_MODE", "all")
+KEV_HOST = os.environ.get("CHIPVER_KEV_HOST", "http://127.0.0.1:8009")
+KEV_RUN = "jaredpalmer/kev-0.8b@bf75a6a8848ea6960ff2ed108d9ed44c2941174f"
+KEV_TIMEOUT_S = 30
+# This initial threshold is fixed before evaluation; it is not calibrated on our task.
+KEV_MIN_PROBABILITY = float(os.environ.get("CHIPVER_KEV_MIN_PROBABILITY", "0.7"))
+
 # A fixed sentinel lets the graph route insufficient evidence deterministically.
 AGENT_INSUFFICIENT = "INSUFFICIENT"
 

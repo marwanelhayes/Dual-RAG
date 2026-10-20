@@ -447,6 +447,7 @@ def retrieval_row(question, state, k, sections=None):
         "expected_query_type": question.get("expected_query_type"),
         "query_type": predicted,
         "route_correct": predicted == question.get("expected_query_type"),
+        "routing": state.get("routing"),
         "spec": lane_result(
             spec_ids, question.get("relevant_spec_ids", []), k,
             question.get("relevant_spec_groups"), "spec"),
@@ -707,7 +708,8 @@ def report_provenance(dataset):
     return {"dataset_sha256": file_hash(dataset), "dataset": str(dataset),
             "generation": str(cfg.OUTPUT_DIR), "embedding_model": cfg.EMBED_MODEL,
             "embedding_revision": cfg.EMBED_REVISION, "reranker": cfg.RERANK_MODEL,
-            "reranker_revision": cfg.RERANK_REVISION, "answer_model_digest": cfg.LOCAL_LLM_DIGEST}
+            "reranker_revision": cfg.RERANK_REVISION, "answer_model_digest": cfg.LOCAL_LLM_DIGEST,
+            "retrieval_mode": cfg.RETRIEVAL_MODE}
 
 
 def retrieval_main(path=None, k=5):
@@ -729,13 +731,15 @@ def retrieval_main(path=None, k=5):
               "misses": retrieval_misses(rows), "results": rows}
     report["retrieve"] = stage_retrieval_report(questions, k)
     cfg.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(cfg.RETRIEVAL_PATH, "w", encoding="utf-8") as handle:
+    report_path = (cfg.RETRIEVAL_PATH.with_name("kev_retrieval_bench.json")
+                   if cfg.RETRIEVAL_MODE == "kev" else cfg.RETRIEVAL_PATH)
+    with open(report_path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
     print(hit_report(rows))
     print()
     print(json.dumps(report["metrics"], indent=2))
     print(f"{len(report['misses'])} of {len(rows)} questions missed an expected chunk; "
-          f"full report in {cfg.RETRIEVAL_PATH}")
+          f"full report in {report_path}")
 
 
 def main():

@@ -33,10 +33,15 @@ and indexed text. Old and parser-only generations are never silently mixed.
 
 ## Online execution
 
-The graph is linear: classify, retrieve both lanes, look up bridge identities,
+The baseline graph is linear: classify, retrieve both lanes, look up bridge identities,
 merge evidence, then answer. Intent determines required citable domains. A bridge
 link never establishes behavioral conformance. Prompt measurement uses the actual
 answer tokenizer and reserves output tokens. Only whole passages survive budgeting.
+
+The [Kev experiment](KEV_RETRIEVAL_EXPERIMENT.md) conditionally skips the unselected
+retriever. It is enabled with `CHIPVER_RETRIEVAL_MODE=kev`; comparisons and explicit
+router fallbacks retain both lanes. Corpus ingestion and the identity bridge are
+unchanged. The baseline remains the default pending model evaluation.
 
 Bridge navigation matches identifier spellings in the question and retrieved source.
 Asked identities take priority; ordinary field names require their source scope,

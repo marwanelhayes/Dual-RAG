@@ -1,10 +1,16 @@
 # Agent and answer contract
 
-`src/agent.py` runs one linear graph for every question: classify, specification
+By default, `src/agent.py` runs one linear graph for every question: classify, specification
 retrieval, RTL retrieval, bridge lookup, evidence merge and answer. The deterministic
 classifier preserves requested SPEC, RTL or COMPARISON intent. Both lanes run; intent
 determines required citable answer domains. There are no evidence floors, recovery
 queries, hierarchy expansion, or model-selected retrieval tools.
+
+The opt-in [Kev experiment](../KEV_RETRIEVAL_EXPERIMENT.md) sets
+`CHIPVER_RETRIEVAL_MODE=kev`: SPEC searches only books, RTL searches only code, and
+COMPARISON searches both and looks up the bridge. The regex classifier is bypassed.
+Low-probability, invalid or unavailable Kev decisions explicitly select both domains.
+The original `all` mode remains available for paired measurements.
 
 Narrow presence questions about identifiers already in the local design, including
 their space-separated spellings, use RTL intent. Correctness, behavior and explicit

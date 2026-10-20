@@ -10,8 +10,9 @@
    authorize quotations attributed to original RTL lines.
 5. Treat bridge links as identity hypotheses. Width evidence and name similarity
    are navigation information, never implementation proof or proof of absence.
-6. Run both retrieval lanes through one inspectable linear graph. Preserve requested
-   intent and require both domains for comparison answers.
+6. Keep the two-lane linear graph as the baseline. The opt-in
+   [Kev experiment](KEV_RETRIEVAL_EXPERIMENT.md) tests conditional domain retrieval;
+   comparisons and router fallbacks still require both domains.
 7. Budget actual answer-model chat tokens, retain whole passages and reserve output
    capacity. Return validated source excerpts, with unverified comparison labeling.
 8. Publish complete immutable generations after validation. Pin readers to one
