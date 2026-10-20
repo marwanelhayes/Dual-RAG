@@ -17,7 +17,8 @@
 8. Publish complete immutable generations after validation. Pin readers to one
    generation; reject incompatible indexes and cache only validated artifacts.
 9. Serialize local GPU inference and validate readiness before traffic. The service
-   is trusted-local and uses one worker per GPU.
+   is trusted-local and uses one worker per GPU. Release unused retrieval CUDA cache
+   before generation and wait for the answer model to unload afterward so both stages fit.
 10. Pin model revisions and record source/tool/package provenance. Version evaluation
     labels and require independent approval for release quality claims.
 

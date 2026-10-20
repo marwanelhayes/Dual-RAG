@@ -15,6 +15,13 @@ CATALOG = {
 }
 
 
+@pytest.fixture(autouse=True)
+def isolate_native_adapter_from_gpu_provider(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+
 def response(citations=tuple(CATALOG)):
     return {"status": "evidence_found", "claims": [
         {"citation": key, "quote": CATALOG[key]["text"]} for key in citations]}
@@ -136,6 +143,67 @@ def test_native_model_selects_sources_without_retyping_original_text(monkeypatch
     canonical = agent.local_answer("source evidence", CATALOG, {"rtl"})
     assert canonical["claims"] == [{"citation": key, "quote": CATALOG[key]["text"]}]
     assert validate_answer(canonical, CATALOG, {"rtl"})[1] == []
+
+
+@pytest.mark.parametrize("cuda", [False, True])
+def test_native_generation_releases_unused_cuda_cache_and_unloads_after_response(monkeypatch, cuda):
+    import httpx
+    import torch
+
+    events = []
+    key = "[rtl:cache.sv:10]"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: events.append("release"))
+    models = iter([[{"digest": agent.cfg.LOCAL_LLM_DIGEST}], []])
+
+    def get(url, **kwargs):
+        events.append("poll")
+        assert url.endswith("/api/ps")
+        return httpx.Response(200, json={"models": next(models)},
+                              request=httpx.Request("GET", url))
+
+    def post(url, **kwargs):
+        events.append("answer")
+        assert kwargs["json"]["keep_alive"] == 0
+        return httpx.Response(200, json={"message": {"content": json.dumps({
+            "status": "evidence_found", "citations": [key]})}, "done_reason": "stop"},
+            request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(httpx, "get", get)
+    canonical = agent.local_answer("source evidence", CATALOG, {"rtl"})
+    assert canonical["status"] == "evidence_found"
+    assert events == (["release", "answer", "poll", "poll"] if cuda else ["answer"])
+
+
+def test_native_unload_wait_is_bounded(monkeypatch):
+    import httpx
+
+    ticks = iter([0, 11])
+    monkeypatch.setattr(agent.time, "monotonic", lambda: next(ticks, 11))
+    monkeypatch.setattr(httpx, "get", lambda url, **kwargs: httpx.Response(
+        200, json={"models": [{"digest": agent.cfg.LOCAL_LLM_DIGEST}]},
+        request=httpx.Request("GET", url)))
+    with pytest.raises(TimeoutError, match="did not unload"):
+        agent._wait_for_native_unload("http://localhost:11434")
+
+
+def test_native_provider_failure_still_waits_for_unload(monkeypatch):
+    import httpx
+    import torch
+
+    waited = []
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+    monkeypatch.setattr(agent, "_wait_for_native_unload", lambda host: waited.append(host))
+
+    def fail(*args, **kwargs):
+        raise httpx.ReadTimeout("provider timed out")
+
+    monkeypatch.setattr(httpx, "post", fail)
+    with pytest.raises(httpx.ReadTimeout):
+        agent.local_answer("source evidence", CATALOG, {"rtl"})
+    assert waited == [agent.cfg.LOCAL_LLM_HOST.rstrip("/")]
 
 
 def test_native_comparison_schema_requires_both_domains_and_allows_abstention(monkeypatch):

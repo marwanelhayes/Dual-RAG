@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import threading
+import time
 from itertools import zip_longest
 from pathlib import Path
 from typing import TypedDict
@@ -502,6 +503,22 @@ def answer_tokens(prompt):
         answer_messages(prompt), tokenize=True, add_generation_prompt=True, enable_thinking=False))
 
 
+def _wait_for_native_unload(host):
+    """Wait for the pinned Ollama runner to exit before GPU retrieval resumes."""
+    import httpx
+
+    deadline = time.monotonic() + 10
+    while True:
+        response = httpx.get(f"{host}/api/ps", timeout=5)
+        response.raise_for_status()
+        if not any(item.get("digest") == cfg.LOCAL_LLM_DIGEST
+                   for item in response.json().get("models", [])):
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError("answer model did not unload before retrieval could resume")
+        time.sleep(0.1)
+
+
 def local_answer(prompt, evidence, required_domains):
     """Ask local Ollama to select labels and copy their exact original passages.
 
@@ -514,6 +531,7 @@ def local_answer(prompt, evidence, required_domains):
         Canonical status/claims mapping for deterministic answer validation.
     """
     import httpx
+    import torch
     from answer_contract import model_response_schema
 
     host = str(cfg.LOCAL_LLM_HOST).rstrip("/")
@@ -524,18 +542,27 @@ def local_answer(prompt, evidence, required_domains):
     schema = model_response_schema(allowed, required_domains)
     if answer_tokens(prompt) + cfg.ANSWER_MAX_NEW_TOKENS > cfg.AGENT_NUM_CTX:
         raise ValueError("answer prompt exceeds the reserved context window")
-    response = httpx.post(
-        f"{host}/api/chat",
-        json={
-            "model": model,
-            "stream": False,
-            "format": schema,
-            "messages": answer_messages(prompt), "think": False,
-            "options": {"temperature": 0, "num_ctx": cfg.AGENT_NUM_CTX,
-                        "num_predict": cfg.ANSWER_MAX_NEW_TOKENS},
-        },
-        timeout=cfg.AGENT_TIMEOUT_S,
-    )
+    # Return unused retrieval allocations before Ollama chooses GPU placement.
+    cuda = torch.cuda.is_available()
+    if cuda:
+        torch.cuda.empty_cache()
+    try:
+        response = httpx.post(
+            f"{host}/api/chat",
+            json={
+                "model": model,
+                "stream": False,
+                "keep_alive": 0,  # The next retrieval needs the same small GPU.
+                "format": schema,
+                "messages": answer_messages(prompt), "think": False,
+                "options": {"temperature": 0, "num_ctx": cfg.AGENT_NUM_CTX,
+                            "num_predict": cfg.ANSWER_MAX_NEW_TOKENS},
+            },
+            timeout=cfg.AGENT_TIMEOUT_S,
+        )
+    finally:
+        if cuda:
+            _wait_for_native_unload(host)
     response.raise_for_status()
     result = response.json()
     if result.get("done_reason") == "length":

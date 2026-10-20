@@ -5,6 +5,10 @@ BM25 IDs with Chroma dense candidates; a shared revision-pinned cross-encoder re
 them, with the configured document-authority adjustment. There is no specification
 exact-first lane or reciprocal-rank fusion.
 
+CUDA reranker weights load directly in float16; CPU loading keeps its default
+precision. This avoids a full-precision CUDA allocation before conversion. See
+the [GPU memory experiment](../GPU_MEMORY_EXPERIMENT.md) for paired measurements.
+
 RTL uses compiler-identifier exact lookup, useful constructs related to named signals,
 then lexical/reranked candidates. RTL has no dense index. Continuation windows can
 report their base record ID while retaining the matched window's source excerpt.

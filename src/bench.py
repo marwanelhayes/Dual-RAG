@@ -14,6 +14,7 @@ CORRECT = "correct"
 WRONG = "wrong"
 UNVERIFIED = "unverified"
 ABSTAINED = "abstained"
+ERROR = "error"
 
 
 def load_gold(path=cfg.GOLD_PATH):
@@ -62,7 +63,7 @@ def tally(outcomes):
     """
     counted = list(outcomes)
     return {label: counted.count(label)
-            for label in (CORRECT, WRONG, UNVERIFIED, ABSTAINED)}
+            for label in (CORRECT, WRONG, UNVERIFIED, ABSTAINED, ERROR)}
 
 
 def _mean(values, default=1.0):
@@ -236,6 +237,8 @@ def capture_state(state):
         if key:
             alignments[key] = _target_values(mapping)
     return {
+        "answer_status": state.get("answer_status"),
+        "source_validation": state.get("answer_validation"),
         "query_type": state.get("query_type"),
         "trace": trace,
         "saw_spec": "spec_retrieval" in events,
@@ -266,7 +269,7 @@ def run(app, questions):
         answer = state.get("answer", "")
         results.append({
             "id": question["id"], "question": question["question"],
-            "outcome": score(answer, question),
+            "outcome": ERROR if state.get("answer_status") == "rejected" else score(answer, question),
             "seconds": round(time.perf_counter() - started, 3),
             "answer": answer, **capture_state(state),
         })

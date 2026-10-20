@@ -8,6 +8,14 @@ only establishes process liveness. Inference capacity and stale-artifact failure
 return HTTP 503; clients should retry with backoff. The API is for a trusted local
 environment and has no authentication or tenant isolation.
 
+Retrieval weights remain resident; unused CUDA cache is released before answering,
+and Ollama unloads the answer model after each response. This allows the stages to
+share the 4 GB GPU. The adapter waits for the pinned runner to exit before releasing
+the inference slot; the chat response alone does not guarantee memory release.
+Each answer therefore includes model reload and unload-wait time. Avoid running
+another model workload on the same GPU during benchmarks; the inference slot only
+serializes requests inside this service.
+
 ## Generations
 
 `build.py` writes a new complete generation and atomically switches `output/current`

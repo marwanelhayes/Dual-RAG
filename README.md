@@ -62,6 +62,9 @@ The regular suite uses deterministic test adapters and needs no downloaded model
 Live checks use the real retrievers, tokenizers and local answer model. They are smoke
 checks, not an independent answer-quality certification. Follow
 [the release workflow](docs/RELEASE_READINESS.md) for reviewed labels and answers.
+The [GPU memory experiment](docs/GPU_MEMORY_EXPERIMENT.md) documents how retrieval
+and native answering share the local 4 GB GPU, including failed approaches and
+the limits of latency comparisons under competing workloads.
 
 Qianfan-OCR is a paused, optional [experiment](docs/specs/ocr_ingest.md), with no
 production callers and no completed quality/throughput comparison.

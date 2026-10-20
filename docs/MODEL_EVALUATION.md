@@ -58,3 +58,13 @@ coverage. The native schema now requires the route's domains or an empty abstent
 See [the native schema experiment](ANSWER_SCHEMA_EXPERIMENT.md) for the real-provider
 replay, compatibility finding and final benchmark results. The live suite now
 includes a comparison request to cover this failure mode.
+
+## Reranker allocation
+
+The [GPU memory experiment](GPU_MEMORY_EXPERIMENT.md) retained model weights and
+inference precision while loading CUDA weights directly in float16. In fresh-process
+measurements, inactive split allocator blocks fell from about 1,054 MB to 31 MB;
+all three paired retrieval/citation results matched. Full retrieval comparisons retained the ranked base IDs. The bounded GPU handoff
+passed two focused real-model cycles; the final complete mixed benchmark waits
+for competing render jobs. Matching base IDs do not establish identical continuation
+passages or independently reviewed answer quality.

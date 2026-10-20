@@ -16,10 +16,23 @@ def test_answer_scorer_handles_facts_forbidden_claims_and_abstention(monkeypatch
     assert bench.score("INSUFFICIENT EVIDENCE", gold) == bench.ABSTAINED
 
 
+def test_provider_failure_cannot_count_as_a_correct_abstention(monkeypatch):
+    state = {"answer": "INSUFFICIENT EVIDENCE: the generated response failed source validation.",
+             "answer_status": "rejected",
+             "answer_validation": {"valid": False, "errors": ["model_error:ReadTimeout"]}}
+    monkeypatch.setattr(agent, "run", lambda app, question: state)
+    result = bench.run(object(), [{"id": "gap", "question": "Is the unit complete?",
+                                   "abstention_is_correct": True}])[0]
+    assert result["outcome"] == "error"
+    assert result["answer_status"] == "rejected"
+    assert result["source_validation"] == state["answer_validation"]
+    assert bench.tally([result["outcome"]])["error"] == 1
+
+
 def test_tally_includes_zero_count_outcomes():
     assert bench.tally([bench.CORRECT, bench.WRONG]) == {
         bench.CORRECT: 1, bench.WRONG: 1, bench.UNVERIFIED: 0,
-        bench.ABSTAINED: 0,
+        bench.ABSTAINED: 0, bench.ERROR: 0,
     }
 
 
@@ -28,7 +41,7 @@ def test_tally_counts_every_outcome_from_a_single_pass_iterator():
 
     assert bench.tally(outcomes) == {
         bench.CORRECT: 1, bench.WRONG: 0, bench.UNVERIFIED: 2,
-        bench.ABSTAINED: 0,
+        bench.ABSTAINED: 0, bench.ERROR: 0,
     }
 
 

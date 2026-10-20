@@ -129,22 +129,18 @@ def test_every_retriever_shares_one_loaded_reranker(monkeypatch):
     retrieve.shared_reranker.cache_clear()
 
 
-def test_the_reranker_runs_in_half_precision_on_the_gpu(monkeypatch):
+def test_the_reranker_loads_half_precision_directly_on_cuda_and_preserves_cpu_precision(monkeypatch):
     import sentence_transformers
 
     class FakeCrossEncoder:
         def __init__(self, model, device, **kwargs):
-            self.halved = False
-
-        def half(self):
-            self.halved = True
-            return self
+            self.loaded_dtype = (kwargs.get("model_kwargs") or {}).get("dtype", "float32")
 
     monkeypatch.setattr(sentence_transformers, "CrossEncoder", FakeCrossEncoder)
+    monkeypatch.setattr(retrieve, "available_device", lambda requested: requested)
 
-    assert retrieve.Reranker(model="m", device="cuda").model.halved == \
-        retrieve.available_device("cuda").startswith("cuda")
-    assert not retrieve.Reranker(model="m", device="cpu").model.halved
+    assert retrieve.Reranker(model="m", device="cuda").model.loaded_dtype == "float16"
+    assert retrieve.Reranker(model="m", device="cpu").model.loaded_dtype == "float32"
 
 
 def test_a_retriever_without_a_vector_store_ranks_lexical_candidates_only():

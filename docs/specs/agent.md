@@ -34,6 +34,15 @@ quote limit), so the model never retypes source quotes. Provider-reported trunca
 is rejected explicitly. Quotes are
 validated against the exact visible catalog, never against hidden or removed passages.
 
+Before native generation, the adapter releases unused PyTorch CUDA cache so Ollama
+can place answer-model layers on the GPU. It requests `keep_alive: 0` to unload the
+answer model after responding, leaving memory for the next retrieval. Retrieval
+weights remain loaded. Because unloading is asynchronous, CUDA requests wait for
+the pinned runner to disappear from Ollama's process list before returning, including
+after provider failures. The wait has a ten-second polling deadline and fails closed.
+This trades an answer-model reload per request for predictable
+memory sharing on the local 4 GB GPU; see the [measurements](../GPU_MEMORY_EXPERIMENT.md).
+
 `answer_contract.py` accepts only evidence_found/insufficient_evidence JSON and bounded
 citation/quote lists. It enforces source containment and required domains; comparisons
 are labeled UNVERIFIED COMPARISON. Relevance, complete fact coverage and behavioral

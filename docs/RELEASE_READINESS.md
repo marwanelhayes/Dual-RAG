@@ -68,7 +68,10 @@ Missing/stale reviews, unapproved labels/thresholds, incomplete results, lost co
 intent, rejected responses, or failed quality thresholds block release. An all-abstaining
 system cannot pass required-fact coverage. Empty scored categories never receive a
 perfect score. The existing keyword benchmark is diagnostic only; its `correct` label
-is not a production signoff.
+is not a production signoff. Rejected responses, including provider timeouts, count
+as `error` in that benchmark even when the question permits an honest abstention.
+Answer reports retain `answer_status` and `source_validation` so failures can be
+distinguished from deliberate source-valid abstentions.
 
 ## Exact generation and live checks
 
