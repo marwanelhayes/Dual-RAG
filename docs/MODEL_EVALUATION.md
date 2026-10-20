@@ -65,6 +65,9 @@ The [GPU memory experiment](GPU_MEMORY_EXPERIMENT.md) retained model weights and
 inference precision while loading CUDA weights directly in float16. In fresh-process
 measurements, inactive split allocator blocks fell from about 1,054 MB to 31 MB;
 all three paired retrieval/citation results matched. Full retrieval comparisons retained the ranked base IDs. The bounded GPU handoff
-passed two focused real-model cycles; the final complete mixed benchmark waits
-for competing render jobs. Matching base IDs do not establish identical continuation
+passed two focused real-model cycles. The user deferred the expanded native run
+and requested the complete retrieval-only benchmark alongside the render jobs.
+Both 60-question passes completed with unchanged ranked results. Mean graph
+retrieval was 3.054 seconds including initialization, or 2.754 seconds warm;
+CPU contention prevents a controlled latency comparison. Matching base IDs do not establish identical continuation
 passages or independently reviewed answer quality.

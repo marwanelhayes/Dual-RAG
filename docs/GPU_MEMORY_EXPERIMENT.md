@@ -132,9 +132,54 @@ skipped. Current documentation file links pass their existence check.
 The first final run completed all 60 ranked retrieval comparisons without changes.
 It was interrupted during native generation at the user's request to wait for
 competing Manim renders. That report and its interruption log are preserved under
-separate names; they do not represent a completed native benchmark. The complete
-mixed workload is queued until no Manim jobs have been observed for 30 seconds.
-Final native latency and complete mixed-workload results remain pending.
+separate names; they do not represent a completed native benchmark. The queued full native run was then canceled at the user's request. The requested
+final benchmark runs retrieval only: all 60 questions through the agent graph and
+all 60 through the standalone retrieval stages. Qwen weights are not loaded and no
+answer generation runs; the cached Qwen tokenizer still budgets the graph's context.
+Timings are collected alongside active renders and are not a controlled speedup
+comparison. Expanded native latency and ten-case mixed-workload validation are
+deferred. The earlier two-cycle native handoff probe remains the candidate's
+real-provider verification.
+
+## Completed retrieval-only benchmark
+
+Command: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python src/bench.py --retrieval`.
+Generation: `08b16f75c0a74e4092568c778d824d5c`; production source commit: `ce33684`.
+All 60 agent-graph questions and all 60 standalone-stage questions completed.
+Every ranked SPEC/RTL lane result matched the corresponding result in baseline
+generation `7c575f4040a24e9d9d561ae7aee57ef3`; there were zero changed lane rows
+in either pass. This is preservation of labeled retrieval behavior, not perfect
+retrieval or independently measured answer accuracy.
+
+| Agent retrieval measure | Result |
+| --- | --- |
+| Routing accuracy | 100% |
+| SPEC section recall@5 | 69.79% |
+| SPEC exact-ID recall@5 | 60.42% |
+| RTL family recall@5 | 78.33% |
+| RTL exact-ID recall@5 | 57.50% |
+| Dual-domain evidence hits@5 | 65.00% |
+| Mean graph request time, including the first request | 3.054 s |
+| First request, including lazy initialization | 20.748 s |
+| Warm mean, excluding the first request | 2.754 s |
+| Median graph request time | 2.851 s |
+
+These graph times include retrieval, bridge lookup and context assembly, with
+answer generation disabled. The standalone stages preserve their own baseline
+metrics; their RTL exact-ID recall@5 is 56.67% because they request five records
+directly, whereas the graph retrieves a larger shortlist. Neither value is an
+answer-quality score. The render workload was active during measurement, so these
+wall times do not establish a controlled speed improvement or regression.
+
+The full software suite passes 317 tests (one skipped), the clean staged export
+passes 315 (three skipped), and [GitHub CI passed for the source commit](https://github.com/marwanelhayes/Dual-RAG/actions/runs/39368207065).
+The prior scheduled Qwen run is canceled. Expanded native answer validation and
+native latency measurement remain deferred at the user's request.
+
+Raw results are in the generation's `retrieval_bench.json`; the comparison,
+source hashes and timing scope are in `gpu_retrieval_only_verification.json`.
+Experiments, negative results and scripts are retained in local MLflow run
+`ab07cd1567954ccdbf89640dd84516dd`. No book text or model weights are committed.
 
 Independent answer-quality review and alternative-model evaluation remain separate
 requirements. The optional OCR experiment remains paused.
